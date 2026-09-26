@@ -313,7 +313,14 @@ meets only walls it can scrape along or props it knocks over.
   road and out to half width + verge + 4 m around every checkpoint.
 - The course comes back whole when a new car enters the tree (restart), when a car jumps farther
   than one physics step could move it (`Car.reset_to()`, reset to the track), and on a map reload.
-- Probe: `tools/game/softcourse_probe.gd -- map=hanami [car=hayate]` (headless).
+- Nothing is created or loaded at hit time: the debris bodies, burst emitters and their materials
+  are built with the map, the hit sounds are preloaded, and once `MapWorld.built` fires (the loading
+  cover is still up) every smashable mesh and burst type is drawn for a few frames, tiny, in front of
+  the active camera, so their pipelines compile behind the cover (`SoftCourse.is_warm()`).
+- Probe: `tools/game/softcourse_probe.gd -- map=hanami [car=hayate]` (headless). Run windowed
+  (`--audio-driver Dummy`, no `--headless`) it also logs frame times, physics steps, pipeline
+  compilations and node/resource counts in the second after the 1st, 2nd and 10th smash and the
+  first gate pass and hit, and fails above 25 ms or on any compilation or creation there.
 
 ### Menu (Menu)
 

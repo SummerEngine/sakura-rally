@@ -41,6 +41,9 @@ const SMASHABLE := {
 	"hay_bale_square": {"loss": 0.08, "sfx": &"thump", "db": -1.0, "fling": 0.65, "chip": Color("e3c16f")},
 	"hay_bale_round": {"loss": 0.12, "sfx": &"thump", "db": 0.0, "fling": 0.55, "chip": Color("e3c16f")},
 }
+## Mapgen road signs (map.json `signs` with a `mesh`): one node each, not a MultiMesh instance.
+const ROAD_SIGN := "road_sign"
+const ROAD_SIGN_DATA := {"loss": 0.04, "sfx": &"thump", "db": -3.0, "fling": 0.8, "chip": Color("f5f2ea")}
 ## Props whose collider legs become soft uprights (kept, wobbling) instead of static bodies.
 const SOFT_UPRIGHT_PROPS := ["start_arch", "finish_arch"]
 ## Prop skipped entirely: MapWorld builds fabric gates at the checkpoints instead.
@@ -63,14 +66,23 @@ const DEBRIS_LIFE_MAX := 5.6
 const DEBRIS_SHRINK := 0.7
 const BURSTS := 4
 const DUST_SHADER := preload("res://shaders/dust.gdshader")
+## The hit sounds, held so Sound.play_3d's load() of them is a cache lookup, never disk I/O
+## in the middle of a smash.
+const SFX_STREAMS := [
+	preload("res://assets/audio/car/thump_1.wav"), preload("res://assets/audio/car/thump_2.wav"),
+	preload("res://assets/audio/car/thump_3.wav"), preload("res://assets/audio/car/impact_light_1.wav"),
+	preload("res://assets/audio/car/impact_light_2.wav"), preload("res://assets/audio/car/impact_light_3.wav"),
+]
+## Frames each warm-up batch stays drawn (the renderer builds pipelines on the first draw).
+const WARM_FRAMES := 3
 
 signal smashed(prop: String, point: Vector3, speed_before: float, loss: float)
 signal upright_hit(point: Vector3, speed_before: float, loss: float)
 
 # ---------------------------------------------------------------- props (struct of arrays)
 var _kind: PackedInt32Array ## index into _kinds
-var _mm_ref: PackedInt32Array ## index into _mms
-var _mm_idx: PackedInt32Array ## instance index in that MultiMesh
+var _mm_ref: PackedInt32Array ## index into _mms, or -1 for a node prop (a road sign)
+var _mm_idx: PackedInt32Array ## instance index in that MultiMesh, or index into _nodes
 var _cx: PackedFloat32Array ## footprint centre (world x, z)
 var _cz: PackedFloat32Array
 var _y0: PackedFloat32Array ## footprint height range (world)
@@ -84,8 +96,9 @@ var _xf: Array[Transform3D] = [] ## original instance transforms
 var _kinds: Array[String] = []
 var _kind_data: Array[Dictionary] = []
 var _kind_mesh: Array[Mesh] = []
-var _kind_box: Array[AABB] = [] ## local mesh bounds (unscaled)
 var _mms: Array[MultiMesh] = []
+var _nodes: Array[Node3D] = [] ## node props: hidden on a smash
+var _node_debris: Array[Array] = [] ## and the meshes their debris pieces carry (Array[Mesh])
 var _cells: Dictionary = {} ## Vector2i -> PackedInt32Array of prop ids
 var _broken_list: PackedInt32Array
 
@@ -129,6 +142,10 @@ var _settle_in: int = 0
 
 ## Hits since the last restore (read by tools/game/softcourse_probe.gd and stats).
 var hits: int = 0
+## Warm-up: the first kind index not yet drawn, frames left on the batch on screen.
+var _warm_next: int = -1
+var _warm_hold: int = 0
+var _warmed: bool = false
 
 
 func _init() -> void:
@@ -140,6 +157,12 @@ func _ready() -> void:
 	_debris_material = PhysicsMaterial.new()
 	_debris_material.friction = 0.9
 	_debris_material.bounce = 0.12
+	_build_pools()
+	# warm up once every smashable kind is registered (MapWorld.build() has finished)
+	set_process(false)
+	var map := get_parent() as MapWorld
+	if map != null:
+		map.built.connect(set_process.bind(true), CONNECT_ONE_SHOT)
 	get_tree().node_added.connect(_on_node_added)
 	_scan_for_cars(get_tree().root)
 	var game := get_node_or_null(^"/root/Game")
@@ -162,7 +185,6 @@ func add_smashable(prop_name: String, mesh: Mesh, mm: MultiMesh, idx: int, e: Ar
 		_kinds.append(prop_name)
 		_kind_data.append(SMASHABLE[prop_name])
 		_kind_mesh.append(mesh)
-		_kind_box.append(mesh.get_aabb())
 	var mi := _mms.find(mm)
 	if mi < 0:
 		mi = _mms.size()
@@ -217,25 +239,53 @@ func add_smashable(prop_name: String, mesh: Mesh, mm: MultiMesh, idx: int, e: Ar
 			hz = maxf(box.size.z * 0.5 * sc, 0.1)
 			y0 = box.position.y * sc
 			y1 = box.end.y * sc
-	var world := origin + rot * centre
+	_register(k, mi, idx, origin + rot * centre, origin.y + y0, origin.y + y1, yaw, hx, hz,
+			mm.get_instance_transform(idx))
+
+
+## A mapgen road sign: `node` (its mesh and text lines) is hidden when it breaks; `pieces`
+## (board, posts) fly off as debris. The pieces and the collider box (`size`, `center`) are in
+## the sign's frame `xf` (base centre on the ground, yawed).
+func add_sign(node: Node3D, pieces: Array[Mesh], xf: Transform3D, size: Vector3, center: Vector3) -> void:
+	var k := _kinds.find(ROAD_SIGN)
+	if k < 0:
+		k = _kinds.size()
+		_kinds.append(ROAD_SIGN)
+		_kind_data.append(ROAD_SIGN_DATA)
+		_kind_mesh.append(pieces[0])
+	var yaw := xf.basis.get_euler().y
+	var world := xf * Vector3(center.x, 0.0, center.z)
+	_register(k, -1, _nodes.size(), world, xf.origin.y + center.y - size.y * 0.5,
+			xf.origin.y + center.y + size.y * 0.5, yaw, maxf(size.x * 0.5, 0.1), maxf(size.z * 0.5, 0.1), xf)
+	_nodes.append(node)
+	_node_debris.append(pieces)
+
+
+func _register(k: int, mm_ref: int, idx: int, world: Vector3, y0: float, y1: float, yaw: float,
+		hx: float, hz: float, xf: Transform3D) -> void:
 	var id := _kind.size()
 	_kind.append(k)
-	_mm_ref.append(mi)
+	_mm_ref.append(mm_ref)
 	_mm_idx.append(idx)
 	_cx.append(world.x)
 	_cz.append(world.z)
-	_y0.append(origin.y + y0)
-	_y1.append(origin.y + y1)
+	_y0.append(y0)
+	_y1.append(y1)
 	_ux.append(cos(yaw))
 	_uz.append(-sin(yaw))
 	_hx.append(hx)
 	_hz.append(hz)
 	_broken.append(0)
-	_xf.append(mm.get_instance_transform(idx))
-	var cell := Vector2i(floori(world.x / CELL), floori(world.z / CELL))
-	var list: PackedInt32Array = _cells.get(cell, PackedInt32Array())
-	list.append(id)
-	_cells[cell] = list
+	_xf.append(xf)
+	# a footprint wider than PROP_REACH (a big direction board) sits in every cell it spans
+	var r := sqrt(hx * hx + hz * hz) if hz > 0.0 else hx
+	var extra := maxf(r - PROP_REACH, 0.0)
+	for gx in range(floori((world.x - extra) / CELL), floori((world.x + extra) / CELL) + 1):
+		for gz in range(floori((world.z - extra) / CELL), floori((world.z + extra) / CELL) + 1):
+			var cell := Vector2i(gx, gz)
+			var list: PackedInt32Array = _cells.get(cell, PackedInt32Array())
+			list.append(id)
+			_cells[cell] = list
 
 
 ## Collider legs of a start/finish arch instance become soft uprights; the arch nods when hit.
@@ -534,11 +584,16 @@ func _smash(id: int, car: Car, ci: int) -> void:
 	_broken[id] = 1
 	_broken_list.append(id)
 	hits += 1
-	var mm := _mms[_mm_ref[id]]
 	var xf := _xf[id]
-	mm.set_instance_transform(_mm_idx[id], Transform3D(Basis().scaled(Vector3.ZERO), xf.origin))
+	var fling := float(data["fling"])
+	if _mm_ref[id] < 0:
+		_nodes[_mm_idx[id]].visible = false
+		for piece: Mesh in _node_debris[_mm_idx[id]]:
+			_spawn_debris(piece, xf, v, car.global_position, fling)
+	else:
+		_mms[_mm_ref[id]].set_instance_transform(_mm_idx[id], Transform3D(Basis().scaled(Vector3.ZERO), xf.origin))
+		_spawn_debris(_kind_mesh[_kind[id]], xf, v, car.global_position, fling)
 	var point := Vector3(_cx[id], clampf(car.global_position.y + 0.5, _y0[id], _y1[id]), _cz[id])
-	_spawn_debris(_kind[id], xf, v, car.global_position, float(data["fling"]))
 	_burst(point, v, data["chip"], speed)
 	_burst_car = car
 	_burst_ticks = 240
@@ -620,9 +675,9 @@ func _step_arches(delta: float) -> void:
 
 # ================================================================ debris
 
-func _ensure_pools() -> void:
-	if not _debris.is_empty():
-		return
+## Every node and resource a smash uses is made here, while the map builds under the loading
+## cover: nothing is created or loaded at hit time.
+func _build_pools() -> void:
 	_debris_age.resize(DEBRIS_MAX)
 	_debris_life.resize(DEBRIS_MAX)
 	_debris_scale.resize(DEBRIS_MAX)
@@ -653,9 +708,6 @@ func _ensure_pools() -> void:
 		_debris_age[i] = -1.0
 	_dust_material = ShaderMaterial.new()
 	_dust_material.shader = DUST_SHADER
-	var map := get_parent() as MapWorld
-	if map != null:
-		_dust_material.set_shader_parameter("sun_dir", map.sun_dir)
 	var puff := _puff_mesh()
 	puff.surface_set_material(0, _dust_material)
 	var chip := _chip_mesh()
@@ -665,8 +717,7 @@ func _ensure_pools() -> void:
 		_chips.append(_make_burst(chip, 16, 1.1, true))
 
 
-func _spawn_debris(kind: int, xf: Transform3D, car_v: Vector3, car_pos: Vector3, fling: float) -> void:
-	_ensure_pools()
+func _spawn_debris(mesh: Mesh, xf: Transform3D, car_v: Vector3, car_pos: Vector3, fling: float) -> void:
 	var slot := -1
 	var oldest := -1.0
 	for i in DEBRIS_MAX:
@@ -679,9 +730,9 @@ func _spawn_debris(kind: int, xf: Transform3D, car_v: Vector3, car_pos: Vector3,
 	var b := _debris[slot]
 	var was_live := _debris_age[slot] >= 0.0
 	var sc := xf.basis.get_scale()
-	var box := _kind_box[kind]
+	var box := mesh.get_aabb()
 	var mi := _debris_mesh[slot]
-	mi.mesh = _kind_mesh[kind]
+	mi.mesh = mesh
 	mi.scale = sc
 	_debris_scale[slot] = sc
 	_debris_shape[slot].size = (box.size * sc).max(Vector3(0.12, 0.12, 0.12))
@@ -738,7 +789,6 @@ func _retire(i: int) -> void:
 
 ## One low-poly dust puff and a spray of chips in the prop's colour.
 func _burst(point: Vector3, car_v: Vector3, chip_color: Color, speed: float) -> void:
-	_ensure_pools()
 	var i := _burst_next
 	_burst_next = (_burst_next + 1) % BURSTS
 	var dir := Vector3(car_v.x, 0.0, car_v.z)
@@ -746,6 +796,7 @@ func _burst(point: Vector3, car_v: Vector3, chip_color: Color, speed: float) -> 
 	var puff := _puffs[i]
 	puff.global_position = point
 	puff.amount_ratio = clampf(0.4 + speed / 30.0, 0.4, 1.0)
+	puff.visible = true
 	puff.restart()
 	var chips := _chips[i]
 	chips.global_position = point
@@ -754,7 +805,81 @@ func _burst(point: Vector3, car_v: Vector3, chip_color: Color, speed: float) -> 
 	m.direction = dir
 	m.initial_velocity_min = 2.0 + speed * 0.15
 	m.initial_velocity_max = 4.0 + speed * 0.3
+	chips.visible = true
 	chips.restart()
+
+
+# ================================================================ pipeline warm-up
+
+func is_warm() -> bool:
+	return _warmed
+
+
+## Right after the map is built (the loading cover is still up) every smashable mesh is drawn
+## once as a plain MeshInstance3D, from the debris pool, and every burst emitter fires once, a
+## few metres in front of the active camera: the renderer builds their pipelines behind the
+## cover instead of on the first smash.
+func _process(_delta: float) -> void:
+	if _warmed:
+		set_process(false)
+		return
+	var cam := get_viewport().get_camera_3d()
+	if cam == null or not cam.is_inside_tree():
+		return
+	if _warm_hold > 0:
+		_warm_hold -= 1
+		if _warm_hold == 0:
+			_end_warm_batch()
+		return
+	if _warm_next < 0:
+		_warm_next = 0
+		_warm_bursts(cam)
+	elif _warm_next >= _kinds.size():
+		_warmed = true
+		return
+	_start_warm_batch(cam)
+	_warm_hold = WARM_FRAMES
+
+
+func _warm_spot(cam: Camera3D, k: int) -> Transform3D:
+	var local := Vector3(float(k % 6) * 0.25 - 0.6, float(k / 6) * 0.2 - 0.3, -3.0)
+	return Transform3D(Basis(), cam.global_transform * local)
+
+
+func _warm_bursts(cam: Camera3D) -> void:
+	var map := get_parent() as MapWorld
+	if map != null:
+		_dust_material.set_shader_parameter("sun_dir", map.sun_dir)
+	for i in BURSTS:
+		for p: GPUParticles3D in [_puffs[i], _chips[i]]:
+			p.global_position = _warm_spot(cam, i).origin
+			p.amount_ratio = 0.1
+			p.visible = true
+			p.restart()
+
+
+func _start_warm_batch(cam: Camera3D) -> void:
+	var n := mini(DEBRIS_MAX, _kinds.size() - _warm_next)
+	for j in n:
+		var slot := j
+		if _debris_age[slot] >= 0.0:
+			continue
+		var mi := _debris_mesh[slot]
+		mi.mesh = _kind_mesh[_warm_next + j]
+		mi.scale = Vector3.ONE * 0.02
+		_debris[slot].global_transform = _warm_spot(cam, j)
+		_debris[slot].reset_physics_interpolation()
+		_debris[slot].visible = true
+	_warm_next += n
+
+
+func _end_warm_batch() -> void:
+	for i in DEBRIS_MAX:
+		if _debris_age[i] < 0.0:
+			_debris[i].visible = false
+	for i in BURSTS:
+		_puffs[i].visible = false
+		_chips[i].visible = false
 
 
 func _make_burst(mesh: Mesh, amount: int, life: float, chips: bool) -> GPUParticles3D:
@@ -767,6 +892,7 @@ func _make_burst(mesh: Mesh, amount: int, life: float, chips: bool) -> GPUPartic
 	p.local_coords = false
 	p.visibility_aabb = AABB(Vector3(-12, -4, -12), Vector3(24, 14, 24))
 	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	p.visible = false
 	var m := ParticleProcessMaterial.new()
 	m.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
 	m.angle_min = 0.0
@@ -861,7 +987,10 @@ func _chip_mesh() -> ArrayMesh:
 func restore() -> void:
 	for id in _broken_list:
 		_broken[id] = 0
-		_mms[_mm_ref[id]].set_instance_transform(_mm_idx[id], _xf[id])
+		if _mm_ref[id] < 0:
+			_nodes[_mm_idx[id]].visible = true
+		else:
+			_mms[_mm_ref[id]].set_instance_transform(_mm_idx[id], _xf[id])
 	_broken_list.clear()
 	for i in _debris.size():
 		if _debris_age[i] >= 0.0:

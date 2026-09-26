@@ -7,8 +7,15 @@ extends SceneTree
 ## whole course back. The row and gate passes use only the car API, so the same run on a
 ## branch without SoftCourse gives the "before" numbers.
 ##
+## Run in a window (silent) it also renders the drive from a camera behind the car and logs
+## every frame: real frame time, physics steps, and the growth of draw-time pipeline
+## compilations, nodes and resources. It prints the worst frames within 1 s of the 1st, 2nd
+## and 10th smash, the first upright hit and the first gate pass (FRAMES lines), and fails on
+## a compilation, node or resource created at hit time or a frame over 25 ms there.
+##
 ##   timeout 300 $S --headless --disable-crash-handler --path . -s res://tools/game/softcourse_probe.gd \
 ##       -- map=hanami car=sakura
+##   timeout 300 $S --audio-driver Dummy --disable-crash-handler --path . -s res://tools/game/softcourse_probe.gd
 
 const DT := 1.0 / 120.0
 ## Hits are measured over this long after the contact (s).
@@ -24,6 +31,126 @@ var failures: Array[String] = []
 var soft: Node ## SoftCourse, when the branch has it
 var events: Array[Dictionary] = []
 
+# ---------------------------------------------------------------- frame log (windowed runs)
+const FRAME_BUDGET_MS := 25.0
+var windowed := false
+var cam: Camera3D
+var _f_usec := PackedInt64Array()
+var _f_ms := PackedFloat32Array()
+var _f_steps := PackedInt32Array()
+var _f_perf: Array[PackedInt64Array] = [] ## per monitor: value at each frame
+var _last_usec := 0
+var _steps := 0
+var _marks: Array[Dictionary] = [] ## {"label", "usec"}
+var _smash_usec := PackedInt64Array() ## every smash
+var _kinds_seen: Array[String] = []
+var _smash_n := 0
+var _upright_marked := false
+var _gate_marked := false
+var _gate_hit_marked := false
+var _pass_label := ""
+const MONITORS := [
+	[Performance.PIPELINE_COMPILATIONS_DRAW, "draw_compiles"],
+	[Performance.PIPELINE_COMPILATIONS_SURFACE, "surface_compiles"],
+	[Performance.PIPELINE_COMPILATIONS_SPECIALIZATION, "specialization_compiles"],
+	[Performance.OBJECT_NODE_COUNT, "nodes"],
+	[Performance.OBJECT_RESOURCE_COUNT, "resources"],
+]
+
+
+func _process(_delta: float) -> bool:
+	var now := Time.get_ticks_usec()
+	if _last_usec > 0:
+		_f_usec.append(now)
+		_f_ms.append((now - _last_usec) / 1000.0)
+		_f_steps.append(_steps)
+		for k in MONITORS.size():
+			_f_perf[k].append(int(Performance.get_monitor(MONITORS[k][0])))
+	_last_usec = now
+	_steps = 0
+	if cam != null and is_instance_valid(car):
+		var xf := car.global_transform
+		var back := xf.basis.z
+		back.y = 0.0
+		back = back.normalized() if back.length_squared() > 0.01 else Vector3.BACK
+		cam.global_position = car.global_position + back * 6.5 + Vector3.UP * 2.6
+		cam.look_at(car.global_position + Vector3.UP * 1.0)
+	return false
+
+
+func _physics_process(_delta: float) -> bool:
+	_steps += 1
+	return false
+
+
+func _mark(label: String) -> void:
+	_marks.append({"label": label, "usec": Time.get_ticks_usec()})
+
+
+## Worst frames within 1 s of each mark, and what was created in that second.
+func _report_frames() -> void:
+	for m in _marks:
+		var t0: int = m["usec"]
+		var worst := 0.0
+		var worst_steps := 0
+		var first := -1
+		var last := -1
+		for i in _f_usec.size():
+			if _f_usec[i] < t0:
+				continue
+			if _f_usec[i] > t0 + 1000000:
+				break
+			if first < 0:
+				first = i
+			last = i
+			if _f_ms[i] > worst:
+				worst = _f_ms[i]
+				worst_steps = _f_steps[i]
+		if first < 0:
+			print("FRAMES %s: no frames logged" % m["label"])
+			continue
+		var base := first - 1 if first > 0 else first
+		var parts: Array[String] = []
+		var created := 0
+		for k in MONITORS.size():
+			var d := _f_perf[k][last] - _f_perf[k][base]
+			parts.append("%s +%d" % [MONITORS[k][1], d])
+			if k < 3:
+				created += maxi(d, 0)
+		# nodes and resources: the frame of the hit itself (debris ages out later in the second)
+		var hit_nodes := _f_perf[3][first] - _f_perf[3][base]
+		var hit_res := _f_perf[4][first] - _f_perf[4][base]
+		var sorted := _f_ms.slice(first, last + 1)
+		sorted.sort()
+		print("FRAMES %-18s %d frames in 1 s  worst %.1f ms (%d physics steps)  median %.1f ms  %s  | hit frame: nodes +%d resources +%d" % [
+			m["label"], last - first + 1, worst, worst_steps, sorted[sorted.size() / 2], "  ".join(parts), hit_nodes, hit_res])
+		if soft != null:
+			if created > 0:
+				failures.append("%s: %d pipeline compilations" % [m["label"], created])
+			if hit_nodes > 0 or hit_res > 0:
+				failures.append("%s: nodes +%d resources +%d at hit time" % [m["label"], hit_nodes, hit_res])
+			if worst > FRAME_BUDGET_MS:
+				failures.append("%s: frame %.1f ms" % [m["label"], worst])
+	# every frame within 1 s after any smash
+	var worst_all := 0.0
+	var n_all := 0
+	var compiles := 0
+	var j := 0
+	for i in _f_usec.size():
+		while j < _smash_usec.size() and _smash_usec[j] + 1000000 < _f_usec[i]:
+			j += 1
+		if j >= _smash_usec.size() or _smash_usec[j] > _f_usec[i]:
+			continue
+		n_all += 1
+		worst_all = maxf(worst_all, _f_ms[i])
+		if i > 0:
+			for k in 3:
+				compiles += maxi(_f_perf[k][i] - _f_perf[k][i - 1], 0)
+	print("FRAMES all %d smashes: %d frames within 1 s after one  worst %.1f ms  pipeline compilations %d" % [
+		_smash_usec.size(), n_all, worst_all, compiles])
+	if soft != null and (worst_all > FRAME_BUDGET_MS or compiles > 0):
+		failures.append("frames after smashes: worst %.1f ms, %d compilations" % [worst_all, compiles])
+
 
 func _initialize() -> void:
 	for arg in OS.get_cmdline_user_args():
@@ -31,6 +158,15 @@ func _initialize() -> void:
 		if kv.size() == 2:
 			opts[kv[0]] = kv[1]
 	game = root.get_node("Game")
+	windowed = DisplayServer.get_name() != "headless"
+	for k in MONITORS.size():
+		_f_perf.append(PackedInt64Array())
+	if windowed:
+		cam = Camera3D.new()
+		cam.fov = 60.0
+		cam.far = 3000.0
+		root.add_child(cam)
+		cam.make_current()
 	_run.call_deferred()
 
 
@@ -48,9 +184,29 @@ func _run() -> void:
 	_spawn_car()
 	if soft != null:
 		soft.smashed.connect(func(prop: String, point: Vector3, v: float, loss: float) -> void:
+			_smash_n += 1
+			_smash_usec.append(Time.get_ticks_usec())
+			if _smash_n in [1, 2, 10]:
+				_mark("smash %d (%s)" % [_smash_n, prop])
+			elif not prop in _kinds_seen:
+				_mark("first %s" % prop)
+			if not prop in _kinds_seen:
+				_kinds_seen.append(prop)
 			events.append({"kind": prop, "point": point, "v": v, "loss": loss, "tick": _ticks}))
 		soft.upright_hit.connect(func(point: Vector3, v: float, loss: float) -> void:
+			if not _upright_marked:
+				_upright_marked = true
+				_mark("first upright hit")
+			if _pass_label == "gate_upright" and not _gate_hit_marked:
+				_gate_hit_marked = true
+				_mark("gate upright hit")
 			events.append({"kind": "upright", "point": point, "v": v, "loss": loss, "tick": _ticks}))
+		if soft.has_method(&"is_warm"):
+			var waited := 0
+			while windowed and not soft.is_warm() and waited < 600:
+				await process_frame
+				waited += 1
+			print("WARM %s after %d frames" % [soft.is_warm(), waited])
 	for i in 30:
 		await physics_frame
 
@@ -86,6 +242,9 @@ func _run() -> void:
 	var billowed := [false]
 	var b := await _pass("gate_centre", cs - 90.0, cs + 20.0, 0.0, func() -> void:
 		if gate != null and gate.is_billowing():
+			if not billowed[0] and not _gate_marked:
+				_gate_marked = true
+				_mark("first gate pass")
 			billowed[0] = true)
 	print("GATE centre  billowed %s" % billowed[0])
 	if soft != null and not billowed[0]:
@@ -105,6 +264,8 @@ func _run() -> void:
 	if soft != null:
 		await _restoration(row)
 
+	if windowed:
+		_report_frames()
 	print("SUMMARY: %d failures" % failures.size())
 	for f in failures:
 		print("  FAIL %s" % f)
@@ -202,6 +363,7 @@ func _tally(names: Array[String]) -> String:
 ## The car starts on the road and moves out to `lat` from road distance `s_out` on.
 func _pass(label: String, s_from: float, s_to: float, lat: float, each_tick: Callable = Callable(), s_out: float = -INF) -> Dictionary:
 	var track := map.track
+	_pass_label = label
 	for n in car.get_children():
 		if n is Autopilot:
 			n.queue_free()
