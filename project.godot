@@ -14,6 +14,7 @@ config/icon="res://icon.svg"
 
 Game="*res://scripts/autoload/game.gd"
 Sound="*res://scripts/autoload/sound.gd"
+Replays="*res://scripts/autoload/replays.gd"
 
 [display]
 
