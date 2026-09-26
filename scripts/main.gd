@@ -15,7 +15,6 @@ extends Node
 ## next await.
 
 const UI_ROOT := preload("res://scenes/ui/ui_root.tscn")
-const CAR_SCENE := preload("res://scenes/car/car.tscn")
 const INTRO_TIME := 3.4
 const MENU_MAP := "hanami"
 const FINISH_SLOWMO := 0.3
@@ -231,7 +230,7 @@ func _load_map(map_id: String) -> void:
 ## New car at the map's spawn, cel-converted, with wheel effects and a route follower
 ## (the session also supplies reset points for the menu car).
 func _spawn_car(player: bool, mode: String) -> void:
-	car = CAR_SCENE.instantiate() as Car
+	car = (load(str(Game.current_car()["scene"])) as PackedScene).instantiate() as Car
 	car.name = "PlayerCar" if player else "MenuCar"
 	car.controlled_by_player = player
 	add_child(car)

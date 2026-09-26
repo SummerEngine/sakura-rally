@@ -22,6 +22,8 @@ enum State { BOOT, MENU, LOADING, INTRO, COUNTDOWN, RACING, FINISHED, FREE_ROAM 
 
 const MODE_TIME_TRIAL := "time_trial"
 const MODE_FREE_ROAM := "free_roam"
+## Untimed point-to-point drive between two campaign stages (open road, ends at an arrival zone).
+const MODE_LIAISON := "liaison"
 
 const SAVE_PATH := "user://sakura_rally.cfg"
 
@@ -47,6 +49,15 @@ const MAPS: Array[Dictionary] = [
 		"season": "autumn",
 		"medals": {"gold": 118.0, "silver": 132.0, "bronze": 154.0},
 	},
+	{
+		"id": "natsu",
+		"name": "Natsu Road",
+		"name_jp": "夏道",
+		"tagline": "Summer afternoon. The quiet road between the stages.",
+		"season": "summer",
+		## Liaison maps have an open road and no medals: stage pickers skip them (stage_maps()).
+		"liaison": true,
+	},
 ]
 
 ## Liveries: primary body paint, secondary stripe colour.
@@ -58,6 +69,29 @@ const CAR_COLORS: Array[Dictionary] = [
 	{"name": "Sumi", "primary": Color("2c2a33"), "secondary": Color("f29a38")},
 ]
 
+## Garage catalogue. "scene" is a car scene whose root runs scripts/vehicle/car.gd; "stats" are
+## 0..1 bars for the garage, set from the tuned cars' telemetry (docs/PHYSICS.md).
+const CARS: Array[Dictionary] = [
+	{
+		"id": "sakura",
+		"name": "Sakura",
+		"name_jp": "桜",
+		"tagline": "Turbo four, all-wheel drive. Grips, forgives, flies.",
+		"spec": "2.0 turbo · AWD · 1250 kg",
+		"scene": "res://scenes/car/car.tscn",
+		"stats": {"speed": 0.8, "acceleration": 0.85, "grip": 0.85, "drift": 0.5},
+	},
+	{
+		"id": "hayate",
+		"name": "Hayate",
+		"name_jp": "疾風",
+		"tagline": "Rev-happy coupe, rear-wheel drive. Slides when you ask it to.",
+		"spec": "1.6 twin-cam · RWD · 1050 kg",
+		"scene": "res://scenes/car/car_hayate.tscn",
+		"stats": {"speed": 0.75, "acceleration": 0.6, "grip": 0.65, "drift": 0.9},
+	},
+]
+
 const DEFAULT_SETTINGS := {
 	"master_volume": 0.9,
 	"music_volume": 0.6,
@@ -67,6 +101,7 @@ const DEFAULT_SETTINGS := {
 	"camera": "chase", ## "chase" | "chase_far" | "hood" | "bumper"
 	"units": "kmh", ## "kmh" | "mph"
 	"car_color": 0,
+	"car_id": "sakura",
 	"fullscreen": false,
 }
 
@@ -238,7 +273,7 @@ func best_time(id: String) -> float:
 
 func medal_for(id: String, t: float) -> String:
 	var m := get_map(id)
-	if m.is_empty():
+	if m.is_empty() or not m.has("medals"):
 		return ""
 	var medals: Dictionary = m["medals"]
 	if t <= medals["gold"]:
@@ -252,6 +287,26 @@ func medal_for(id: String, t: float) -> String:
 
 func car_colors() -> Dictionary:
 	return CAR_COLORS[clampi(int(settings["car_color"]), 0, CAR_COLORS.size() - 1)]
+
+
+func get_car(id: String) -> Dictionary:
+	for c in CARS:
+		if c["id"] == id:
+			return c
+	return CARS[0]
+
+
+func current_car() -> Dictionary:
+	return get_car(str(get_setting("car_id")))
+
+
+## Maps with a timed stage (Time Trial pickers, "next map"); liaison roads are excluded.
+func stage_maps() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for m in MAPS:
+		if not m.get("liaison", false):
+			out.append(m)
+	return out
 
 
 static func format_time(t: float) -> String:
