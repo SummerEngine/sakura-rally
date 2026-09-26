@@ -264,9 +264,9 @@ func _run() -> void:
 		var gate: Node = null
 		if soft != null:
 			for c in map.checkpoints:
-				if soft.gate_for_checkpoint(int(c["index"])) != null:
+				if soft.gate_near(c["position"]) != null:
 					cp = c
-					gate = soft.gate_for_checkpoint(int(c["index"]))
+					gate = soft.gate_near(c["position"])
 					break
 		var cs := map.track.dist(map.track.nearest(cp["position"]))
 		var billowed := [false]

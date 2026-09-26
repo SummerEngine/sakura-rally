@@ -45,7 +45,8 @@ the low-passes are swept instead.
 | `play_ui(name)` | `hover` (−4 dB, ±3 % pitch), `click`, `back`, `start`, `toggle`; 4-voice pool on UI bus |
 | `play_music(track, fade)` | `menu`, `drive`, `results`, `liaison`; equal-power crossfade between two players; same track again = no restart |
 | `stop_music(fade)` | equal-power fade out |
-| `play_ambience(map_id, fade)` | `hanami`, `momiji`, `natsu`; crossfade, starts at a random point in the loop; unknown id fades the bed out |
+| `play_ambience(fade)` | the world bed: the `hanami` (spring), `natsu` (summer) and `momiji` (autumn) loops mixed by the season at the camera; equal-power fade in, each loop starts at a random point; playing already: no change |
+| `set_ambience_mix(weights)` | season weights (spring, summer, autumn) at the listener, each loop at the square root of its weight; `MapWorld` calls it as the camera moves, loops at zero weight stop |
 | `stop_ambience(fade)` | fade out |
 | `play_stinger(name)` | `countdown`, `go`, `checkpoint`, `finish`, `record`, `arrived`, `campaign_complete`; UI bus, ducks music for the big ones |
 | `play_3d(name, pos, db)` | names: `impact_light`, `impact_heavy`, `thump`, `stone`, `backfire`, `blowoff`, `shift` (random variant, ±6 % pitch) or any `res://` path; 16-voice AudioStreamPlayer3D pool on World |

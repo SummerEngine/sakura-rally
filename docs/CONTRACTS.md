@@ -162,7 +162,8 @@ resize (`Quality.apply_render_scale`).
 Buses: Master → Music, Ambience, UI, SFX → (Engine, World).
 `Sound.play_ui(&"hover"|&"click"|&"back"|&"start"|&"toggle")`,
 `Sound.play_music(&"menu"|&"drive"|&"results", fade)`, `Sound.stop_music(fade)`,
-`Sound.play_ambience(map_id, fade)`, `Sound.stop_ambience(fade)`,
+`Sound.play_ambience(fade)`, `Sound.set_ambience_mix(weights)`, `Sound.stop_ambience(fade)` (ep3: one
+bed mixed by the season at the camera),
 `Sound.play_stinger(&"countdown"|&"go"|&"checkpoint"|&"finish"|&"record")`,
 `Sound.play_3d(name, position, volume_db)`, `Sound.set_slowmo(time_scale)`.
 Car audio: a `CarAudio` Node3D child of the car with `scripts/vehicle/car_audio.gd`, reading the car

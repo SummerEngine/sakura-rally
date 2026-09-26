@@ -100,7 +100,6 @@ var _broken_list: PackedInt32Array
 ## "mm": MultiMesh, "idx": int, "xf": Transform3D, "angle", "vel", "axis": Vector3, "touch": int}
 var _uprights: Array[Dictionary] = []
 var _gates: Array[FabricGate] = []
-var _gate_by_checkpoint: Dictionary = {}
 
 # ---------------------------------------------------------------- cars
 var _cars: Array[Car] = []
@@ -304,13 +303,15 @@ func add_soft_uprights(mm: MultiMesh, idx: int, e: Array, m: Dictionary) -> int:
 
 ## Fabric gates over the road at the checkpoints. Closed stages: every checkpoint except the one
 ## under the start/finish arch. Open roads (liaisons, untimed): only the final checkpoint, the
-## time control. `arches` are the world positions of start/finish arch instances.
-func build_gates(checkpoints: Array[Dictionary], track: Track, closed: bool, arches: PackedVector3Array) -> void:
-	for g in _gates:
-		g.queue_free()
-	_gates.clear()
-	_gate_by_checkpoint.clear()
-	_uprights = _uprights.filter(func(u: Dictionary) -> bool: return u["gate"] == null)
+## time control. `arches` are the world positions of start/finish arch instances. `clear` removes
+## the gates built before; false adds another route's gates to them.
+func build_gates(checkpoints: Array[Dictionary], track: Track, closed: bool, arches: PackedVector3Array,
+		clear := true) -> void:
+	if clear:
+		for g in _gates:
+			g.queue_free()
+		_gates.clear()
+		_uprights = _uprights.filter(func(u: Dictionary) -> bool: return u["gate"] == null)
 	for n in checkpoints.size():
 		var cp: Dictionary = checkpoints[n]
 		if not closed and n != checkpoints.size() - 1:
@@ -330,7 +331,6 @@ func build_gates(checkpoints: Array[Dictionary], track: Track, closed: bool, arc
 		add_child(gate)
 		gate.setup(Transform3D(Basis(Vector3.UP, float(cp["yaw"])), pos), lat, _gates.size())
 		_gates.append(gate)
-		_gate_by_checkpoint[int(cp["index"])] = gate
 		for side in [-1, 1]:
 			var p := gate.upright_base(side)
 			_uprights.append({
@@ -363,8 +363,12 @@ func gate_count() -> int:
 	return _gates.size()
 
 
-func gate_for_checkpoint(index: int) -> FabricGate:
-	return _gate_by_checkpoint.get(index)
+## The fabric gate standing within 2 m of `pos` (a checkpoint position), or null.
+func gate_near(pos: Vector3) -> FabricGate:
+	for g in _gates:
+		if Vector2(g.global_position.x - pos.x, g.global_position.z - pos.z).length() < 2.0:
+			return g
+	return null
 
 
 func smashable_count() -> int:
@@ -639,7 +643,10 @@ func _check_gates(ci: int, car: Car) -> void:
 
 
 func _on_checkpoint_passed(index: int, _total: int, _split: float, _delta: float) -> void:
-	var g: FabricGate = _gate_by_checkpoint.get(index)
+	var map := get_parent() as MapWorld
+	if map == null or index < 0 or index >= map.checkpoints.size():
+		return
+	var g := gate_near(map.checkpoints[index]["position"])
 	var game := get_node_or_null(^"/root/Game")
 	if g != null and game != null and game.get(&"player_car") is Car:
 		g.billow((game.player_car as Car).linear_velocity, 1.0)

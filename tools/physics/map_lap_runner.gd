@@ -1,8 +1,9 @@
 extends RefCounted
-## One timed standing-start lap of a real map by the analog Autopilot or the KeyboardBot, timed
-## like a time trial (RaceSession): the clock starts when the start-line hold is released and
-## stops where the route crosses the last checkpoint. Shared by tools/physics/run_tests.gd
-## and tools/physics/map_drive.gd.
+## One timed standing-start run of a route of the world by the analog Autopilot or the
+## KeyboardBot, timed like a time trial (RaceSession): the clock starts when the start-line hold
+## is released and stops where the route crosses its last checkpoint (a stage lap) or reaches
+## its arrival (the open liaison, from Hanami's finish stop to Momiji's grid, gates open).
+## Shared by tools/physics/run_tests.gd and tools/physics/map_drive.gd.
 
 const KeyboardBot := preload("res://tools/physics/keyboard_bot.gd")
 const DT := 1.0 / 120.0
@@ -19,20 +20,26 @@ var on_tick: Callable
 var driver_props: Dictionary = {}
 
 
-static func build_map(tree: SceneTree, map_id: String) -> MapWorld:
+## Builds the world with route `route_id` selected. Returns it with the build time in
+## `stats["build_ms"]`.
+static func build_map(tree: SceneTree, route_id: String) -> MapWorld:
 	var map := MapWorld.new()
 	map.name = "Map"
-	map.map_id = map_id
+	map.map_id = route_id
 	tree.root.add_child(map)
 	await map.build()
 	return map
 
 
-## Drives one lap and returns {finished, time, resets, impacts, hard_impacts, max_impact,
-## max_slip_deg, top_kmh, off_road_s (time with the car's centre beyond the road edge),
-## max_off_m (farthest beyond it)}. The bot is removed afterwards and every key released.
+## Drives the selected route once and returns {finished, time, resets, impacts, hard_impacts,
+## max_impact, max_slip_deg, top_kmh, off_road_s (time with the car's centre beyond the road
+## edge), max_off_m (farthest beyond it)}. The bot is removed afterwards and every key released.
+## An open route opens every gate first.
 func lap(tree: SceneTree, map: MapWorld, car: Car, keyboard: bool, limit: float = 300.0) -> Dictionary:
 	var track := map.track
+	if not map.closed:
+		for g: RoadGate in map.gates.values():
+			g.set_open(true, false)
 	var ap: Autopilot = KeyboardBot.new() if keyboard else Autopilot.new()
 	ap.curve = track.to_curve()
 	for key in driver_props:
@@ -41,7 +48,7 @@ func lap(tree: SceneTree, map: MapWorld, car: Car, keyboard: bool, limit: float 
 	car.input_throttle = 0.0
 	car.input_brake = 0.0
 	car.input_steer = 0.0
-	car.reset_to(map.spawn)
+	car.place_at_rest(map.spawn)
 	car.launch_hold = true
 	car.add_child(ap)
 	var impacts: Array[float] = []
@@ -56,7 +63,8 @@ func lap(tree: SceneTree, map: MapWorld, car: Car, keyboard: bool, limit: float 
 	var idx := track.nearest(car.global_position)
 	var last_p := track.progress_of(idx, car.global_position)
 	var dist := last_p - track.length if last_p > track.length * 0.5 else last_p
-	var finish_s: float = map.checkpoints[map.checkpoints.size() - 1]["progress"]
+	var finish_s: float = map.checkpoints[map.checkpoints.size() - 1]["progress"] if map.closed \
+			else map.arrival_progress - map.arrival_radius
 	var result := {"finished": false, "time": limit, "resets": 0, "impacts": 0, "hard_impacts": 0,
 			"max_impact": 0.0, "max_slip_deg": 0.0, "top_kmh": 0.0, "off_road_s": 0.0, "max_off_m": 0.0}
 	var elapsed := 0.0
