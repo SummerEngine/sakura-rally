@@ -1,10 +1,13 @@
 extends SceneTree
-## Headless contract check for assets/models/car/rally_car.glb.
+## Headless contract check for a car GLB (default assets/models/car/rally_car.glb).
 ## Run: $S --headless --disable-crash-handler --path . -s res://tools/car_check/check_car.gd
+##      [-- res://assets/models/car/hayate.glb]
 ## Prints nodes, wheel origins in car space, body AABB, triangle counts and materials, then
 ## "CAR_CHECK PASS" or "CAR_CHECK FAIL: <reasons>" (compared against docs/CONTRACTS.md).
+## Optional pop-up headlight nodes (PopUp_L / PopUp_R) must come as a pair with an identity
+## rest rotation.
 
-const CAR_PATH := "res://assets/models/car/rally_car.glb"
+const DEFAULT_CAR := "res://assets/models/car/rally_car.glb"
 const WHEEL_TOLERANCE := 0.01
 const EXPECTED_WHEELS := {
 	"Wheel_FL": Vector3(-0.78, 0.33, -1.27),
@@ -16,7 +19,11 @@ const EXPECTED_MATERIALS: Array[String] = [
 	"Paint", "Paint2", "Trim", "Chrome", "Glass", "Rubber", "Rim",
 	"HeadLight", "TailLight", "Decal_White", "Number",
 ]
-const BODY_SIZE := Vector3(1.80, 1.40, 4.20)
+## Nominal body size per GLB file name (docs/CONTRACTS.md); anything else uses "rally_car".
+const BODY_SIZES := {
+	"rally_car": Vector3(1.80, 1.40, 4.20),
+	"hayate": Vector3(1.70, 1.25, 4.15),
+}
 const BODY_SIZE_TOLERANCE := Vector3(0.25, 0.25, 0.25)
 const BODY_TRI_BUDGET := 14000
 const WHEEL_TRI_RANGE := Vector2i(1000, 1600)
@@ -24,9 +31,13 @@ const WHEEL_TRI_RANGE := Vector2i(1000, 1600)
 
 func _initialize() -> void:
 	var failures: PackedStringArray = []
-	var packed := load(CAR_PATH) as PackedScene
+	var args := OS.get_cmdline_user_args()
+	var car_path: String = args[0] if not args.is_empty() else DEFAULT_CAR
+	var body_size: Vector3 = BODY_SIZES.get(car_path.get_file().get_basename(), BODY_SIZES["rally_car"])
+	print("CAR ", car_path)
+	var packed := load(car_path) as PackedScene
 	if packed == null:
-		print("CAR_CHECK FAIL: cannot load ", CAR_PATH)
+		print("CAR_CHECK FAIL: cannot load ", car_path)
 		quit(1)
 		return
 	var car: Node3D = packed.instantiate() as Node3D
@@ -37,6 +48,7 @@ func _initialize() -> void:
 
 	var materials: Dictionary = {}
 	var total_tris := 0
+	var body_tris := 0
 	print("MESHES")
 	for mi: MeshInstance3D in _meshes(car):
 		var tris := _triangles(mi.mesh)
@@ -47,13 +59,16 @@ func _initialize() -> void:
 			var mname := mat.resource_name if mat != null else "<none>"
 			names.append(mname)
 			materials[mname] = true
-		print("  %-12s tris=%6d materials=%s" % [_owner_name(car, mi), tris, ", ".join(names)])
 		var top := _owner_name(car, mi)
-		if top == "Body" and tris > BODY_TRI_BUDGET:
-			failures.append("Body has %d tris (> %d)" % [tris, BODY_TRI_BUDGET])
+		var label := top if String(mi.name) == top else "%s/%s" % [top, mi.name]
+		print("  %-14s tris=%6d materials=%s" % [label, tris, ", ".join(names)])
+		if top == "Body":
+			body_tris += tris
 		if top.begins_with("Wheel_") and (tris < WHEEL_TRI_RANGE.x or tris > WHEEL_TRI_RANGE.y):
 			failures.append("%s has %d tris (outside %s)" % [top, tris, WHEEL_TRI_RANGE])
 	print("TOTAL_TRIS ", total_tris)
+	if body_tris > BODY_TRI_BUDGET:
+		failures.append("Body has %d tris (> %d)" % [body_tris, BODY_TRI_BUDGET])
 
 	print("WHEELS (car space, Godot axes)")
 	for wheel_name: String in EXPECTED_WHEELS:
@@ -75,6 +90,20 @@ func _initialize() -> void:
 		var c := car.find_child(caliper_name, true, false) as Node3D
 		if c != null:
 			print("  %s origin=%s" % [caliper_name, _car_xform(car, c).origin])
+	var popups := 0
+	for popup_name in ["PopUp_L", "PopUp_R"]:
+		var p := car.find_child(popup_name, true, false) as Node3D
+		if p == null:
+			continue
+		popups += 1
+		var xf := _car_xform(car, p)
+		print("  %s hinge=%s parent=%s" % [popup_name, xf.origin, p.get_parent().name])
+		if not xf.basis.is_equal_approx(Basis.IDENTITY):
+			failures.append("%s rest basis is not identity" % popup_name)
+		if (popup_name == "PopUp_L") != (xf.origin.x < 0.0):
+			failures.append("%s is on the wrong side" % popup_name)
+	if popups == 1:
+		failures.append("only one of PopUp_L / PopUp_R present")
 
 	var body := car.find_child("Body", true, false) as Node3D
 	if body == null:
@@ -82,9 +111,9 @@ func _initialize() -> void:
 	else:
 		var box := _aabb(car, body)
 		print("BODY_AABB position=%s size=%s end=%s" % [box.position, box.size, box.end])
-		var d := (box.size - BODY_SIZE).abs()
+		var d := (box.size - body_size).abs()
 		if d.x > BODY_SIZE_TOLERANCE.x or d.y > BODY_SIZE_TOLERANCE.y or d.z > BODY_SIZE_TOLERANCE.z:
-			failures.append("Body AABB size %s far from %s" % [box.size, BODY_SIZE])
+			failures.append("Body AABB size %s far from %s" % [box.size, body_size])
 	var full := _aabb(car, car)
 	print("CAR_AABB position=%s size=%s" % [full.position, full.size])
 	if absf(full.position.y) > 0.005:
