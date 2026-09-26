@@ -3520,38 +3520,33 @@
    "file": "res://assets/models/props/spectator_a.glb",
    "category": "spectator",
    "size": [
-    0.683,
-    1.78,
-    0.382
+    0.822,
+    1.879,
+    0.334
    ],
    "aabb_center": [
-    -0.029,
-    0.885,
-    -0.061
+    0.0,
+    0.939,
+    0.007
    ],
    "collision": {
     "type": "cylinder",
-    "radius": 0.25,
-    "height": 1.775
+    "radius": 0.3,
+    "height": 1.879
    },
    "placement": [
     "spectator_zone",
     "roadside"
    ],
-   "footprint_radius": 0.372,
+   "footprint_radius": 0.417,
    "seasons": [
     "spring",
     "autumn"
    ],
-   "tris": 386,
+   "tris": 713,
    "materials": [
-    "Cloth_Denim",
-    "Cloth_White",
-    "Cloth_Blue",
-    "Skin",
-    "Ink",
-    "Hair_Brown",
-    "Cloth_Red"
+    "Crowd_Base",
+    "Crowd_Dye"
    ],
    "nodes": [
     "spectator_a"
@@ -3562,37 +3557,33 @@
    "file": "res://assets/models/props/spectator_b.glb",
    "category": "spectator",
    "size": [
-    1.038,
-    1.96,
-    0.3
+    0.627,
+    1.819,
+    0.385
    ],
    "aabb_center": [
-    0.0,
-    0.975,
-    -0.02
+    0.053,
+    0.909,
+    -0.003
    ],
    "collision": {
     "type": "cylinder",
     "radius": 0.3,
-    "height": 1.955
+    "height": 1.819
    },
    "placement": [
     "spectator_zone",
     "roadside"
    ],
-   "footprint_radius": 0.526,
+   "footprint_radius": 0.367,
    "seasons": [
     "spring",
     "autumn"
    ],
-   "tris": 330,
+   "tris": 809,
    "materials": [
-    "Cloth_Navy",
-    "Cloth_Red",
-    "Cloth_Yellow",
-    "Skin",
-    "Ink",
-    "Hair_Black"
+    "Crowd_Base",
+    "Crowd_Dye"
    ],
    "nodes": [
     "spectator_b"
@@ -3603,40 +3594,33 @@
    "file": "res://assets/models/props/spectator_c.glb",
    "category": "spectator",
    "size": [
-    1.261,
-    2.293,
-    0.492
+    1.445,
+    2.659,
+    0.392
    ],
    "aabb_center": [
-    0.298,
-    1.142,
-    -0.029
+    0.41,
+    1.329,
+    -0.045
    ],
    "collision": {
     "type": "cylinder",
     "radius": 0.3,
-    "height": 2.288
+    "height": 2.659
    },
    "placement": [
     "spectator_zone",
     "roadside"
    ],
-   "footprint_radius": 0.947,
+   "footprint_radius": 1.151,
    "seasons": [
     "spring",
     "autumn"
    ],
-   "tris": 378,
+   "tris": 835,
    "materials": [
-    "Cloth_White",
-    "Cloth_Navy",
-    "Cloth_Pink",
-    "Skin",
-    "Ink",
-    "Hair_Black",
-    "Wood_Pale",
-    "Vermilion",
-    "White"
+    "Crowd_Base",
+    "Crowd_Dye"
    ],
    "nodes": [
     "spectator_c"
@@ -3647,40 +3631,33 @@
    "file": "res://assets/models/props/spectator_d.glb",
    "category": "spectator",
    "size": [
-    0.544,
-    1.8,
-    0.722
+    0.519,
+    1.735,
+    0.768
    ],
    "aabb_center": [
-    0.0,
-    0.895,
-    -0.125
+    -0.009,
+    0.868,
+    -0.239
    ],
    "collision": {
     "type": "cylinder",
-    "radius": 0.25,
-    "height": 1.795
+    "radius": 0.28,
+    "height": 1.735
    },
    "placement": [
     "spectator_zone",
     "roadside"
    ],
-   "footprint_radius": 0.487,
+   "footprint_radius": 0.627,
    "seasons": [
     "spring",
     "autumn"
    ],
-   "tris": 452,
+   "tris": 890,
    "materials": [
-    "Cloth_Khaki",
-    "Cloth_Black",
-    "Cloth_Green",
-    "Skin",
-    "Ink",
-    "Hair_Grey",
-    "Red",
-    "Metal_Dark",
-    "Glass"
+    "Crowd_Base",
+    "Crowd_Dye"
    ],
    "nodes": [
     "spectator_d"
@@ -3691,38 +3668,33 @@
    "file": "res://assets/models/props/spectator_e.glb",
    "category": "spectator",
    "size": [
-    0.544,
-    1.38,
-    0.624
+    0.502,
+    1.159,
+    0.675
    ],
    "aabb_center": [
     0.0,
-    0.685,
-    -0.202
+    0.584,
+    -0.182
    ],
    "collision": {
     "type": "cylinder",
     "radius": 0.3,
-    "height": 1.375
+    "height": 1.164
    },
    "placement": [
     "spectator_zone",
     "roadside"
    ],
-   "footprint_radius": 0.518,
+   "footprint_radius": 0.527,
    "seasons": [
     "spring",
     "autumn"
    ],
-   "tris": 362,
+   "tris": 726,
    "materials": [
-    "Cloth_Black",
-    "Cloth_White",
-    "Cloth_Orange",
-    "Skin",
-    "Ink",
-    "Hair_Black",
-    "Cloth_Navy"
+    "Crowd_Base",
+    "Crowd_Dye"
    ],
    "nodes": [
     "spectator_e"
@@ -3733,40 +3705,33 @@
    "file": "res://assets/models/props/spectator_f.glb",
    "category": "spectator",
    "size": [
-    0.583,
-    1.295,
-    0.463
+    0.8,
+    1.664,
+    0.391
    ],
    "aabb_center": [
-    0.032,
-    0.644,
-    -0.007
+    0.178,
+    0.832,
+    0.002
    ],
    "collision": {
     "type": "cylinder",
-    "radius": 0.2,
-    "height": 1.292
+    "radius": 0.22,
+    "height": 1.664
    },
    "placement": [
     "spectator_zone",
     "roadside"
    ],
-   "footprint_radius": 0.332,
+   "footprint_radius": 0.591,
    "seasons": [
     "spring",
     "autumn"
    ],
-   "tris": 436,
+   "tris": 953,
    "materials": [
-    "Cloth_Navy",
-    "Cloth_Pink",
-    "Cloth_Teal",
-    "Skin",
-    "Ink",
-    "Hair_Black",
-    "Cloth_Yellow",
-    "Red",
-    "Red_Dark"
+    "Crowd_Base",
+    "Crowd_Dye"
    ],
    "nodes": [
     "spectator_f"
@@ -3800,7 +3765,7 @@
     "spring",
     "autumn"
    ],
-   "tris": 876,
+   "tris": 884,
    "materials": [
     "Crowd_Base"
    ],
@@ -3993,6 +3958,228 @@
    ],
    "nodes": [
     "garage_tyres"
+   ]
+  },
+  {
+   "name": "spectator_g",
+   "file": "res://assets/models/props/spectator_g.glb",
+   "category": "spectator",
+   "size": [
+    1.27,
+    2.146,
+    1.175
+   ],
+   "aabb_center": [
+    0.253,
+    1.073,
+    -0.06
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.3,
+    "height": 2.146
+   },
+   "placement": [
+    "spectator_zone",
+    "roadside"
+   ],
+   "footprint_radius": 0.904,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 810,
+   "materials": [
+    "Crowd_Base",
+    "Crowd_Dye"
+   ],
+   "nodes": [
+    "spectator_g"
+   ]
+  },
+  {
+   "name": "spectator_h",
+   "file": "res://assets/models/props/spectator_h.glb",
+   "category": "spectator",
+   "size": [
+    0.635,
+    1.812,
+    0.471
+   ],
+   "aabb_center": [
+    0.045,
+    0.906,
+    -0.086
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.28,
+    "height": 1.812
+   },
+   "placement": [
+    "spectator_zone",
+    "roadside"
+   ],
+   "footprint_radius": 0.477,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 804,
+   "materials": [
+    "Crowd_Base",
+    "Crowd_Dye"
+   ],
+   "nodes": [
+    "spectator_h"
+   ]
+  },
+  {
+   "name": "spectator_i",
+   "file": "res://assets/models/props/spectator_i.glb",
+   "category": "spectator",
+   "size": [
+    0.819,
+    1.741,
+    0.653
+   ],
+   "aabb_center": [
+    0.078,
+    0.871,
+    -0.182
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.3,
+    "height": 1.741
+   },
+   "placement": [
+    "spectator_zone",
+    "roadside"
+   ],
+   "footprint_radius": 0.694,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 725,
+   "materials": [
+    "Crowd_Base",
+    "Crowd_Dye"
+   ],
+   "nodes": [
+    "spectator_i"
+   ]
+  },
+  {
+   "name": "spectator_j",
+   "file": "res://assets/models/props/spectator_j.glb",
+   "category": "spectator",
+   "size": [
+    0.595,
+    1.776,
+    0.504
+   ],
+   "aabb_center": [
+    0.0,
+    0.888,
+    -0.097
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.32,
+    "height": 1.776
+   },
+   "placement": [
+    "spectator_zone",
+    "roadside"
+   ],
+   "footprint_radius": 0.35,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 815,
+   "materials": [
+    "Crowd_Base",
+    "Crowd_Dye"
+   ],
+   "nodes": [
+    "spectator_j"
+   ]
+  },
+  {
+   "name": "spectator_k",
+   "file": "res://assets/models/props/spectator_k.glb",
+   "category": "spectator",
+   "size": [
+    0.738,
+    2.228,
+    0.27
+   ],
+   "aabb_center": [
+    0.0,
+    1.114,
+    -0.02
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.32,
+    "height": 2.228
+   },
+   "placement": [
+    "spectator_zone",
+    "roadside"
+   ],
+   "footprint_radius": 0.379,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 831,
+   "materials": [
+    "Crowd_Base",
+    "Crowd_Dye"
+   ],
+   "nodes": [
+    "spectator_k"
+   ]
+  },
+  {
+   "name": "spectator_l",
+   "file": "res://assets/models/props/spectator_l.glb",
+   "category": "spectator",
+   "size": [
+    0.582,
+    1.336,
+    0.775
+   ],
+   "aabb_center": [
+    0.0,
+    0.667,
+    -0.158
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.3,
+    "height": 1.335
+   },
+   "placement": [
+    "spectator_zone",
+    "roadside"
+   ],
+   "footprint_radius": 0.579,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 698,
+   "materials": [
+    "Crowd_Base",
+    "Crowd_Dye"
+   ],
+   "nodes": [
+    "spectator_l"
    ]
   }
  ]

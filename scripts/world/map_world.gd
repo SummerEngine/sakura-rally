@@ -496,6 +496,8 @@ func _prop_mesh(name_: String) -> Mesh:
 			var am := mesh as ArrayMesh
 			var has_vc: bool = am != null and (am.surface_get_format(s) & Mesh.ARRAY_FORMAT_COLOR) != 0
 			var o := ToonMaterials.opts_for_name(mat_name, has_vc)
+			if Crowd.is_person(name_):
+				o.merge(Crowd.material_opts(mat_name), true)
 			if o.has("sway"):
 				o.merge(extra, true)
 			if base and o.has("emission_energy") and not o.has("emission"):
@@ -533,6 +535,7 @@ func _build_instances() -> void:
 			continue
 		var smashable := SoftCourse.is_smashable(prop_name)
 		var soft_legs: bool = prop_name in SoftCourse.SOFT_UPRIGHT_PROPS
+		var person := Crowd.is_person(prop_name)
 		var mesh := _prop_mesh(prop_name)
 		if mesh == null:
 			continue
@@ -552,6 +555,7 @@ func _build_instances() -> void:
 			var list: Array = groups[key]
 			var mm := MultiMesh.new()
 			mm.transform_format = MultiMesh.TRANSFORM_3D
+			mm.use_custom_data = person # the dye and motion phase of each spectator (Crowd)
 			mm.mesh = mesh
 			mm.instance_count = list.size()
 			for k in list.size():
@@ -565,6 +569,8 @@ func _build_instances() -> void:
 				elif soft_legs:
 					uprights += soft_course.add_soft_uprights(mm, k, e, m)
 					_arches.append(Vector3(e[0], e[1], e[2]))
+				elif person:
+					soft_course.crowd.add_person(prop_name, mesh, mm, k, e, m)
 			var mmi := MultiMeshInstance3D.new()
 			mmi.name = "%s_%d_%d" % [prop_name, key.x, key.y]
 			mmi.multimesh = mm
@@ -575,9 +581,10 @@ func _build_instances() -> void:
 				mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 			props_root.add_child(mmi)
 			total += list.size()
-		# collision: soft dressing has none, SoftCourse tests it against the cars itself
+		# collision: soft dressing and people have none, SoftCourse and Crowd test them against
+		# the cars themselves
 		var col: Dictionary = m.get("collision", {"type": "none"})
-		if smashable or soft_legs or col.get("type", "none") == "none":
+		if smashable or soft_legs or person or col.get("type", "none") == "none":
 			continue
 		for e in inst[prop_name]:
 			var key := Vector2i(int(floor(e[0] / CHUNK)), int(floor(e[2] / CHUNK)))

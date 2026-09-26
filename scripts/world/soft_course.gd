@@ -13,6 +13,9 @@ extends Node3D
 ##
 ## Everything comes back on a stage restart (a new car), a reset to the track (the car jumps)
 ## and a map reload (a new MapWorld builds a new SoftCourse).
+##
+## Spectators are knockable people, not smashables: the child `crowd` (scripts/world/crowd.gd)
+## gets each car's box from the same per-tick scan and costs speed through `slow_car()`.
 
 ## Speed share lost on a hit, sound, how readily the prop is flung (1 = with the car), and the
 ## colour of the chips thrown with it.
@@ -134,6 +137,8 @@ var _settle_in: int = 0
 
 ## Hits since the last restore (read by tools/game/softcourse_probe.gd and stats).
 var hits: int = 0
+## Knockable spectators (MapWorld registers them; scanned and restored with the rest).
+var crowd: Crowd
 ## Warm-up: the first kind index not yet drawn, frames left on the batch on screen.
 var _warm_next: int = -1
 var _warm_hold: int = 0
@@ -142,6 +147,8 @@ var _warmed: bool = false
 
 func _init() -> void:
 	name = "SoftCourse"
+	crowd = Crowd.new()
+	add_child(crowd)
 	_rng.seed = 20260926
 
 
@@ -530,6 +537,7 @@ func _scan_car(ci: int, car: Car) -> void:
 			if int(u["touch"]) < _tick - 1:
 				_hit_upright(u, car, ci)
 			u["touch"] = _tick
+	crowd.scan_car(ci, car, c, ax, az, half, cy0, cy1)
 
 
 ## Car box (centre, axes ax / az with half extents hx / hz, all in world xz) against prop id.
@@ -563,8 +571,9 @@ func _overlaps(id: int, x: float, z: float, ax: Vector2, az: Vector2, hx: float,
 	return true
 
 
-## Knocks `loss` of the car's horizontal speed off with a central impulse (no torque, no lift).
-func _slow(car: Car, ci: int, loss: float) -> float:
+## Knocks `loss` of the car's horizontal speed off with a central impulse (no torque, no lift);
+## returns the share taken after the recent-hits budget (Crowd uses it too).
+func slow_car(car: Car, ci: int, loss: float) -> float:
 	loss *= clampf(1.0 - _car_recent[ci] / LOSS_BUDGET, LOSS_FLOOR, 1.0)
 	_car_recent[ci] += loss
 	var v := car.linear_velocity
@@ -577,7 +586,7 @@ func _smash(id: int, car: Car, ci: int) -> void:
 	var v := car.linear_velocity
 	var hv := Vector3(v.x, 0.0, v.z)
 	var speed := hv.length()
-	var loss := _slow(car, ci, float(data["loss"]))
+	var loss := slow_car(car, ci, float(data["loss"]))
 	_broken[id] = 1
 	_broken_list.append(id)
 	hits += 1
@@ -591,9 +600,7 @@ func _smash(id: int, car: Car, ci: int) -> void:
 		_mms[_mm_ref[id]].set_instance_transform(_mm_idx[id], Transform3D(Basis().scaled(Vector3.ZERO), xf.origin))
 		_spawn_debris(_kind_mesh[_kind[id]], xf, v, car.global_position, fling)
 	var point := Vector3(_cx[id], clampf(car.global_position.y + 0.5, _y0[id], _y1[id]), _cz[id])
-	_burst(point, v, data["chip"], speed)
-	_burst_car = car
-	_burst_ticks = 240
+	burst(point, car, data["chip"], speed)
 	var sound := get_node_or_null(^"/root/Sound")
 	if sound != null:
 		var db: float = float(data["db"]) + linear_to_db(clampf(speed / 22.0, 0.2, 1.0))
@@ -605,7 +612,7 @@ func _hit_upright(u: Dictionary, car: Car, ci: int) -> void:
 	var v := car.linear_velocity
 	var hv := Vector3(v.x, 0.0, v.z)
 	var speed := hv.length()
-	var loss := _slow(car, ci, UPRIGHT_LOSS)
+	var loss := slow_car(car, ci, UPRIGHT_LOSS)
 	hits += 1
 	var point := Vector3(u["x"], car.global_position.y + 0.6, u["z"])
 	var push := clampf(speed / 20.0, 0.25, 1.0)
@@ -787,12 +794,16 @@ func _retire(i: int) -> void:
 	_debris_live -= 1
 
 
-## One low-poly dust puff and a spray of chips in the prop's colour.
-func _burst(point: Vector3, car_v: Vector3, chip_color: Color, speed: float) -> void:
+## One low-poly dust puff and a spray of chips in the prop's colour, thrown along `car`'s
+## travel; the dust keeps the line of sight to the car clear for a while.
+func burst(point: Vector3, car: Car, chip_color: Color, speed: float) -> void:
 	var i := _burst_next
 	_burst_next = (_burst_next + 1) % BURSTS
+	var car_v := car.linear_velocity
 	var dir := Vector3(car_v.x, 0.0, car_v.z)
 	dir = (dir.normalized() + Vector3.UP * 0.8).normalized() if dir.length_squared() > 0.25 else Vector3.UP
+	_burst_car = car
+	_burst_ticks = 240
 	var puff := _puffs[i]
 	puff.global_position = point
 	puff.amount_ratio = clampf(0.4 + speed / 30.0, 0.4, 1.0)
@@ -1007,3 +1018,4 @@ func restore() -> void:
 	_gate_side.fill(0.0)
 	hits = 0
 	_car_recent.fill(0.0)
+	crowd.restore()

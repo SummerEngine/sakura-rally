@@ -23,7 +23,8 @@ static var _cache: Dictionary = {}
 ## opts: ramp (String), vertex_color (bool), sway (float), sway_start, sway_end,
 ## receive_shadow (float), emission (Color), emission_energy (float), rim (float),
 ## spec (float), spec_size (float), grain (float), instance_tint (bool), gloss (float),
-## wrap (float), shade_tint_amount (float), texture (Texture2D), cull (String: back/disabled)
+## wrap (float), shade_tint_amount (float), texture (Texture2D), cull (String: back/disabled),
+## crowd (float: spectator idle / cheer motion, shaders/inc/crowd.gdshaderinc)
 static func make(color: Color, opts: Dictionary = {}) -> ShaderMaterial:
 	var key := "%s|%s" % [color.to_html(), str(opts)]
 	if _cache.has(key):
@@ -47,6 +48,7 @@ static func make(color: Color, opts: Dictionary = {}) -> ShaderMaterial:
 	m.set_shader_parameter("gloss_band", opts.get("gloss", 0.0))
 	m.set_shader_parameter("wrap_light", opts.get("wrap", 0.0))
 	m.set_shader_parameter("shade_tint_amount", opts.get("shade_tint_amount", 1.0))
+	m.set_shader_parameter("crowd_motion", opts.get("crowd", 0.0))
 	if opts.has("emission"):
 		m.set_shader_parameter("emission", opts["emission"])
 		m.set_shader_parameter("emission_energy", opts.get("emission_energy", 1.0))
