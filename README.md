@@ -17,7 +17,7 @@ through [docs/CONTRACTS.md](docs/CONTRACTS.md).
 
 Open the project in Summer Engine and press Play; `npx -y summer-engine@latest run .` opens it.
 Stock Godot 4.7 runs it too: `godot --path .`. On macOS, `Play Sakura Rally.command` starts the
-game directly with Godot or Summer, whichever is installed.
+game directly with Summer, or with Godot when Summer is not installed.
 
 The window opens at 16:9, sized to 80 % of the screen. Fullscreen is in Settings.
 
