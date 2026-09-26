@@ -3,25 +3,13 @@ extends Node3D
 ## docs/CONTRACTS.md with a toy drivetrain (6-speed box, turbo lag, wheelspin, limiter),
 ## so CarAudio can be exercised and recorded without the physics slice.
 ## Driven by setting input_* and the scripted fields below from a test driver.
+## User arg `--na4` makes it the Hayate: engine_sound &"na4", 1000-8000 rpm, no turbo.
 
 signal gear_changed(new_gear: int, old_gear: int)
 signal backfire
 signal rev_limiter
 signal impact(strength: float, point: Vector3)
 signal landed(strength: float)
-
-
-class WheelState:
-	var contact: bool = true
-	var surface: StringName = &"gravel"
-	var slip_long: float = 0.0
-	var slip_lat: float = 0.0
-	var slip: float = 0.0
-	var load: float = 3065.0
-	var compression: float = 0.5
-	var contact_point: Vector3 = Vector3.ZERO
-	var contact_normal: Vector3 = Vector3.UP
-	var spin_speed: float = 0.0
 
 
 const RATIOS: Array[float] = [3.4, 2.3, 1.7, 1.35, 1.1, 0.92]
@@ -43,6 +31,8 @@ var boost: float = 0.0
 var speed_kmh: float = 0.0
 var airborne_time: float = 0.0
 var wheels: Array = []
+var engine_sound: StringName = &"turbo4"
+var turbo: bool = true
 
 # Control inputs
 var input_throttle: float = 0.0
@@ -67,7 +57,21 @@ var _ecu_timer: float = 0.0
 
 func _init() -> void:
 	for i in 4:
-		wheels.append(WheelState.new())
+		var w := WheelState.new() # the car's own per-wheel record (scripts/vehicle/wheel_state.gd)
+		w.contact = true
+		w.surface = &"gravel"
+		w.load = 3065.0
+		w.compression = 0.5
+		wheels.append(w)
+	# Read here, not in the driver: CarAudio (a child) picks its set in its own _ready,
+	# which runs before any parent's _ready.
+	if "--na4" in OS.get_cmdline_user_args():
+		engine_sound = &"na4"
+		turbo = false
+		idle_rpm = 1000.0
+		rpm = idle_rpm
+		max_rpm = 8000.0
+		shift_rpm = 7600.0
 
 
 func set_surface(surface: StringName) -> void:
@@ -123,7 +127,7 @@ func _physics_process(dt: float) -> void:
 	if _limiter_cut > 0.0:
 		throttle = 0.0
 	# ---- turbo: spools with rpm*throttle, lag ~0.6 s up, faster down
-	var boost_target := clampf((rpm - 2600.0) / 2600.0, 0.0, 1.0) * throttle
+	var boost_target := clampf((rpm - 2600.0) / 2600.0, 0.0, 1.0) * throttle if turbo else 0.0
 	boost = lerpf(boost, boost_target, 1.0 - exp(-dt / (0.55 if boost_target > boost else 0.25)))
 	# ---- longitudinal dynamics
 	var engaged := gear > 0 and not is_shifting
