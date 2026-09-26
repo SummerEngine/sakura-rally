@@ -238,6 +238,10 @@ def _dressing():
     f += [one("road_mirror", 10, 6.0, 6.7, "road"), one("sign_curve_left", 10, -40.0, -6.7, "along", yaw_add=180.0),
           one("shed", 11, -8.0, 27.0, "road", radius=3.4), one("log", 11, -20.0, 12.5, "along"),
           one("log", 11, -20.0, 13.2, "along"), one("log", 11, -19.8, 12.85, "along", y_offset=0.5)]
+    # a mountain-road rest stop: vending machines, a bench and a lantern before the woods
+    f += [one("vending_machine", 9, 88.0, 11.0, "road"), one("vending_machine", 9, 89.3, 11.0, "road"),
+          one("bench", 9, 92.5, 11.6, "road"),
+          one("stone_lantern", 9, 84.5, 10.5, "road", scale=0.8)]
 
     # ------------------------------------------------------------ hairpins
     f += approach(12, 1, "sign_curve_left") + hairpin(12, 1)
@@ -255,8 +259,12 @@ def _dressing():
           one("stone_lantern", 18, 55.0, -9.0, "road", scale=0.8), one("torii_small", 18, 52.0, -9.4, "road"),
           one("sakura_young", 18, 58.0, -13.0, "road"), one("bench", 18, 46.0, -9.4, "road"),
           one("road_mirror", 18, 90.0, 6.8, "road")]
+    f += [one("kei_truck", 18, 34.0, 10.5, "along", yaw_add=4.0), crowd(18, 40.0, 15.0, 4, 2.5)]
     f += approach(20, 1, "sign_curve_left") + hairpin(20, 1, bales="hay_bale_square")
     f += [one("road_mirror", 20, 26.0, 6.8, "road"), one("marshal_post", 20, -32.0, 10.0, "road")]
+    f += [one("torii_small", 21, 40.0, -9.6, "road"), one("hokora", 21, 40.0, -12.8, "road"),
+          one("stone_lantern", 21, 37.5, -10.4, "road", scale=0.8), one("stone_lantern", 21, 42.5, -10.4, "road", scale=0.8),
+          row(FLAGS, 21, 22.0, 54.0, 9.2, 8.0, sides=(1,))]
     # masonry retaining walls through the cutting before the summit
     f += [row("stone_wall", 22, -30.0, 30.0, 9.2, 2.0, sides=(-1, 1)),
           one("stone_lantern", 22, 34.0, -8.8, "road"), one("jizo", 22, 36.0, -8.5, "road")]
@@ -290,6 +298,9 @@ def _dressing():
     f += bale_stack(28, -8.0, -8.0) + [row(FLAGS, 28, -12.0, 12.0, 9.0, 8.0, sides=(-1, 1)),
                                        crowd(28, 0.0, 16.0, 7, 4.0)]
     f += torii_path(29, 20.0, 12.0, 9, 2.5, -1)
+    # fans camping on the bank above the gravel: tent, van and a small crowd behind tape
+    f += [one("tent", 29, 72.0, -22.0, "road"), one("kei_truck", 29, 80.0, -22.5, "along", yaw_add=10.0),
+          crowd(29, 76.0, -17.0, 5, 3.0), row("tape_post", 29, 64.0, 88.0, -11.0, 3.05, sides=(-1,))]
     f += gate(4)
     # forestry yard and a mountain shrine in the cedars
     f += [one("shed", 30, 52.0, -30.0, "road", radius=3.4), one("kei_truck", 30, 44.0, -22.0, "along", yaw_add=15.0, sink=0.25),
