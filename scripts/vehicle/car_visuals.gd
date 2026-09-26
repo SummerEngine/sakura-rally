@@ -1,16 +1,17 @@
 class_name CarVisuals
 extends Node3D
 ## Drives the car's visual model from the physics wheel state: wheel spin, steering and suspension
-## travel, calipers (steer only) and a subtle visual body lean. Uses the real model
-## `assets/models/car/rally_car.glb` when present (node names per docs/CONTRACTS.md), otherwise builds
-## a low-poly placeholder hatchback from code.
+## travel, calipers (steer only) and a subtle visual body lean. Uses the car scene's model
+## (`model_path`, node names per docs/CONTRACTS.md) when present, otherwise builds a low-poly
+## placeholder hatchback from code.
 ##
 ## Updated in _physics_process so physics interpolation smooths it together with the body.
 
-const MODEL_PATH := "res://assets/models/car/rally_car.glb"
 const WHEEL_NAMES: Array[StringName] = [&"Wheel_FL", &"Wheel_FR", &"Wheel_RL", &"Wheel_RR"]
 const CALIPER_NAMES: Array[StringName] = [&"Caliper_FL", &"Caliper_FR", &"Caliper_RL", &"Caliper_RR"]
 
+## The car's GLB (per car scene: rally_car.glb for the Sakura, hayate.glb for the Hayate).
+@export_file("*.glb") var model_path: String = "res://assets/models/car/rally_car.glb"
 ## Visual-only body lean per g of acceleration (degrees) and its limit.
 @export var lean_per_g_deg: float = 1.1
 @export var max_lean_deg: float = 1.6
@@ -40,8 +41,8 @@ var _time: float = 0.0
 
 func _ready() -> void:
 	_car = get_parent() as Car
-	if ResourceLoader.exists(MODEL_PATH):
-		var scene := load(MODEL_PATH) as PackedScene
+	if ResourceLoader.exists(model_path):
+		var scene := load(model_path) as PackedScene
 		if scene != null:
 			model = scene.instantiate() as Node3D
 	if model == null:

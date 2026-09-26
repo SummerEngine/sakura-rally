@@ -30,6 +30,10 @@ signal lap_completed(lap_time: float)
 @export var lookahead_time: float = 0.42
 @export var lookahead_min: float = 7.0
 @export var lookahead_max: float = 30.0
+## Running wide: beyond `line_tolerance` metres off the line the target speed drops by
+## `wide_slowdown` per metre (down to 60 %), the way a driver lifts when the car drifts out.
+@export var line_tolerance: float = 2.0
+@export var wide_slowdown: float = 0.05
 
 var curve: Curve3D
 var curve_transform: Transform3D = Transform3D.IDENTITY
@@ -185,6 +189,7 @@ func _drive(delta: float) -> void:
 	var i_ahead := _index_at(progress + lead)
 	var grip_ratio := clampf(_car.current_grip() / _grip_at_cached(_index), 0.5, 1.0)
 	target_speed = minf(_speeds[_index], _speeds[i_ahead]) * speed_scale * sqrt(grip_ratio)
+	target_speed *= clampf(1.0 - (absf(lateral_error) - line_tolerance) * wide_slowdown, 0.6, 1.0)
 	var err := target_speed - speed
 	var thr := 0.0
 	var brk := 0.0
