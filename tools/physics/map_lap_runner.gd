@@ -42,6 +42,12 @@ func lap(tree: SceneTree, map: MapWorld, car: Car, keyboard: bool, limit: float 
 			g.set_open(true, false)
 	var ap: Autopilot = KeyboardBot.new() if keyboard else Autopilot.new()
 	ap.curve = track.to_curve()
+	ap.closed = map.closed
+	if not map.closed:
+		# as Main.drive_curve: the line runs on past the arrival, so the car stops there itself
+		var fwd := -map.arrival.basis.z
+		for k in range(1, 6):
+			ap.curve.add_point(map.arrival.origin + fwd * (9.0 * k) + Vector3.UP * 0.3)
 	for key in driver_props:
 		ap.set(key, driver_props[key])
 	car.controlled_by_player = false

@@ -83,6 +83,7 @@ func _run() -> void:
 		_record("world build", "%d ms" % map.stats["build_ms"], "loads", map.is_built)
 		for route_id in routes:
 			await test_map(map, route_id, cars)
+		await test_gates(map, cars[0])
 		map.queue_free()
 		await physics_frame
 	_print_report()
@@ -1307,6 +1308,62 @@ func test_map(map: MapWorld, route_id: String, cars: Array[String]) -> void:
 				kb["finished"] and kb["resets"] == 0 and kb["hard_impacts"] == 0 and kb["max_slip_deg"] < 25.0 and ratio <= 1.12)
 		await _drop_car()
 	car_id = ""
+
+
+## The closed-road gates: a car driven into a closed gate at 60 km/h is stopped by it, and the
+## same car drives through once the gate is open.
+func test_gates(map: MapWorld, id: String) -> void:
+	if map.gates.is_empty():
+		_record("road gates", "none in the world", "gates on the branch", false)
+		return
+	await _spawn_car(id)
+	for gate: RoadGate in map.gates.values():
+		map.select_route(gate.route)
+		var t := map.track
+		var gs := t.progress_of(t.nearest(gate.global_position), gate.global_position)
+		for open: bool in [false, true]:
+			gate.set_open(open, false)
+			var r := await _drive_at_gate(map, gs)
+			var passed: bool = r["past"] > 15.0
+			_record("gate %s %s" % [gate.id, "open" if open else "closed"],
+					"%s, %.0f km/h at the gate, reached %+.1f m, hardest hit %.2f" % ["through" if passed else "stopped",
+					r["kmh"], r["past"], r["hit"]],
+					"drives through" if open else "stops the car",
+					passed if open else (not passed and r["hit"] > 0.0 and r["past"] < 0.5))
+		gate.set_open(false, false)
+	await _drop_car()
+	car_id = ""
+
+
+## Drives the car along the selected route from 60 m before progress `gs` under an autopilot
+## capped at 60 km/h for 7 s. Returns {past: farthest progress beyond gs (m), kmh: speed 5 m
+## before it, hit: the strongest impact}.
+func _drive_at_gate(map: MapWorld, gs: float) -> Dictionary:
+	var t := map.track
+	impacts.clear()
+	car.controlled_by_player = false
+	car.place_at_rest(t.transform_at_progress(gs - 60.0))
+	var ap := Autopilot.new()
+	ap.curve = t.to_curve()
+	ap.closed = map.closed
+	ap.max_speed_kmh = 60.0
+	car.add_child(ap)
+	var past := -INF
+	var kmh := 0.0
+	var idx := t.nearest(car.global_position)
+	for i in int(7.0 / DT):
+		await physics_frame
+		idx = t.nearest(car.global_position, idx, 10)
+		var p := t.progress_of(idx, car.global_position) - gs
+		if p > -5.0 and kmh == 0.0:
+			kmh = car.speed_kmh
+		past = maxf(past, p)
+	car.remove_child(ap)
+	ap.free()
+	var hit := 0.0
+	for s in impacts:
+		hit = maxf(hit, s)
+	return {"past": past, "kmh": kmh, "hit": hit}
 
 
 func _print_report() -> void:

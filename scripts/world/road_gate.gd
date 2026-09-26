@@ -28,7 +28,6 @@ const SWING_TIME := 1.8
 const MARSHAL_STEP := 1.8
 const VIEW_RANGE := 600.0
 const FONT_LATIN := preload("res://assets/fonts/DelaGothicOne-Regular.ttf")
-const FONT_JP := preload("res://assets/fonts/YujiSyuku-Regular.ttf")
 const INK := Color("2a2235")
 
 var id: String = ""
@@ -181,18 +180,18 @@ func _box(st: SurfaceTool, c: Vector3, size: Vector3, color: Color) -> void:
 
 
 ## The closed-road board on the left wing, facing the approaching traffic (+Z): white with a
-## red border, 通行止め in red brush letters over ROAD CLOSED.
+## red border, 通行止め in heavy red letters over ROAD CLOSED.
 func _add_notice(body: Node3D, length: float) -> void:
 	var holder := Node3D.new()
 	holder.name = "Notice"
-	holder.position = Vector3(length * 0.55, 1.62, 0.1)
+	holder.position = Vector3(length * 0.5, 1.75, 0.1)
 	body.add_child(holder)
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	_box(st, Vector3(0.0, 0.0, 0.0), Vector3(1.9, 1.0, 0.05), RED)
-	_box(st, Vector3(0.0, 0.0, 0.015), Vector3(1.74, 0.84, 0.05), WHITE)
-	_box(st, Vector3(-0.6, -0.72, -0.02), Vector3(0.07, 0.6, 0.07), POST)
-	_box(st, Vector3(0.6, -0.72, -0.02), Vector3(0.07, 0.6, 0.07), POST)
+	_box(st, Vector3(0.0, 0.0, 0.0), Vector3(2.3, 1.2, 0.05), RED)
+	_box(st, Vector3(0.0, 0.0, 0.015), Vector3(2.1, 1.0, 0.05), WHITE)
+	for x in [-0.75, 0.75]:
+		_box(st, Vector3(x, -0.8, -0.02), Vector3(0.07, 0.62, 0.07), POST)
 	st.generate_normals()
 	var mesh := st.commit()
 	mesh.surface_set_material(0, (body.get_node("Mesh") as MeshInstance3D).mesh.surface_get_material(0))
@@ -200,20 +199,20 @@ func _add_notice(body: Node3D, length: float) -> void:
 	mi.mesh = mesh
 	mi.visibility_range_end = VIEW_RANGE
 	holder.add_child(mi)
-	for line in [["通行止め", FONT_JP, 0.13, RED, 0.12], ["ROAD CLOSED", FONT_LATIN, 0.0, INK, 0.2]]:
+	# [text, glyph height (m), colour, y]
+	for line in [["通行止め", 0.44, RED, 0.12], ["ROAD CLOSED", 0.19, INK, -0.3]]:
 		var l := Label3D.new()
 		l.text = line[0]
-		l.font = line[1]
+		l.font = FONT_LATIN # Dela Gothic One carries the kana and kanji too
 		l.font_size = 128
-		l.outline_size = 0 if line[3] == INK else 10
-		l.outline_modulate = WHITE
-		l.pixel_size = 0.0034 if line[3] == RED else 0.0016
-		l.modulate = line[3]
+		l.outline_size = 0
+		l.pixel_size = float(line[1]) / 128.0
+		l.modulate = line[2]
 		l.billboard = BaseMaterial3D.BILLBOARD_DISABLED
 		l.double_sided = false
 		l.shaded = true
 		l.alpha_cut = Label3D.ALPHA_CUT_OPAQUE_PREPASS
 		l.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		l.visibility_range_end = VIEW_RANGE * 0.6
-		l.position = Vector3(0.0, line[2] - (0.26 if line[3] == INK else 0.0), 0.045)
+		l.position = Vector3(0.0, line[3], 0.045)
 		holder.add_child(l)

@@ -71,6 +71,7 @@ const CATEGORY_VIEW := {
 	"village": [500.0, true],
 	"roadside": [450.0, true],
 	"rally": [500.0, true],
+	"corner_sign": [1000.0, true],
 	"spectator": [260.0, true],
 	"vehicle": [500.0, true],
 }
