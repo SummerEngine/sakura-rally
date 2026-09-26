@@ -1,0 +1,17 @@
+{
+  "model": "elevenlabs/music/v2.5",
+  "params": {
+    "prompt": "Chill, warm instrumental lo-fi Japanese city-pop with an acoustic feel for a relaxed, untimed summer-afternoon drive between rally stages in a video game, played underneath a car engine. 86 BPM, 4/4, key of D major. Fingerpicked nylon-string acoustic guitar, mellow Rhodes electric piano chords, a few soft koto accents, round warm bass, laid-back lo-fi drum groove with soft kick, brushed snare and a gentle shaker, subtle tape warmth, an airy flute melody now and then. Lazy, sunny, carefree, low energy, lots of space, light low-mids, polished mix. Short gentle intro, then a steady consistent groove at the same tempo throughout, no big ending, no fade out. Instrumental only, no vocals.",
+    "music_length_ms": 150000,
+    "force_instrumental": true,
+    "output_format": "mp3_44100_192"
+  },
+  "request_id": "01a0debe-85bb-7910-8972-590bba11ebab",
+  "response": {},
+  "audio": {
+    "url": "https://v3b.fal.media/files/b/0aabfff7/ZVJk2c9BYeHwaWcHxnXm__music_generated.mp3",
+    "content_type": "audio/mpeg",
+    "file_name": "music_generated.mp3",
+    "file_size": 3601181
+  }
+}

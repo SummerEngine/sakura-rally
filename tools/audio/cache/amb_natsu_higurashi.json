@@ -1,0 +1,17 @@
+{
+  "model": "fal-ai/elevenlabs/sound-effects/v2",
+  "params": {
+    "text": "A single higurashi cicada calling 'kana-kana-kana' in a Japanese forest on a summer evening, a clear bell-like trill that slowly falls and fades, slightly distant, quiet background, no other insects",
+    "duration_seconds": 8,
+    "prompt_influence": 0.6,
+    "output_format": "mp3_44100_192"
+  },
+  "request_id": "01a0debe-85b2-7151-85d4-ae3954584f81",
+  "response": {},
+  "audio": {
+    "url": "https://v3b.fal.media/files/b/0aabfff6/xym8XH-df_iZKpxVKOL0x_sound_effect.mp3",
+    "content_type": "audio/mpeg",
+    "file_name": "sound_effect.mp3",
+    "file_size": 193768
+  }
+}

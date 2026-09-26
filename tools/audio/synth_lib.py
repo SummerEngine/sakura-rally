@@ -387,3 +387,89 @@ def bell_cricket(dur: float, carrier: float = 4400.0, period: float = 1.1, seed:
     ph = 2 * math.pi * np.cumsum(carrier * drift) / SR
     y = env * (np.sin(ph) + 0.12 * np.sin(2 * ph + 0.3))
     return filt(sos_lp(9000, 2), y)
+
+
+def minminzemi(pitch: float = 1.0, n_min: int = 14, rate: float = 4.4, seed: int = 40) -> np.ndarray:
+    """Minminzemi (Hyalessa maculaticollis) song, mono, dry: a swelling 'miiin', a run of
+    'min' syllables (each a quick rise then a downward glide, ~4-5 per second) and a falling
+    'miiii' fade. Voice: a ~4.6 kHz cavity resonance buzzed by the tymbal pulse rate (~260 Hz
+    amplitude modulation -> dense sidebands) plus a little band noise, second partial ~9 kHz."""
+    r = rng(seed)
+    parts_f, parts_a = [], []
+
+    def add(dur, f0, f1, a0, a1, att, rel, curve=1.0):
+        f, a = _seg(int(dur * SR), f0 * pitch, f1 * pitch, a0, a1, att, rel, curve)
+        parts_f.append(f)
+        parts_a.append(a)
+
+    add(r.uniform(1.0, 1.6), 4100, 4750, 0.15, 0.85, 0.3, 0.02, 0.6)       # miiin (swell)
+    period = 1.0 / rate
+    for k in range(n_min):
+        on = period * r.uniform(0.62, 0.72)
+        add(on, 4950 + r.uniform(-60, 60), 4350, 0.95, 0.75, 0.018, 0.03, 0.8)  # mi-n
+        add(period - on, 4350, 4300, 0.28, 0.28, 0.01, 0.01)                     # dip, not silence
+    add(r.uniform(1.0, 1.5), 4650, 3700, 0.9, 0.05, 0.03, 0.4, 1.3)        # miiii (fall)
+    f = np.concatenate(parts_f)
+    a = np.clip(filt(sos_lp(120, 1), np.concatenate(parts_a)), 0, None)
+    t = np.arange(f.size) / SR
+    buzz = 0.45 + 0.55 * (0.5 + 0.5 * np.sin(2 * math.pi * r.uniform(240, 280) * t)) ** 1.5
+    ph = 2 * math.pi * np.cumsum(f) / SR
+    tone = np.sin(ph) + 0.22 * np.sin(2 * ph + 0.4)
+    noise = filt(sos_bp(3600 * pitch, 6800 * pitch, 2), r.standard_normal(f.size))
+    noise /= np.std(noise) + 1e-12
+    y = a * buzz * (tone + 0.35 * noise)
+    return fade_edges(filt(sos_lp(11000, 2), y), 0.005, 0.05)
+
+
+def higurashi(pitch: float = 1.0, notes: int = 42, seed: int = 50) -> np.ndarray:
+    """Higurashi (Tanna japonensis) 'kana-kana-kana', mono, dry: a train of clear, bell-like
+    notes near 4.5 kHz, each a fast up-then-down pitch flick ('ka-na') with a short ringing
+    decay. The train starts fast (~9 notes/s) and quiet, swells, then slows to ~4/s and fades
+    while the pitch sinks a little."""
+    r = rng(seed)
+    t = 0.0
+    events = []
+    for k in range(notes):
+        u = k / max(notes - 1, 1)
+        rate = 9.0 - 5.0 * u ** 1.3
+        amp = min(1.0, 0.25 + 1.6 * u) * (1.0 - 0.85 * max(0.0, u - 0.55) / 0.45)
+        events.append((t, amp * r.uniform(0.85, 1.0), 1.0 - 0.06 * u))
+        t += 1.0 / rate * r.uniform(0.95, 1.05)
+    n = int((t + 0.4) * SR)
+    y = np.zeros(n)
+    base = 4500.0 * pitch
+    for t0, amp, sink in events:
+        m = int(0.32 * SR)  # 7 decay constants: the ring ends below -60 dB
+        u = np.arange(m) / SR
+        f = base * sink * (1.0 + 0.1 * np.exp(-((u - 0.012) / 0.008) ** 2) - 0.05 * np.clip(u / 0.05, 0, 1))
+        ph = 2 * math.pi * np.cumsum(f) / SR
+        env = np.clip(u / 0.004, 0, 1) * np.exp(-u / 0.045)
+        note = env * (np.sin(ph) + 0.12 * np.sin(2 * ph + 0.9))
+        i = int(t0 * SR)
+        y[i:i + m] += amp * note[: n - i]
+    return fade_edges(filt(sos_lp(10000, 2), y), 0.002, 0.2)
+
+
+FURIN_RATIOS = [1.0, 2.31, 3.93, 5.72, 7.68]
+
+
+def furin(f0: float = 2600.0, hits: int = 3, seed: int = 60) -> np.ndarray:
+    """Glass wind chime (furin), mono, dry: a small cluster of clapper strikes on a thin glass
+    bell. Inharmonic partials with fast, brightness-dependent decay; each strike a little
+    different in force; the bell keeps ringing under the next strike."""
+    r = rng(seed)
+    t = 0.0
+    n = int((0.35 * hits + 4.0) * SR)
+    y = np.zeros(n)
+    for _ in range(hits):
+        force = r.uniform(0.45, 1.0)
+        amps = [1.0, 0.55 * force + 0.2, 0.35 * force, 0.18 * force, 0.08 * force]
+        decs = [0.55, 0.3, 0.18, 0.11, 0.07]
+        freqs = [f0 * q * (1 + r.uniform(-0.002, 0.002)) for q in FURIN_RATIOS]
+        phs = r.uniform(0, 2 * math.pi, len(freqs))
+        s = fade_edges(modal_t(freqs, decs, amps, 4.0, attack_s=0.0003, phases=phs), 0.0, 0.5)
+        s[: int(0.002 * SR)] += 0.2 * force * burst(0.002, 3000, 12000, int(r.integers(1 << 30)), 0.0005)
+        sl_i = int(t * SR)
+        y[sl_i:sl_i + s.size] += force * s[: n - sl_i]
+        t += r.uniform(0.07, 0.32)
+    return y

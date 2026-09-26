@@ -11,10 +11,17 @@ extends Node3D
 const ENGINE_DIR := "res://assets/audio/engine/"
 const CAR_DIR := "res://assets/audio/car/"
 
-## Loop set rpm points (must match tools/audio/synth_engine.py). Index 0 of the off set is
-## the idle loop: with the throttle closed at low rpm the engine idles rather than overruns.
+## Engine sets by `car.engine_sound` (tools/audio/synth_engine.py PROFILES): folder with the
+## loops, pops and shift clunks, idle loop rpm, whether the turbo layers (whistle, blow-off)
+## exist, and the gearbox whine trim (the rally dog box whines, the road box only hums).
+const ENGINE_SETS := {
+	&"turbo4": {"dir": "res://assets/audio/engine/", "idle_rpm": 900.0, "turbo": true, "whine_db": -21.0},
+	&"na4": {"dir": "res://assets/audio/engine/na4/", "idle_rpm": 1000.0, "turbo": false, "whine_db": -28.0},
+}
+const DEFAULT_ENGINE := &"turbo4"
+## Loop rpm points (must match RPM_POINTS in synth_engine.py). The off set uses the idle
+## loop instead of the first point: with the throttle closed at low rpm the engine idles.
 const ON_RPMS: Array[float] = [1000.0, 1750.0, 2500.0, 3500.0, 4500.0, 5500.0, 6500.0, 7500.0]
-const OFF_RPMS: Array[float] = [900.0, 1750.0, 2500.0, 3500.0, 4500.0, 5500.0, 6500.0, 7500.0]
 const WHINE_BASE_KMH := 82.0
 
 ## Physical surface -> rolling loop / slide loop (+ slide weight).
@@ -27,7 +34,6 @@ const SLIDE_LOOPS: Array[StringName] = [&"tarmac", &"gravel", &"dirt"]
 ## Layer trims in dB (relative balance; bus levels are set by the Sound autoload).
 const ENGINE_DB := -1.0
 const TURBO_DB := -16.0
-const WHINE_DB := -21.0
 const ROLL_DB := -12.0
 const SLIDE_DB := {&"tarmac": -9.0, &"gravel": -5.0, &"dirt": -6.0}
 const WIND_DB := -13.0
@@ -51,6 +57,8 @@ const WHEEL_POS: Array[Vector3] = [Vector3(-0.78, 0.1, -1.27), Vector3(0.78, 0.1
 
 var car: Node
 
+var _off_rpms: Array[float] = []
+var _whine_db: float = -21.0
 var _on_players: Array[AudioStreamPlayer3D] = []
 var _off_players: Array[AudioStreamPlayer3D] = []
 var _turbo: AudioStreamPlayer3D
@@ -93,12 +101,20 @@ var _sound: Node
 func _ready() -> void:
 	car = get_parent()
 	_sound = get_node_or_null(^"/root/Sound")
-	for i in ON_RPMS.size():
-		_on_players.append(_loop(ENGINE_DIR + "engine_on_%d.wav" % int(ON_RPMS[i]), &"Engine", ENGINE_POS))
-	_off_players.append(_loop(ENGINE_DIR + "engine_idle.wav", &"Engine", ENGINE_POS))
-	for i in range(1, OFF_RPMS.size()):
-		_off_players.append(_loop(ENGINE_DIR + "engine_off_%d.wav" % int(OFF_RPMS[i]), &"Engine", ENGINE_POS))
-	_turbo = _loop(ENGINE_DIR + "turbo_whistle.wav", &"Engine", ENGINE_POS)
+	var engine_set := _engine_set()
+	var dir: String = engine_set["dir"]
+	_whine_db = engine_set["whine_db"]
+	_off_rpms.append(engine_set["idle_rpm"])
+	_off_rpms.append_array(ON_RPMS.slice(1))
+	for rpm in ON_RPMS:
+		_on_players.append(_loop(dir + "engine_on_%d.wav" % int(rpm), &"Engine", ENGINE_POS))
+	_off_players.append(_loop(dir + "engine_idle.wav", &"Engine", ENGINE_POS))
+	for i in range(1, _off_rpms.size()):
+		_off_players.append(_loop(dir + "engine_off_%d.wav" % int(_off_rpms[i]), &"Engine", ENGINE_POS))
+	if engine_set["turbo"]:
+		_turbo = _loop(dir + "turbo_whistle.wav", &"Engine", ENGINE_POS)
+		_bov = _shot(_variants(dir, "bov_%d.wav", 2), &"Engine", ENGINE_POS, 2)
+		_flutter = _shot([dir + "bov_flutter.wav"], &"Engine", ENGINE_POS, 1)
 	_whine = _loop(ENGINE_DIR + "gear_whine.wav", &"Engine", GEARBOX_POS)
 	_wind = _loop(CAR_DIR + "wind.wav", &"World", BODY_POS + Vector3(0, 0.6, -0.4))
 	_horn = _loop(CAR_DIR + "horn.wav", &"World", ENGINE_POS + Vector3(0, -0.2, -0.8))
@@ -108,11 +124,9 @@ func _ready() -> void:
 	for key in SLIDE_LOOPS:
 		_slide[key] = _loop(CAR_DIR + "tyre_slide_%s.wav" % key, &"World", Vector3(0, 0.1, 0.4))
 		_slide_gain[key] = 0.0
-	_shift_up = _shot(_variants(ENGINE_DIR, "shift_up_%d.wav", 2), &"Engine", GEARBOX_POS, 2)
-	_shift_down = _shot(_variants(ENGINE_DIR, "shift_down_%d.wav", 2), &"Engine", GEARBOX_POS, 2)
-	_bov = _shot(_variants(ENGINE_DIR, "bov_%d.wav", 2), &"Engine", ENGINE_POS, 2)
-	_flutter = _shot([ENGINE_DIR + "bov_flutter.wav"], &"Engine", ENGINE_POS, 1)
-	_backfire = _shot(_variants(ENGINE_DIR, "backfire_%d.wav", 4), &"Engine", EXHAUST_POS, 4)
+	_shift_up = _shot(_variants(dir, "shift_up_%d.wav", 2), &"Engine", GEARBOX_POS, 2)
+	_shift_down = _shot(_variants(dir, "shift_down_%d.wav", 2), &"Engine", GEARBOX_POS, 2)
+	_backfire = _shot(_variants(dir, "backfire_%d.wav", 4), &"Engine", EXHAUST_POS, 4)
 	for i in 4:
 		_stones.append(_shot(_variants(CAR_DIR, "stone_%d.wav", 6), &"World", WHEEL_POS[i], 3))
 	_thump = _shot(_variants(CAR_DIR, "thump_%d.wav", 3), &"World", BODY_POS, 2)
@@ -123,6 +137,17 @@ func _ready() -> void:
 
 
 # ---------------------------------------------------------------- setup helpers
+
+## The car's `engine_sound` set; cars without the property get the default set.
+func _engine_set() -> Dictionary:
+	var id: Variant = car.get(&"engine_sound") if car != null else null
+	if id == null:
+		return ENGINE_SETS[DEFAULT_ENGINE]
+	if not ENGINE_SETS.has(StringName(id)):
+		push_warning("CarAudio: unknown engine_sound %s, using %s" % [id, DEFAULT_ENGINE])
+		return ENGINE_SETS[DEFAULT_ENGINE]
+	return ENGINE_SETS[StringName(id)]
+
 
 func _stream(path: String) -> AudioStream:
 	if not ResourceLoader.exists(path):
@@ -242,7 +267,7 @@ func _process(delta: float) -> void:
 	# The driver lifting off hard at boost vents the blow-off valve. Read the pedal (input),
 	# not the applied throttle, which the limiter and shifts also chop.
 	var foot := clampf(_num(&"input_throttle", throttle), 0.0, 1.0)
-	if _boost > 0.45 and _prev_foot > 0.6 and foot < 0.25 and not shifting and not limiting \
+	if _bov != null and _boost > 0.45 and _prev_foot > 0.6 and foot < 0.25 and not shifting and not limiting \
 			and _t - _last_bov > 0.8:
 		_play_bov(_boost)
 	_prev_foot = foot
@@ -253,7 +278,7 @@ func _mix_engine(slowmo: float, limiting: bool) -> void:
 	var off_set := cos(_load * PI * 0.5)
 	var cut := 0.82 if limiting and _load < 0.5 else 1.0
 	_mix_set(_on_players, ON_RPMS, on_set * cut, slowmo)
-	_mix_set(_off_players, OFF_RPMS, off_set * cut, slowmo)
+	_mix_set(_off_players, _off_rpms, off_set * cut, slowmo)
 
 
 ## Equal-power crossfade between the two loops that bracket the current rpm.
@@ -280,6 +305,8 @@ func _mix_set(players: Array[AudioStreamPlayer3D], rpms: Array[float], set_gain:
 
 
 func _mix_turbo(throttle: float, slowmo: float, max_rpm: float) -> void:
+	if _turbo == null:
+		return
 	var rpm_n := clampf(_rpm / maxf(max_rpm, 1000.0), 0.0, 1.1)
 	var target := pow(_boost, 1.5) * lerpf(0.35, 1.0, maxf(_load, throttle))
 	_turbo_gain = target
@@ -290,7 +317,7 @@ func _mix_turbo(throttle: float, slowmo: float, max_rpm: float) -> void:
 func _mix_whine(speed: float, slowmo: float, delta: float) -> void:
 	var target := smoothstep(6.0, 45.0, speed) * lerpf(1.0, 0.6, _load)
 	_whine_gain = _smooth(_whine_gain, target, 0.08, delta)
-	_whine.volume_db = linear_to_db(maxf(_whine_gain, SILENT)) + WHINE_DB
+	_whine.volume_db = linear_to_db(maxf(_whine_gain, SILENT)) + _whine_db
 	_whine.pitch_scale = clampf(speed / WHINE_BASE_KMH, 0.05, 3.0) * slowmo
 
 
@@ -374,7 +401,7 @@ func _on_gear_changed(new_gear: int, old_gear: int) -> void:
 	_shift_dip_until = _t + (0.11 if upshift else 0.07)
 	var shot := _shift_up if upshift else _shift_down
 	_fire(shot, SHIFT_DB, 1.0)
-	if upshift and _boost > 0.3 and _t - _last_bov > 0.5:
+	if upshift and _bov != null and _boost > 0.3 and _t - _last_bov > 0.5:
 		_play_bov(_boost)
 
 
