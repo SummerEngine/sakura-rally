@@ -338,7 +338,33 @@ PADDY_WEST = [(-390, 298), (-302, 304), (-298, 250), (-382, 236)]
 KEEP_OUT = [(-120, 338, 40), (-185, 325, 32), (-45, 322, 42), (-392, 345, 26), (-186, 266, 42),
             (-342, 272, 48), (35, -360, 26), (-250, -300, 14)]
 
+# ---------------------------------------------------------------------------- garage (Garage)
+# The Sakura Rally service workshop on the village side of the start straight, before the start
+# line (the branch to Momiji leaves after the finish, on the lake side). lib/garage.py turns this
+# into a drive-through lay-by (a paved road lot), a pad under the workshop, a keep-out for props
+# and map.json "garage"; scripts/game/garage_set.gd builds the workshop, its lights, banners and
+# colliders there at runtime. Numbers are road-relative metres like the dressing (lateral + =
+# right of the driving direction). The workshop footprint includes its eaves; GarageSet's
+# layout assumes these sizes.
+GARAGE = {
+    "road_at": 4, "offset_m": -28.0,  # the display spot, along the road
+    "lateral": -11.0,                 # ... and beside it: the car stands 11 m left of the centreline
+    "lot": {"lateral": -10.0, "width": 14.0, "length": 38.0, "corner": 6.0, "surface": "tarmac"},
+    "workshop": {"lateral": -22.0, "width": 15.0, "depth": 11.0, "blend": 8.0},
+    "keep_out": 3.0,
+    # sakura and lanterns around it (placed like the dressing, outside the keep-out)
+    "dressing": [
+        one("sakura_a", 4, -40.0, -36.0, "road"), one("sakura_c", 4, -24.0, -37.5, "road"),
+        one("sakura_b", 4, -12.0, -35.0, "road"), one("sakura_young", 4, -54.0, -24.0, "road"),
+        one("sakura_young", 4, -3.0, -26.0, "road", scale=1.15),
+        one("stone_lantern", 4, -52.5, -8.0, "road"), one("stone_lantern", 4, -4.0, -8.5, "road"),
+        one("lantern_string", 4, -54.0, -14.0, "along", yaw_add=90.0),
+        one("bench", 4, -2.5, -17.0, "road"), one("vending_machine", 4, -2.8, -20.8, "road"),
+    ],
+}
+
 SPEC = {
+    "garage": GARAGE,
     "id": "hanami",
     "seed": 11,
     "season": "spring",
