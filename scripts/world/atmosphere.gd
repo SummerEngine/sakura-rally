@@ -43,6 +43,27 @@ const PRESETS := {
 		},
 		"cloud_lit": Color("fff1e2"), "cloud_shade": Color("b9a8cf"), "cloud_deep": Color("9486bf"),
 	},
+	"summer_afternoon": {
+		# deep saturated sky, towering cumulus, a warm sun lowering into mid-afternoon,
+		# crisp violet shade
+		"sun_pitch": -33.0, "sun_yaw": -68.0,
+		"sun_color": Color("ffe7c2"), "sun_energy": 1.12,
+		"ambient_color": Color("aeb0e0"), "ambient_energy": 0.5, "ambient_sky": 0.3,
+		"sky_top": Color("2f6fd0"), "sky_mid": Color("7fc0f0"), "sky_haze": Color("e4f0ec"),
+		"sky_ground": Color("c4d4d2"), "sky_sun": Color("ffe8c4"), "halo": 1.1, "horizon_band": 0.26,
+		"fog_color": Color("dcebef"), "fog_begin": 90.0, "fog_end": 1600.0, "fog_curve": 1.7,
+		"fog_sun_scatter": 0.22, "fog_aerial": 0.5, "fog_height": -6.0, "fog_height_density": 0.0,
+		"fog_sky_affect": 0.0,
+		"shade_tint": Color("8a82cc"), "rim_color": Color("ffe4bc"),
+		"wind": Vector4(0.7, 0.5, 0.9, 0.3), "glow": 0.08,
+		"exposure": 0.93,
+		"grade": {
+			"shadow_tint": Color("a49ee0"), "light_tint": Color("fff1dc"), "saturation": 1.14,
+			"lift": 0.025, "warmth": 0.06, "vignette": 0.2, "sun_glow": Color("ffe6c0"), "grain": 0.03,
+		},
+		"cloud_lit": Color("fffaf0"), "cloud_shade": Color("a3b0dc"), "cloud_deep": Color("848ec8"),
+		"cloud_tower": 1.45,
+	},
 }
 
 @export var preset_name: String = "spring_noon"

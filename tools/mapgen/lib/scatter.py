@@ -8,7 +8,7 @@ import math
 import numpy as np
 
 from . import geom, noise
-from .road import Road
+from .road import LOT_DROP, Road, road_index
 from .terrain import Terrain
 
 
@@ -48,7 +48,8 @@ class Placer:
         self.out: dict[str, list[list[float]]] = {}
         self.missing: set[str] = set()
         self.ny = ter.normal_y()
-        self.start_s = 0.0  # lap start distance; features may use `lap_frac` instead of `road_at`
+        self.start_s = 0.0  # start line distance; features may use `lap_frac` instead of `road_at`
+        self.route = road.length  # start line to finish (the lap, or start to arrival on an open road)
 
     # ---------------------------------------------------------------- helpers
     def footprint(self, name: str) -> float:
@@ -66,19 +67,27 @@ class Placer:
         return False
 
     def road_frame(self, cp: int, offset: float) -> int:
-        s = (self.road.control_s[cp] + offset) % self.road.length
-        return int(round(s)) % len(self.road.pos)
+        s = self.road.control_s[cp] + offset
+        return road_index(self.road, s % self.road.length if self.road.closed else s)
 
     def road_yaw(self, i: int) -> float:
         f = self.road.fwd[i]
         return float(math.atan2(-f[0], -f[1]))
+
+    def ground_at(self, x: float, z: float) -> float:
+        """Walkable height: the terrain, or a paved lot's surface where one covers it."""
+        y = float(self.ter.height_at(x, z))
+        for lot in self.road.lots:
+            if float(lot.sdf(x, z)) < 0.2:
+                y = max(y, lot.y - LOT_DROP)
+        return y
 
     def emit(self, name: str, x: float, z: float, yaw: float, scale: float, sink: float = 0.0,
              y: float | None = None, radius: float | None = None, occupy: bool = True) -> bool:
         if not self.available(name):
             return False
         if y is None:
-            y = float(self.ter.height_at(x, z)) - sink
+            y = self.ground_at(x, z) - sink
         self.out.setdefault(name, []).append([round(x, 2), round(y, 2), round(z, 2),
                                               round(yaw % (2 * math.pi), 3), round(scale, 3)])
         if occupy:
@@ -110,8 +119,8 @@ class Placer:
     # ---------------------------------------------------------------- features
     def features(self, feats: list[dict]) -> None:
         for f in feats:
-            if "lap_frac" in f:  # position as a fraction of the lap from the start line
-                s = self.start_s + f["lap_frac"] * self.road.length + f.get("offset_m", 0.0)
+            if "lap_frac" in f:  # position as a fraction of the route from the start line
+                s = self.start_s + f["lap_frac"] * self.route + f.get("offset_m", 0.0)
                 f = dict(f, road_at=0, offset_m=s - float(self.road.control_s[0]))
             kind = f.get("kind", "single")
             if kind == "single":
@@ -167,7 +176,7 @@ class Placer:
         barrier = f.get("barrier", "hay_bale_square")
         spacing = f.get("barrier_spacing", 2.0 if barrier.startswith("hay") else 3.1)
         for s in np.arange(s0 - length / 2, s0 + length / 2 + 1e-6, spacing):
-            i = int(round(s)) % n
+            i = road_index(road, s)
             lat = side * (road.half_width[i] + gap)
             x = float(road.pos[i, 0] + road.right[i, 0] * lat)
             z = float(road.pos[i, 2] + road.right[i, 1] * lat)
@@ -183,7 +192,7 @@ class Placer:
         while placed < f.get("count", 8) and tries < 200:
             tries += 1
             s = s0 + float(self.rng.uniform(-0.5, 0.5)) * length
-            i = int(round(s)) % n
+            i = road_index(road, s)
             lat = side * (road.half_width[i] + max(gap + 1.5, 8.0) + float(self.rng.uniform(0.0, depth)))
             x = float(road.pos[i, 0] + road.right[i, 0] * lat)
             z = float(road.pos[i, 2] + road.right[i, 1] * lat)
@@ -198,7 +207,7 @@ class Placer:
             placed += 1
         for k, name in enumerate(f.get("extras", [])):
             s = s0 + (k - (len(f["extras"]) - 1) / 2) * f.get("extras_spacing", 6.0)
-            i = int(round(s)) % n
+            i = road_index(road, s)
             lat = side * (road.half_width[i] + max(gap + 1.5, 8.0) + depth + 2.5)
             x = float(road.pos[i, 0] + road.right[i, 0] * lat)
             z = float(road.pos[i, 2] + road.right[i, 1] * lat)
@@ -220,7 +229,7 @@ class Placer:
         if f.get("on_road"):
             y = float(self.road.pos[i, 1]) + f.get("y_offset", 0.0)
         elif "y_offset" in f:
-            y = float(self.ter.height_at(x, z)) + f["y_offset"]
+            y = self.ground_at(x, z) + f["y_offset"]
         self.emit(f["prop"], x, z, yaw, f.get("scale", 1.0), sink=f.get("sink", 0.05), y=y,
                   radius=f.get("radius"))
 
@@ -263,13 +272,13 @@ class Placer:
     def _line(self, f: dict) -> None:
         a = self.road.control_s[f["from_cp"]] + f.get("from_offset", 0.0)
         b = self.road.control_s[f["to_cp"]] + f.get("to_offset", 0.0)
-        if b < a:
+        if b < a and self.road.closed:
             b += self.road.length
         props = f["props"] if "props" in f else [f["prop"]]
         k = 0
         s = a
         while s <= b:
-            i = int(round(s)) % len(self.road.pos)
+            i = road_index(self.road, s)
             for side in f.get("sides", [f.get("side", 1)]):
                 lat = side * f["lateral"]
                 p = self.road.pos[i]
@@ -310,6 +319,7 @@ class Placer:
         D = ter.sample(ter.road_dist, x, z)
         prob = np.full(x.shape, r.get("density", 1.0))
         prob *= (D >= r.get("road_min", 0.0)) & (D <= r.get("road_max", 1e9))
+        prob *= ter.sample(ter.lot_sd, x, z) > r.get("lot_clear", 4.0)
         if "road_peak" in r:  # denser close to the road, thinning out
             a, b = r["road_peak"]
             prob *= 1.0 - 0.85 * geom.smoothstep(a, b, D)
