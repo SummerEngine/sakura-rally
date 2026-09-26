@@ -1,18 +1,15 @@
 // Painted ground: baked vertex colour (grass, forest floor, fields, rock, verges,
 // shores) broken up with world-space brush blotches, plus fallen petals or leaves
-// scattered where the baked alpha says the canopy is overhead.
+// scattered where the baked alpha says the canopy is overhead, in the season under
+// them (shaders/inc/season.gdshaderinc).
 shader_type spatial;
 render_mode cull_back, depth_draw_opaque;
 
 #include "res://shaders/inc/toon.gdshaderinc"
+#include "res://shaders/inc/season.gdshaderinc"
 
 uniform float blotch_amount = 0.10;
 uniform float fine_amount = 0.05;
-// Litter: season palette. Petals use colour A/B, maple leaves use A/B/C.
-uniform vec4 litter_a : source_color = vec4(0.97, 0.78, 0.84, 1.0);
-uniform vec4 litter_b : source_color = vec4(0.99, 0.88, 0.92, 1.0);
-uniform vec4 litter_c : source_color = vec4(0.99, 0.88, 0.92, 1.0);
-uniform float litter_density = 0.55;
 uniform float litter_cell = 0.55;
 // Brush-stroke hue drift toward warm / cool across big areas.
 uniform vec4 warm_shift : source_color = vec4(1.04, 1.0, 0.9, 1.0);
@@ -30,18 +27,21 @@ float hash21(vec2 p) {
 	return fract((p3.x + p3.y) * p3.z);
 }
 
-// Distance-field petal in a jittered cell: an ellipse with a random heading.
-float litter(vec2 p, float cell, out float pick) {
+// Distance-field petal in a jittered cell: an ellipse with a random heading. Each cell
+// takes a season by the weights `w`; `lc` is the colour of the nearest piece.
+float litter(vec2 p, float cell, vec3 w, out vec3 lc) {
+	float density = dot(w, SR_LITTER_TERRAIN);
 	vec2 g = p / cell;
 	vec2 id = floor(g);
 	vec2 f = fract(g);
 	float best = 0.0;
-	pick = 0.0;
+	float pick = 0.0;
+	int season = 0;
 	for (int j = -1; j <= 1; j++) {
 		for (int i = -1; i <= 1; i++) {
 			vec2 c = id + vec2(float(i), float(j));
 			float h = hash21(c);
-			if (h > litter_density) {
+			if (h > density) {
 				continue;
 			}
 			vec2 o = vec2(hash21(c + 17.1), hash21(c + 31.7));
@@ -53,9 +53,11 @@ float litter(vec2 p, float cell, out float pick) {
 			if (m > best) {
 				best = m;
 				pick = hash21(c + 9.9);
+				season = sr_season_pick(w, hash21(c + 13.7));
 			}
 		}
 	}
+	lc = sr_litter_color(season, pick);
 	return best;
 }
 
@@ -73,10 +75,9 @@ void fragment() {
 	float lw = COLOR.a;
 	float dist = length(v_world - CAMERA_POSITION_WORLD);
 	if (lw > 0.02 && dist < 70.0) {
-		float pick;
-		float m = litter(wp + (g3.g - 0.5) * 0.3, litter_cell, pick);
+		vec3 lc;
+		float m = litter(wp + (g3.g - 0.5) * 0.3, litter_cell, sr_season_at(wp), lc);
 		m *= smoothstep(0.1, 0.6, lw) * (1.0 - smoothstep(45.0, 70.0, dist));
-		vec3 lc = pick < 0.45 ? litter_a.rgb : (pick < 0.8 ? litter_b.rgb : litter_c.rgb);
 		c = mix(c, lc, m);
 	}
 	ALBEDO = c;

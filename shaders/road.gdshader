@@ -1,6 +1,7 @@
 // Road ribbon. UV.x = lateral offset / half width (carriageway -1..1, verge beyond),
 // UV.y = distance along the road in metres. UV2.x = gravel weight, UV2.y = wood deck.
-// COLOR.rgb = terrain paint under the verge, COLOR.a = fallen petals / leaves.
+// COLOR.rgb = terrain paint under the verge, COLOR.a = fallen petals / leaves (in the season
+// under them, shaders/inc/season.gdshaderinc).
 // lot_mode (paved lots): UV = lot metres, UV2.x = gravel weight, UV2.y = verge weight;
 // no lane markings, wheel tracks or ruts. On the road ribbon a negative UV2.y fades the
 // markings and shoulders out (the ends of an open road, running into a lot).
@@ -8,6 +9,7 @@ shader_type spatial;
 render_mode cull_back, depth_draw_opaque;
 
 #include "res://shaders/inc/toon.gdshaderinc"
+#include "res://shaders/inc/season.gdshaderinc"
 
 uniform float half_width_m = 3.5;
 uniform vec4 tarmac_color : source_color = vec4(0.34, 0.36, 0.44, 1.0);
@@ -18,10 +20,6 @@ uniform vec4 line_color : source_color = vec4(0.96, 0.95, 0.92, 1.0);
 uniform vec4 centre_color : source_color = vec4(0.96, 0.95, 0.92, 1.0);
 uniform vec4 wood_color : source_color = vec4(0.64, 0.44, 0.28, 1.0);
 uniform vec4 shoulder_color : source_color = vec4(0.62, 0.58, 0.52, 1.0);
-uniform vec4 litter_a : source_color = vec4(0.97, 0.78, 0.84, 1.0);
-uniform vec4 litter_b : source_color = vec4(0.99, 0.88, 0.92, 1.0);
-uniform vec4 litter_c : source_color = vec4(0.99, 0.88, 0.92, 1.0);
-uniform float litter_density = 0.35;
 uniform bool lot_mode = false;
 
 varying vec3 v_world;
@@ -40,12 +38,14 @@ float band(float x, float centre, float half_w, float aa) {
 	return 1.0 - smoothstep(half_w - aa, half_w + aa, abs(x - centre));
 }
 
-float litter(vec2 p, float cell, float density, out float pick) {
+float litter(vec2 p, float cell, vec3 w, out vec3 lc) {
+	float density = dot(w, SR_LITTER_ROAD);
 	vec2 g = p / cell;
 	vec2 id = floor(g);
 	vec2 f = fract(g);
 	float best = 0.0;
-	pick = 0.0;
+	float pick = 0.0;
+	int season = 0;
 	for (int j = -1; j <= 1; j++) {
 		for (int i = -1; i <= 1; i++) {
 			vec2 c = id + vec2(float(i), float(j));
@@ -60,9 +60,11 @@ float litter(vec2 p, float cell, float density, out float pick) {
 			if (m > best) {
 				best = m;
 				pick = hash21(c + 9.9);
+				season = sr_season_pick(w, hash21(c + 13.7));
 			}
 		}
 	}
+	lc = sr_litter_color(season, pick);
 	return best;
 }
 
@@ -141,10 +143,9 @@ void fragment() {
 	float dist = length(v_world - CAMERA_POSITION_WORLD);
 	float lw = COLOR.a * mix(0.3, 1.0, smoothstep(0.3, 1.0, au));
 	if (lw > 0.02 && dist < 60.0) {
-		float pick;
-		float m = litter(wp, 0.5, litter_density, pick);
+		vec3 lc;
+		float m = litter(wp, 0.5, sr_season_at(wp), lc);
 		m *= smoothstep(0.1, 0.6, lw) * (1.0 - smoothstep(40.0, 60.0, dist));
-		vec3 lc = pick < 0.45 ? litter_a.rgb : (pick < 0.8 ? litter_b.rgb : litter_c.rgb);
 		c = mix(c, lc, m);
 	}
 	ALBEDO = c;

@@ -26,11 +26,14 @@ const MUSIC := {
 	&"liaison": "res://assets/audio/music/liaison.ogg",
 }
 
-const AMBIENCE := {
-	"hanami": "res://assets/audio/ambience/hanami.ogg",
-	"momiji": "res://assets/audio/ambience/momiji.ogg",
-	"natsu": "res://assets/audio/ambience/natsu.ogg",
-}
+## Ambience beds of the seasons, in season-weight order (spring, summer, autumn).
+const AMBIENCE := [
+	"res://assets/audio/ambience/hanami.ogg",
+	"res://assets/audio/ambience/natsu.ogg",
+	"res://assets/audio/ambience/momiji.ogg",
+]
+## A bed quieter than this (linear gain) stops playing.
+const AMBIENCE_SILENT := 0.001
 
 const UI_SOUNDS := {
 	&"hover": "res://assets/audio/ui/hover.wav",
@@ -79,10 +82,10 @@ var _music_b: AudioStreamPlayer
 var _music_active: AudioStreamPlayer
 var _music_track: StringName = &""
 var _music_tween: Tween
-var _amb_a: AudioStreamPlayer
-var _amb_b: AudioStreamPlayer
-var _amb_active: AudioStreamPlayer
-var _amb_id: String = ""
+var _amb: Array[AudioStreamPlayer] = []
+var _amb_mix := Vector3(1.0, 0.0, 0.0)
+var _amb_level: float = 0.0
+var _amb_on: bool = false
 var _amb_tween: Tween
 var _ui_players: Array[AudioStreamPlayer] = []
 var _ui_next: int = 0
@@ -109,8 +112,8 @@ func _enter_tree() -> void:
 func _ready() -> void:
 	_music_a = _make_player(&"Music")
 	_music_b = _make_player(&"Music")
-	_amb_a = _make_player(&"Ambience")
-	_amb_b = _make_player(&"Ambience")
+	for i in AMBIENCE.size():
+		_amb.append(_make_player(&"Ambience"))
 	for i in POOL_UI:
 		_ui_players.append(_make_player(&"UI"))
 	_stinger_player = _make_player(&"UI")
@@ -324,29 +327,61 @@ func stop_music(fade: float = 1.5) -> void:
 
 # ---------------------------------------------------------------- ambience
 
-## Ambience bed for a map id ("hanami", "momiji", "natsu"). Unknown ids fade the bed out.
-func play_ambience(map_id: String, fade: float = 2.0) -> void:
-	if map_id == _amb_id and _amb_active != null and _amb_active.playing:
+## The world's ambience bed: the three season loops mixed by `set_ambience_mix`, fading in
+## over `fade` s. Playing already: nothing changes.
+func play_ambience(fade: float = 2.0) -> void:
+	if _amb_on:
 		return
-	var stream := _stream_from(AMBIENCE, map_id, "ambience")
-	if stream == null:
-		stop_ambience(fade)
-		return
-	var incoming := _amb_b if _amb_active == _amb_a else _amb_a
-	var outgoing := _amb_active
-	incoming.stream = stream
-	incoming.volume_db = SILENT_DB
-	# Start somewhere inside the loop so repeated sessions do not always open identically.
-	incoming.play(randf() * stream.get_length() * 0.8)
-	_amb_active = incoming
-	_amb_id = map_id
-	_amb_tween = _crossfade(_amb_tween, incoming, outgoing, fade)
+	_amb_on = true
+	_fade_ambience(1.0, fade)
 
 
 func stop_ambience(fade: float = 2.0) -> void:
-	_amb_id = ""
-	_amb_tween = _crossfade(_amb_tween, null, _amb_active, fade)
-	_amb_active = null
+	_amb_on = false
+	_fade_ambience(0.0, fade)
+
+
+## Season weights (spring, summer, autumn; summing to 1) at the listener. Each loop plays at
+## the square root of its weight (equal power), so the bed stays as loud across a blend.
+## MapWorld calls it as the camera moves.
+func set_ambience_mix(w: Vector3) -> void:
+	_amb_mix = w
+	_update_ambience()
+
+
+func _fade_ambience(target: float, fade: float) -> void:
+	if _amb_tween != null and _amb_tween.is_valid():
+		_amb_tween.kill()
+	if fade <= 0.0:
+		_set_ambience_level(target)
+		return
+	_amb_tween = create_tween()
+	_amb_tween.tween_method(_set_ambience_level, _amb_level, target, fade)
+
+
+func _set_ambience_level(level: float) -> void:
+	_amb_level = level
+	_update_ambience()
+
+
+func _update_ambience() -> void:
+	# equal power in and out: the fade level runs along a quarter sine
+	var master := sin(clampf(_amb_level, 0.0, 1.0) * PI * 0.5)
+	for i in _amb.size():
+		var p := _amb[i]
+		var g := master * sqrt(maxf(_amb_mix[i], 0.0))
+		if g < AMBIENCE_SILENT:
+			if p.playing:
+				p.stop()
+			continue
+		if not p.playing:
+			var stream := _load(AMBIENCE[i])
+			if stream == null:
+				continue
+			p.stream = stream
+			# somewhere inside the loop, so repeated sessions do not always open identically
+			p.play(randf() * stream.get_length() * 0.8)
+		p.volume_db = linear_to_db(g)
 
 
 ## Equal-power crossfade between two players (either may be null). Returns the new tween.
