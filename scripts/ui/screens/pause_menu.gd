@@ -1,7 +1,8 @@
 extends Control
 ## Pause menu (tree paused; the UI root runs PROCESS_MODE_ALWAYS). A blurred, paper-tinted
 ## backdrop, a vertical tanzaku strip with 一時停止 painted on, and a stack of buttons that
-## cascade in: Resume, Restart, Settings, Menu.
+## cascade in: Resume, Restart, Settings, Menu. In the campaign: Resume, Retry stage (stages
+## only), Settings, Quit to title (progress is kept at the start of the leg).
 
 signal settings_requested
 
@@ -24,6 +25,8 @@ var _title: Label
 var _sub: Label
 var _buttons: Array[Button] = []
 var _resume: Button
+var _restart: Button
+var _menu: Button
 var _tween: Tween
 var _amount := 0.0
 
@@ -73,16 +76,27 @@ func _ready() -> void:
 	col.add_child(gap)
 	_resume = _button(col, "Resume", &"PrimaryButton", _on_resume)
 	_resume.press_sound = &"back"
-	_button(col, "Restart", &"", _on_restart).press_sound = &"start"
+	_restart = _button(col, "Restart", &"", _on_restart)
+	_restart.press_sound = &"start"
 	_button(col, "Settings", &"", func() -> void: settings_requested.emit())
-	_button(col, "Main menu", &"QuietButton", _on_menu).press_sound = &"back"
-	for i in _buttons.size():
-		var prev := _buttons[(i - 1 + _buttons.size()) % _buttons.size()]
-		var next := _buttons[(i + 1) % _buttons.size()]
-		_buttons[i].focus_neighbor_top = prev.get_path()
-		_buttons[i].focus_neighbor_bottom = next.get_path()
-		_buttons[i].focus_neighbor_left = _buttons[i].get_path()
-		_buttons[i].focus_neighbor_right = _buttons[i].get_path()
+	_menu = _button(col, "Main menu", &"QuietButton", _on_menu)
+	_menu.press_sound = &"back"
+	visible = false
+
+
+## Wrap-around up/down focus through the visible buttons.
+func _link_focus() -> void:
+	var shown_buttons: Array[Button] = []
+	for b in _buttons:
+		if b.visible:
+			shown_buttons.append(b)
+	for i in shown_buttons.size():
+		var prev := shown_buttons[(i - 1 + shown_buttons.size()) % shown_buttons.size()]
+		var next := shown_buttons[(i + 1) % shown_buttons.size()]
+		shown_buttons[i].focus_neighbor_top = prev.get_path()
+		shown_buttons[i].focus_neighbor_bottom = next.get_path()
+		shown_buttons[i].focus_neighbor_left = shown_buttons[i].get_path()
+		shown_buttons[i].focus_neighbor_right = shown_buttons[i].get_path()
 	visible = false
 
 
@@ -111,8 +125,17 @@ func open() -> void:
 	visible = true
 	var game := UIApi.game()
 	var m: Dictionary = game.get_map(str(game.map_id))
-	var free: bool = str(game.mode) == str(game.MODE_FREE_ROAM)
-	_sub.text = "%s  ·  %s" % [str(m.get("name", "")).to_upper(), "FREE ROAM" if free else "TIME TRIAL"]
+	var leg: Dictionary = game.campaign_current_leg()
+	var liaison: bool = str(game.mode) == str(game.MODE_LIAISON)
+	if not leg.is_empty():
+		_sub.text = "%s  ·  %s  ·  CAMPAIGN" % [leg["code"], str(m.get("name", "")).to_upper()]
+	else:
+		var free: bool = str(game.mode) == str(game.MODE_FREE_ROAM)
+		_sub.text = "%s  ·  %s" % [str(m.get("name", "")).to_upper(), "FREE ROAM" if free else "TIME TRIAL"]
+	_restart.visible = not liaison
+	_restart.text = "Retry stage" if not leg.is_empty() else "Restart"
+	_menu.text = "Quit to title" if not leg.is_empty() else "Main menu"
+	_link_focus()
 	_kanji.color = UITheme.season_accent(str(m.get("season", "spring"))).darkened(0.05)
 	UIMotion.kill(_tween)
 	_tween = UIMotion.tween(self)

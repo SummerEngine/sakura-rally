@@ -4,7 +4,8 @@ extends Control
 ##     up to the final value with a soft flash;
 ##  2. the banner lifts away and the results card slides in from the right with staggered rows
 ##     (time, best, delta, top speed, splits), a hanko medal STAMP (screen shake + petal burst)
-##     and a "NEW RECORD 新記録" ribbon; buttons Retry / Next map / Menu.
+##     and a "NEW RECORD 新記録" ribbon; buttons Retry / Next map / Menu. A campaign stage
+##     adds the rally standing and swaps the buttons for Continue / Retry stage / Quit to title.
 
 signal shake_requested(strength: float)
 
@@ -38,10 +39,12 @@ var _card: PaperCard
 var _rows: Array[Control] = []
 var _map_kanji: Label
 var _map_name: Label
+var _kind_label: Label
 var _time_big: KineticText
 var _best_value: Label
 var _delta_value: Label
 var _speed_value: Label
+var _standing_value: Label
 var _splits_head: Label
 var _splits_box := GridContainer.new()
 var _split_deltas: Array = []
@@ -49,6 +52,7 @@ var _medal_hint: Label
 var _record := PanelContainer.new()
 var _hanko: Hanko
 var _buttons := HBoxContainer.new()
+var _continue: Button
 var _retry: Button
 var _next: Button
 var _menu: Button
@@ -145,7 +149,8 @@ func _build_card() -> void:
 	hv.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_map_name = UITheme.make_label("", UITheme.tracked(UITheme.FONT_TITLE, 2), 28, UITheme.INK)
 	hv.add_child(_map_name)
-	hv.add_child(UITheme.make_label("TIME TRIAL  ·  RESULT", UITheme.tracked(UITheme.FONT_UI_BLACK, 3), 13, Color(UITheme.INK, 0.5)))
+	_kind_label = UITheme.make_label("", UITheme.tracked(UITheme.FONT_UI_BLACK, 3), 13, Color(UITheme.INK, 0.5))
+	hv.add_child(_kind_label)
 	head.add_child(hv)
 	_add_row(col, head)
 
@@ -182,6 +187,7 @@ func _build_card() -> void:
 	_best_value = _stat_row(col, "Best")
 	_delta_value = _stat_row(col, "Versus best")
 	_speed_value = _stat_row(col, "Top speed")
+	_standing_value = _stat_row(col, "Rally standing")
 	col.add_child(_divider())
 
 	_splits_head = UITheme.make_label("SPLITS", UITheme.tracked(UITheme.FONT_UI_BLACK, 3), 13, Color(UITheme.INK, 0.5))
@@ -200,9 +206,15 @@ func _build_card() -> void:
 	col.add_child(gap)
 	_buttons.add_theme_constant_override("separation", 12)
 	_buttons.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_continue = InkButton.new()
+	_continue.text = "Continue"
+	_continue.theme_type_variation = &"PrimaryButton"
+	_continue.custom_minimum_size = Vector2(180, 0)
+	_continue.press_sound = &"start"
+	_continue.pressed.connect(func() -> void: UIApi.game().request_campaign_continue())
+	_buttons.add_child(_continue)
 	_retry = InkButton.new()
 	_retry.text = "Retry"
-	_retry.theme_type_variation = &"PrimaryButton"
 	_retry.custom_minimum_size = Vector2(180, 0)
 	_retry.press_sound = &"start"
 	_retry.pressed.connect(_on_retry)
@@ -373,8 +385,19 @@ func _fill_card(res: Dictionary, m: Dictionary, accent: Color) -> void:
 	else:
 		_medal_hint.text = ""
 	_medal_hint.visible = _medal_hint.text != ""
-	var maps: Array = game.MAPS
-	_next.visible = maps.size() > 1
+	var campaign := bool(res.get("campaign", false))
+	_standing_value.get_parent().visible = campaign
+	if campaign:
+		var leg: Dictionary = game.CAMPAIGN[int(res.get("leg", 0))]
+		_kind_label.text = "%s  ·  CAMPAIGN RESULT" % leg["code"]
+		_standing_value.text = "P%d of %d" % [int(res.get("standing", 0)), int(res.get("field", 0))]
+	else:
+		_kind_label.text = "TIME TRIAL  ·  RESULT"
+	_continue.visible = campaign
+	_retry.text = "Retry stage" if campaign else "Retry"
+	_retry.theme_type_variation = &"" if campaign else &"PrimaryButton"
+	_menu.text = "Quit to title" if campaign else "Menu"
+	_next.visible = not campaign and game.stage_maps().size() > 1
 
 
 func _enter_card(t: float) -> void:
@@ -415,7 +438,7 @@ func _enter_card(t: float) -> void:
 		var bt := UIMotion.tween(self)
 		bt.tween_callback(_burst).set_delay(stamp_at + 0.5)
 	var ft := UIMotion.tween(self)
-	ft.tween_callback(_retry.grab_focus).set_delay(0.6)
+	ft.tween_callback((_continue if _continue.visible else _retry).grab_focus).set_delay(0.6)
 
 
 func _on_stamp_landed() -> void:
@@ -474,9 +497,10 @@ func _on_menu() -> void:
 	UIApi.game().request_menu()
 
 
+## Next stage map of the Time Attack list (liaison roads are not stages).
 func _on_next() -> void:
 	var game := UIApi.game()
-	var maps: Array = game.MAPS
+	var maps: Array = game.stage_maps()
 	var cur := str(result.get("map_id", game.map_id))
 	var idx := 0
 	for i in maps.size():

@@ -1,12 +1,22 @@
 extends SceneTree
-## Exercises the game flows the playthrough does not: free roam, pause and resume through
-## the UI's input path, a manual car reset, restart during the countdown, launch control on
-## the start line, camera cycling, and all three quality presets (FPS measured on the same
-## stretch of road). Prints CHECK lines and a final summary; exits non-zero on failures.
+## Exercises the game flows the playthrough does not. Prints CHECK lines and a final summary;
+## exits non-zero on failures. Headless or windowed (windowed also saves frames to `out`).
+##
+## flow=core (default): free roam, pause and resume through the UI's input path, a manual car
+## reset, restart during the countdown, launch control on the start line, camera cycling, and
+## all three quality presets (FPS measured on the same stretch of road).
+##
+## flow=campaign: the whole campaign from the title to the finale and back. The autopilot
+## drives both stages and the liaison; results Continue, the finale and its end card are
+## pressed through the UI's input path. On the way: the pause menu of a stage and of the
+## liaison, quitting mid-liaison and resuming at the start of that leg, the arrival stop, the
+## classification, and the title's finished state.
 ##
 ##   timeout 400 $S --disable-crash-handler --path . -s res://tools/game/flows.gd -- map=hanami
+##   timeout 900 $S --headless --disable-crash-handler --path . -s res://tools/game/flows.gd -- \
+##       flow=campaign speed=3
 
-var opts := {"map": "hanami", "out": "/tmp/flows"}
+var opts := {"flow": "core", "map": "hanami", "out": "/tmp/flows", "speed": "3"}
 var main: Node
 var game: Node
 var t0 := 0
@@ -41,7 +51,17 @@ func _initialize() -> void:
 func _run() -> void:
 	await _until_state(&"MENU", 60.0)
 	await _seconds(1.0)
+	if opts["flow"] == "campaign":
+		await _run_campaign()
+	else:
+		await _run_core()
+	_log("SUMMARY: %d failures" % failures.size())
+	for f in failures:
+		_log("  FAIL %s" % f)
+	game.request_quit(1 if failures.size() > 0 else 0)
 
+
+func _run_core() -> void:
 	# ---------------------------------------------------------------- free roam
 	_mark()
 	game.request_start(opts["map"], game.MODE_FREE_ROAM)
@@ -156,10 +176,165 @@ func _run() -> void:
 	await _until_state(&"MENU", 60.0)
 	_check(Engine.time_scale == 1.0 and not paused, "back on the title with normal time")
 
-	_log("SUMMARY: %d failures" % failures.size())
-	for f in failures:
-		_log("  FAIL %s" % f)
-	game.request_quit(1 if failures.size() > 0 else 0)
+
+# ---------------------------------------------------------------- campaign
+
+func _run_campaign() -> void:
+	var ui: CanvasLayer = main.ui
+	_check(not bool(game.campaign_status()["started"]), "fresh profile: campaign not started")
+	_mark()
+	game.request_campaign(true)
+	_check(game.campaign_active, "request_campaign(true) starts the campaign")
+	var legs: Array = game.CAMPAIGN
+	var resumed := false
+	var li := 0
+	while li < legs.size():
+		var leg: Dictionary = legs[li]
+		await _until_state(&"JOURNEY", 60.0)
+		_check(game.state == game.State.JOURNEY and ui.journey.shown, "%s: journey map up" % leg["code"])
+		_check(int(game.campaign_status()["leg"]) == li, "%s: campaign status points at leg %d" % [leg["code"], li])
+		await _seconds(1.4)
+		await shot("journey_%d_travel%s" % [li, "_resumed" if resumed else ""])
+		_check(ui.journey.traveling or li == 0, "%s: the car marker travels on the map" % leg["code"])
+		_mark()
+		await _until_state(&"INTRO", 60.0)
+		_check(game.map_id == leg["map"] and game.campaign_leg == li, "%s: leg %s loads (map %s)" % [leg["code"], li, game.map_id])
+		await _seconds(1.6)
+		await shot("intro_%d" % li)
+		if leg["kind"] == "stage":
+			await _campaign_stage(ui, leg)
+		else:
+			if not resumed:
+				# Quit to the title mid-liaison: progress stays at the start of this leg.
+				await _until_state(&"LIAISON", 20.0)
+				await _campaign_pause(ui, leg)
+				_mark()
+				await _event(&"pause")
+				await _seconds(0.6)
+				ui.pause_menu._menu.pressed.emit()
+				await _until_state(&"MENU", 60.0)
+				_check(not game.campaign_active and int(game.campaign_status()["leg"]) == li,
+						"quit mid-liaison keeps the save at leg %d (status %s)" % [li, game.campaign_status()["leg"]])
+				await _seconds(1.0)
+				await shot("title_in_progress")
+				_mark()
+				game.request_campaign(false)
+				resumed = true
+				continue
+			await _campaign_liaison(ui, leg)
+		li += 1
+	# After the last stage: the marker drives to the goal, then the finale.
+	await _until_state(&"JOURNEY", 60.0)
+	await _seconds(1.4)
+	await shot("journey_goal")
+	_mark()
+	await _until_state(&"FINALE", 60.0)
+	_check(ui.finale.shown and ui.finale.phase == 1, "finale: classification up")
+	var table: Array = game.campaign_classification()
+	_check(table.size() == game.RIVALS.size() + 1, "classification has you + %d rivals" % game.RIVALS.size())
+	var ordered := true
+	for i in range(1, table.size()):
+		ordered = ordered and float(table[i]["total"]) >= float(table[i - 1]["total"])
+	_check(ordered, "classification sorted by total time")
+	await _seconds(2.0)
+	await shot("finale_board_a")
+	await _seconds(3.5)
+	await shot("finale_board")
+	_check(root.gui_get_focus_owner() == ui.finale._continue, "finale: Continue has focus")
+	await _event(&"ui_accept")
+	await _seconds(1.0)
+	await shot("finale_end_a")
+	await _seconds(3.5)
+	_check(ui.finale.phase == 2, "finale: end card")
+	await shot("finale_end")
+	_check(root.gui_get_focus_owner() == ui.finale._back, "end card: Back to title has focus")
+	_mark()
+	await _event(&"ui_accept")
+	await _until_state(&"MENU", 60.0)
+	var st: Dictionary = game.campaign_status()
+	_check(bool(st["finished"]) and not game.campaign_active, "back on the title with the campaign finished")
+	await _seconds(2.5)
+	await shot("title_finished")
+	_check(Engine.time_scale == 1.0 and not paused, "title with normal time, unpaused")
+
+
+func _campaign_stage(ui: CanvasLayer, leg: Dictionary) -> void:
+	await _until_state(&"COUNTDOWN", 20.0)
+	await _until_state(&"RACING", 10.0)
+	await _campaign_pause(ui, leg)
+	var result := {}
+	var grab := func(r: Dictionary) -> void: result.merge(r, true)
+	game.race_finished.connect(grab)
+	_drive()
+	_mark()
+	var start := Time.get_ticks_msec()
+	while game.state == game.State.RACING and Time.get_ticks_msec() - start < 400000:
+		await process_frame
+	Engine.time_scale = 1.0
+	game.race_finished.disconnect(grab)
+	_check(game.state == game.State.FINISHED, "%s: stage finished" % leg["code"])
+	_check(bool(result.get("campaign", false)) and int(result.get("standing", 0)) >= 1,
+			"%s: campaign result, P%d of %d, %s %s" % [leg["code"], result.get("standing", 0), result.get("field", 0),
+			game.format_time(float(result.get("time", INF))), result.get("medal", "")])
+	await _seconds(5.5)
+	await shot("results_%s" % leg["code"])
+	_check(ui.results._continue.visible and not ui.results._next.visible and ui.results._menu.text == "Quit to title",
+			"%s: results show Continue / Retry stage / Quit to title" % leg["code"])
+	_check(root.gui_get_focus_owner() == ui.results._continue, "%s: Continue has focus" % leg["code"])
+	_mark()
+	await _event(&"ui_accept")
+
+
+func _campaign_liaison(ui: CanvasLayer, leg: Dictionary) -> void:
+	await _until_state(&"LIAISON", 20.0)
+	var car: Car = game.player_car
+	_check(car.controlled_by_player and car.speed_kmh > 10.0, "%s: handed over rolling (%.0f km/h)" % [leg["code"], car.speed_kmh])
+	_check(ui.liaison_hud.shown and not ui.hud.shown and not game.session.running, "%s: calm HUD, no timer" % leg["code"])
+	await _seconds(1.5)
+	await shot("liaison_hud")
+	var left0: float = game.session.distance_left
+	_drive()
+	_mark()
+	var start := Time.get_ticks_msec()
+	while game.state == game.State.LIAISON and Time.get_ticks_msec() - start < 400000:
+		await process_frame
+	Engine.time_scale = 1.0
+	_check(game.state == game.State.ARRIVED, "%s: arrived (%.0f m driven)" % [leg["code"], left0 - float(game.session.distance_left)])
+	_check(int(game.campaign_status()["leg"]) > game.campaign_leg, "arrival saves the next leg")
+	await _seconds(1.2)
+	await shot("arrival_a")
+	await _seconds(1.6)
+	await shot("arrival")
+	var arrival_d := Vector2(car.global_position.x - main.map.arrival.origin.x, car.global_position.z - main.map.arrival.origin.z).length()
+	_check(car.speed_kmh < 3.0 and arrival_d < main.map.arrival_radius + 6.0,
+			"arrival stop: %.1f km/h, %.1f m from the time control" % [car.speed_kmh, arrival_d])
+	_mark()
+
+
+## Opens the pause menu through the pause action and checks the campaign items.
+func _campaign_pause(ui: CanvasLayer, leg: Dictionary) -> void:
+	await _event(&"pause")
+	await _seconds(0.6)
+	var pm: Control = ui.pause_menu
+	var stage: bool = leg["kind"] == "stage"
+	_check(game.paused and pm._restart.visible == stage and (not stage or pm._restart.text == "Retry stage")
+			and pm._menu.text == "Quit to title", "%s: campaign pause menu (%s)" % [leg["code"], "retry" if stage else "no retry"])
+	await shot("pause_%s" % leg["code"])
+	await _event(&"pause")
+	await _seconds(0.3)
+	_check(not game.paused, "%s: resumed" % leg["code"])
+
+
+## The autopilot takes the player car for the rest of the leg (Main drops it on arrival).
+func _drive() -> void:
+	var car: Car = game.player_car
+	car.controlled_by_player = false
+	var ap := Autopilot.new()
+	ap.curve = main.drive_curve()
+	ap.closed = main.map.track.closed
+	car.add_child(ap)
+	main.autopilot = ap
+	Engine.time_scale = float(opts["speed"])
 
 
 func _check(ok: bool, what: String) -> void:
@@ -217,6 +392,8 @@ func _until_state(state_name: StringName, timeout: float) -> void:
 
 
 func shot(name_: String) -> void:
+	if DisplayServer.get_name() == "headless":
+		return
 	await RenderingServer.frame_post_draw
 	var path := "%s/%s.png" % [opts["out"], name_]
 	root.get_texture().get_image().save_png(path)
