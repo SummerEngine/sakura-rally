@@ -144,6 +144,8 @@ func _run() -> void:
 	print("  motion: %s | %s" % motion)
 	if rendering and not shots.is_empty():
 		print("  frames: %s" % _write_sheet(map_id))
+	elif rendering:
+		push_warning("camera_probe: no descent frame was drawn (the offscreen window stopped drawing?)")
 	game.request_quit()
 
 
