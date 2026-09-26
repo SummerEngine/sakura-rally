@@ -25,27 +25,27 @@ const MODE_FREE_ROAM := "free_roam"
 
 const SAVE_PATH := "user://sakura_rally.cfg"
 
-## Map catalogue. Medal times are in seconds for one lap in time trial.
+## Map catalogue. Medal times are in seconds for one lap in time trial, set against the
+## autopilot's clean reference lap (hanami 123.4 s, momiji 108.2 s): gold ~1.1x, silver
+## ~1.22x, bronze ~1.42x.
 const MAPS: Array[Dictionary] = [
 	{
 		"id": "hanami",
 		"name": "Hanami Pass",
 		"name_jp": "花見峠",
 		"tagline": "Spring noon. Gravel and tarmac under the blossom.",
-		"scene": "res://scenes/maps/hanami.tscn",
 		"preview": "res://assets/textures/previews/hanami.png",
 		"season": "spring",
-		"medals": {"gold": 150.0, "silver": 170.0, "bronze": 195.0},
+		"medals": {"gold": 135.0, "silver": 150.0, "bronze": 175.0},
 	},
 	{
 		"id": "momiji",
 		"name": "Momiji Valley",
 		"name_jp": "紅葉谷",
 		"tagline": "Autumn, golden hour. Loose dirt through the maples.",
-		"scene": "res://scenes/maps/momiji.tscn",
 		"preview": "res://assets/textures/previews/momiji.png",
 		"season": "autumn",
-		"medals": {"gold": 150.0, "silver": 170.0, "bronze": 195.0},
+		"medals": {"gold": 118.0, "silver": 132.0, "bronze": 154.0},
 	},
 ]
 
@@ -77,20 +77,34 @@ var paused: bool = false
 var settings: Dictionary = DEFAULT_SETTINGS.duplicate(true)
 ## map_id -> {"time": float, "splits": Array[float]}
 var records: Dictionary = {}
+## False for tool runs (`-s` scripts: the SceneTree has a script) and the UI preview:
+## they start from defaults and never read or write the player's save file.
+var persistent := true
 
 ## Set by the Main scene / race session while a map is loaded.
 var player_car: Node = null ## RigidBody3D with scripts/vehicle/car.gd
 var session: Node = null ## scripts/game/race_session.gd
+var _quitting := false
 
 
 func _enter_tree() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	get_tree().auto_accept_quit = false
+	persistent = get_tree().get_script() == null
 	_setup_input_map()
-	_load()
+	if persistent:
+		_load()
 
 
 func _ready() -> void:
+	if persistent:
+		_fit_window()
 	_apply_window_settings()
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		request_quit()
 
 
 # ---------------------------------------------------------------- requests (UI)
@@ -109,9 +123,23 @@ func request_menu() -> void:
 	menu_requested.emit()
 
 
-func request_quit() -> void:
+## Every quit comes through here: the title's Quit button, closing the window, Cmd+Q, and the
+## tools that run the game. A player still playing when the tree is torn down leaks its
+## stream: the AudioServer releases a stopped playback only after its audio thread has mixed
+## the fade-out. So stop them all and give that thread 100 ms of wall-clock time (frames run
+## faster than real time under --fixed-fps), then quit.
+func request_quit(exit_code: int = 0) -> void:
+	if _quitting:
+		return
+	_quitting = true
 	_save()
-	get_tree().quit()
+	for node in get_tree().root.find_children("*", "", true, false):
+		if node is AudioStreamPlayer or node is AudioStreamPlayer2D or node is AudioStreamPlayer3D:
+			node.stop()
+	var until := Time.get_ticks_msec() + 100
+	while Time.get_ticks_msec() < until:
+		await get_tree().process_frame
+	get_tree().quit(exit_code)
 
 
 func set_paused(value: bool) -> void:
@@ -257,6 +285,13 @@ func _setup_input_map() -> void:
 	_action("reset_car", [KEY_R], [JOY_BUTTON_BACK], [])
 	_action("pause", [KEY_ESCAPE, KEY_P], [JOY_BUTTON_START], [])
 	_action("horn", [KEY_H], [JOY_BUTTON_LEFT_STICK], [])
+	# The engine's built-in ui_accept / ui_cancel are keyboard-only (Enter/Space, Escape):
+	# without these a gamepad moves menu focus but cannot press a button or back out.
+	for pair: Array in [["ui_accept", JOY_BUTTON_A], ["ui_cancel", JOY_BUTTON_B]]:
+		var jb := InputEventJoypadButton.new()
+		jb.button_index = pair[1]
+		if not InputMap.action_has_event(pair[0], jb):
+			InputMap.action_add_event(pair[0], jb)
 
 
 func _action(action_name: String, keys: Array, buttons: Array, axes: Array) -> void:
@@ -291,12 +326,27 @@ func _load() -> void:
 
 
 func _save() -> void:
+	if not persistent:
+		return
 	var cfg := ConfigFile.new()
 	for key in settings.keys():
 		cfg.set_value("settings", key, settings[key])
 	for id in records.keys():
 		cfg.set_value("records", id, records[id])
 	cfg.save(SAVE_PATH)
+
+
+## A player launch opens a 16:9 window on 80 % of the usable screen: the project's 1600x900
+## window size is in pixels, which is a small window on a Retina display. Tool runs and the
+## UI preview keep the sizes they set.
+func _fit_window() -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	var area := DisplayServer.screen_get_usable_rect(DisplayServer.window_get_current_screen())
+	var k := minf(area.size.x / 16.0, area.size.y / 9.0) * 0.8
+	var win_size := Vector2i(roundi(16.0 * k), roundi(9.0 * k))
+	DisplayServer.window_set_size(win_size)
+	DisplayServer.window_set_position(area.position + (area.size - win_size) / 2)
 
 
 func _apply_window_settings() -> void:

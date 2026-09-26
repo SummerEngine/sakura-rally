@@ -175,4 +175,4 @@ func _finish() -> void:
 	var f := FileAccess.open(ProjectSettings.globalize_path(OUT_DIR + "audio_test%s_events.json" % suffix), FileAccess.WRITE)
 	f.store_string(JSON.stringify(_log, "  "))
 	f.close()
-	get_tree().quit()
+	get_node("/root/Game").request_quit()

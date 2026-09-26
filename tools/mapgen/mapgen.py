@@ -8,7 +8,7 @@ Reads the map specs in tools/mapgen/maps/, the props manifest
   assets/maps/<id>/map.json   descriptors, track data, checkpoints, instances
   assets/maps/<id>/map.bin    mesh and grid blobs (see lib/meshpack.py)
   docs/renders/map_<id>.png   top-down preview
-scripts/world/map_loader.gd assembles these into the playable scene.
+scripts/world/map_world.gd assembles these into the playable scene.
 """
 from __future__ import annotations
 

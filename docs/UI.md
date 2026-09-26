@@ -81,7 +81,8 @@ landscape in the season palette (`shaders/ui/painted_scene.gdshader`).
 ## Input
 
 Everything works with keyboard, gamepad and mouse. Focus navigation uses Godot's `ui_*`
-actions (arrows / d-pad / left stick, Enter / A to accept, Esc / B to go back). Pickers
+actions (arrows / d-pad / left stick, Enter / A to accept, Esc / B to go back; the engine's
+built-in `ui_accept` / `ui_cancel` are keyboard-only, so `Game` adds A and B to them). Pickers
 (mode, livery, settings rows) are a single focus stop each: left/right change the value,
 up/down move between rows. Mouse hover moves focus, so the single sakura focus ring
 (`widgets/focus_ring.gd`) always shows where you are. Keycap hints on the title switch to

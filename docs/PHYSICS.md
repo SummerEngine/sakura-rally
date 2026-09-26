@@ -89,6 +89,11 @@ slope) settles a coasting car. The result: 0.2 cm drift over 5 s on a 15° slope
 - **Auto mode**: upshift rpm scales with throttle (4300 light → 7250 full), downshift 1900 → 3700,
   kickdown on full throttle below 4300 rpm, downshifts under braking, no shifts while airborne
   (fewer than 2 wheels down) or on the handbrake, 0.55 s / 0.35 s cooldown after up/downshifts.
+  Below 7250 rpm it upshifts only after 1.5 s of cruising (`cruise_time`: no throttle above 0.8,
+  no brake) and not while the car slows by more than 0.8 m/s² (`upshift_min_accel`), so lifting
+  before a corner, braking into it and feeding the throttle back in hold the gear instead of
+  short-shifting and kicking down again. Low-rpm and kickdown downshifts only land below
+  5250 rpm (`downshift_target_max`), so the box never drops into 1st for a blip at 40+ km/h.
   **Manual mode** when `Game.get_setting("transmission") == "manual"` (`shift_up`/`shift_down`, also
   `Car.shift_up()` / `shift_down()`; over-revving downshifts are refused). Reverse: hold brake at
   standstill for 0.3 s in either mode; in reverse the brake pedal drives backwards and throttle
@@ -108,7 +113,8 @@ slope) settles a coasting car. The result: 0.2 cm drift over 5 s on a 15° slope
   the stick gets a 1.35 response curve and light smoothing. Pedals ramp in at 9/s on keyboard;
   analog triggers pass through.
 - **Countersteer**: front wheels lean towards the direction of travel by 55 % of the body slip angle
-  (reduced on the handbrake), so a slide is caught by just centring the wheel.
+  beyond 4° (reduced on the handbrake), so a slide is caught by just centring the wheel while the
+  1-3° of body slip in fast grip cornering keep the full steering.
 - **Yaw assist**: torque that resists yaw rate beyond what the steering asks for (only when it
   over-rotates), plus straight-line yaw damping at speed when the wheel is centred.
 - **TC**: cuts throttle when driven slip exceeds 2.4 × the surface peak slip (light; slides are still
@@ -148,7 +154,8 @@ Exported on `Car` (inspector groups):
 | `handbrake_torque` | 3200 Nm | Rear lock strength on the handbrake |
 | `steer_lock_low_deg` / `_high_deg` / `steer_lock_speed_ref` | 32 / 8 / 55 | Speed-sensitive lock curve |
 | `ackermann` | 0.6 | Inner wheel extra steer fraction |
-| `countersteer_gain` | 0.55 | Automatic countersteer; higher = slides catch themselves |
+| `countersteer_gain` | 0.55 | Automatic countersteer on body slip beyond the deadzone; higher = slides catch themselves |
+| `countersteer_deadzone_deg` | 4 | Body slip left alone (normal grip cornering); lower = the assist fights the driver in fast corners |
 | `yaw_assist` | 2200 | Over-rotation damping; higher = harder to spin, less drifty |
 | `straight_stability` | 1500 | Yaw damping at speed with the wheel centred |
 | `tc_slip_multiple` / `abs_slip_multiple` | 2.4 / 1.6 | Assist thresholds (× surface peak slip); higher = lighter assist |
@@ -159,7 +166,9 @@ Exported on `Car` (inspector groups):
 On `Drivetrain` (plain vars, `car.drivetrain.*`): `torque_curve_*`, `engine_inertia`, `friction_*`,
 `na_fraction`, `spool_*`, `turbo_spool_time`, `turbo_release_time`, `limiter_cut_time`, `gear_ratios`,
 `final_drive`, `upshift_time`, `downshift_time`, `clutch_max_torque`, `launch_rpm`, `front_split`,
-`lsd_*`, `center_*`, `upshift_rpm_*`, `downshift_rpm_*`. On `CarInput`: `key_steer_rate_*`,
+`lsd_*`, `center_*`, `upshift_rpm_*`, `downshift_rpm_*`, `cruise_time`, `upshift_min_accel`,
+`downshift_target_max`.
+On `CarInput`: `key_steer_rate_*`,
 `key_return_rate`, `stick_exponent`, `pedal_rate`.
 
 ## Autopilot
@@ -168,7 +177,11 @@ precomputes a speed profile from the line's curvature and the grip under each sa
 (`v = sqrt(corner_grip · μ · g · R)`), then runs backwards/forwards braking- and acceleration-distance
 passes (`brake_grip`). Steering is pure pursuit on a lookahead of `lookahead_base + lookahead_time · v`
 (7-30 m), converted to a steer input through `Car.steer_lock_at()`. Throttle/brake come from a
-speed-error controller with anticipation. `speed_scale` (0.2-1.3) and `lateral_offset` (m) are
+speed-error controller with anticipation (brake from 0.3 m/s over target, full at 1.8 m/s). Off
+the line on a slower surface the target scales by √(grip under the tyres / grip of the line), and
+the throttle backs off while the body slides more than 8°. `corner_grip` 0.76 keeps ~15 % of the
+car's cornering grip in hand, so both maps run clean (no impacts, wheels within 0.6 m of the edge).
+`speed_scale` (0.2-1.3) and `lateral_offset` (m) are
 exported; `laps`, `lap_time`, `last_lap_time`, `progress`, `lateral_error` and `lap_completed` are
 available for menus and tests.
 

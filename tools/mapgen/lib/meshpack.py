@@ -1,4 +1,4 @@
-"""Binary mesh pack written by the map compiler and read by scripts/world/map_loader.gd.
+"""Binary mesh pack written by the map compiler and read by scripts/world/map_world.gd.
 
 Layout: one little-endian blob per map (`<name>.bin`). Every mesh is a block of
 arrays in a fixed order - positions (f32 x3), normals (f32 x3), colours (f32 x4),

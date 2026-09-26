@@ -54,6 +54,8 @@ func _ready() -> void:
 	Game.restart_requested.connect(_on_restart_requested)
 	Game.menu_requested.connect(_on_menu_requested)
 	Game.settings_changed.connect(_on_settings_changed)
+	get_window().size_changed.connect(func() -> void:
+		Quality.apply_render_scale(str(Game.get_setting("quality")), get_window()))
 	ui.transition.set_loading_label("桜", "Sakura Rally")
 	ui.transition.cover(0.01)
 	_busy = true
@@ -286,7 +288,7 @@ func _restore_time() -> void:
 
 func _apply_quality() -> void:
 	var q := str(Game.get_setting("quality"))
-	Quality.apply(q, get_viewport(), map)
+	Quality.apply(q, get_window(), map)
 	post.apply_quality(q)
 	if fx != null:
 		fx.set_quality(q)

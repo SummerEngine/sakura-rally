@@ -53,7 +53,7 @@ func _initialize() -> void:
 		await shot_bumps()
 	if _want("modes"):
 		await shot_modes()
-	quit()
+	root.get_node("Game").request_quit()
 
 
 func _want(shot: String) -> bool:

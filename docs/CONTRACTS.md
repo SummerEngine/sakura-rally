@@ -16,10 +16,16 @@ soft aerial haze, pastel sky with puffy cel clouds, thin dark-violet ink lines.
 - Run a headless script: `$S --headless --disable-crash-handler --path . -s res://path/script.gd`
   (script `extends SceneTree`, calls `quit()`; autoloads are NOT identifiers in `-s` scripts,
   use `root.get_node("Game")`).
+- `-s` runs and the UI preview never read or write the player's save
+  (`user://sakura_rally.cfg`): `Game.persistent` is false, so they start from default
+  settings with no records, and nothing they finish or change reaches the player.
 - Headless has no pixels. For screenshots run windowed (no `--headless`); windows on screen are
   fine for this project. Capture with `get_viewport().get_texture().get_image().save_png(...)`.
 - Judge runs by stderr (`SCRIPT ERROR`, `Parse Error`, `ERROR:`) and by artifacts, not exit code.
   Summer prints harmless noise: `[SE] AuthManager`, `Sparkle`, `SSL module failed`, `TLS handshake`.
+- Tools that run the game, a car or the Sound API end with `Game.request_quit(exit_code)`, not
+  `quit()`. It stops every audio player and waits 100 ms of wall-clock time so no stream is
+  still live at teardown; otherwise every run ends with `ERROR: N resources still in use at exit`.
 
 ## Units and axes
 
@@ -32,7 +38,7 @@ soft aerial haze, pastel sky with puffy cel clouds, thin dark-violet ink lines.
 | Path | Owner |
 |---|---|
 | `project.godot`, `scripts/autoload/game.gd`, `scripts/main.gd`, `scenes/main.tscn` | integrator (lead). Others: ask, don't edit |
-| `shaders/`, `scripts/world/`, `scripts/fx/`, `scenes/maps/`, `tools/build/` | lead (rendering + world) |
+| `shaders/`, `scripts/world/`, `scripts/fx/`, `assets/maps/`, `tools/build/` | lead (rendering + world) |
 | `assets/models/car/`, `tools/blender/build_car.py` | car-model agent |
 | `assets/models/props/`, `tools/blender/build_props.py` | props agent |
 | `scripts/vehicle/` (except `car_audio.gd`), `scripts/camera/`, `scenes/car/` | physics agent |
@@ -141,6 +147,12 @@ Live data for the HUD: `Game.player_car` (car API above), `Game.session` with
 top_speed_kmh`.
 Helpers: `Game.format_time(t)`, `Game.format_delta(d)`, `Game.best_time(map_id)`,
 `Game.car_colors()`, `Game.CAR_COLORS`, `Game.get_setting(key)`.
+
+Display: a player launch fits a 16:9 window to 80 % of the usable screen
+(`Game._fit_window`). The 3D view renders at most 1920×1080 pixels before the quality preset's
+own scale (`Quality.RENDER_BUDGET_PX`): bigger windows and fullscreen are upscaled with FSR, so a
+Retina fullscreen costs about what a 1080p window does. Main re-applies the scale on every window
+resize (`Quality.apply_render_scale`).
 
 ## Sound (`Sound` autoload, `scripts/autoload/sound.gd`)
 

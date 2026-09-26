@@ -49,16 +49,14 @@ func _run() -> void:
 	await create_timer(0.4).timeout
 	game.set_paused(false)
 	var old_music: float = game.get_setting("music_volume")
-	var old_master: float = game.get_setting("master_volume")
 	game.set_setting("music_volume", 0.0)
 	print("MUSIC BUS muted=%s" % AudioServer.is_bus_mute(AudioServer.get_bus_index("Music")))
 	game.set_setting("music_volume", old_music)
 	game.set_setting("master_volume", 0.5)
 	print("MASTER %.2f dB" % AudioServer.get_bus_volume_db(0))
-	game.set_setting("master_volume", old_master) # settings persist: restore the user's values
 	sound.stop_music(0.2)
 	sound.stop_ambience(0.0)
 	sound.stop_music(0.2) # stopping twice is harmless
 	await create_timer(0.5).timeout
 	print("SOUND API SMOKE OK")
-	quit()
+	game.request_quit()

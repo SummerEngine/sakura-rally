@@ -155,7 +155,7 @@ func run(p_driver: Node, p_aspect: String) -> void:
 	await _wait(0.4)
 
 	print("UI_CAPTURE done %s: %s" % [aspect, ", ".join(_shots)])
-	get_tree().quit()
+	driver.game.request_quit()
 
 
 # ---------------------------------------------------------------- helpers

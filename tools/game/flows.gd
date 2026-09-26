@@ -159,7 +159,7 @@ func _run() -> void:
 	_log("SUMMARY: %d failures" % failures.size())
 	for f in failures:
 		_log("  FAIL %s" % f)
-	quit(1 if failures.size() > 0 else 0)
+	game.request_quit(1 if failures.size() > 0 else 0)
 
 
 func _check(ok: bool, what: String) -> void:

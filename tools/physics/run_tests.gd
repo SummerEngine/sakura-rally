@@ -37,7 +37,7 @@ func _initialize() -> void:
 	await physics_frame
 	await _run_all()
 	_print_report()
-	quit()
+	root.get_node("Game").request_quit()
 
 
 func _want(test_name: String) -> bool:

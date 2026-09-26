@@ -31,7 +31,6 @@ var _mat := ShaderMaterial.new()
 var _autumn := 0.0
 var _autumn_target := 0.0
 var _drive_x := 0.0
-var _records_snapshot: Dictionary = {}
 var _aspect_keys: Array = ASPECTS.keys()
 var _aspect_i := 0
 
@@ -39,8 +38,8 @@ var _aspect_i := 0
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	game = get_tree().root.get_node("Game")
-	# Preview runs must not leave records in the player's save file.
-	_records_snapshot = (game.records as Dictionary).duplicate(true)
+	# Preview runs never write the player's save file (records shown are the real ones).
+	game.persistent = false
 	_mat.shader = PAINTED
 	_mat.set_shader_parameter("time_scale", 0.5)
 	backdrop.material = _mat
@@ -71,12 +70,6 @@ func _ready() -> void:
 		add_child(runner)
 		runner.run(self, capture_aspect)
 	game.set_state(game.State.MENU)
-
-
-func _exit_tree() -> void:
-	game.records = _records_snapshot
-	# Persist the restored records (any setting write saves the whole config).
-	game.set_setting("car_color", game.get_setting("car_color"))
 
 
 func set_aspect(key: String) -> void:

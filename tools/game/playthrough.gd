@@ -10,8 +10,13 @@ extends SceneTree
 ##
 ## map: hanami | momiji. mode: time_trial | free_roam (free roam drives `lap_s` seconds).
 ## speed: Engine.time_scale while the autopilot drives (the flow itself runs in real time).
+## record=1: capture the end of the Master bus to <out>/playthrough.wav with
+## <out>/playthrough_events.json (states, gears, surfaces, checkpoints) for
+## tools/audio/render_test.py, and <out>/playthrough_trace.json: 20 Hz rows of
+## [t, throttle, brake, gear, rpm, km/h, lateral m/s^2, forward m/s^2] for gearbox tuning.
+## Use with speed=1 shots=0 and --audio-driver Dummy (mixes silently in real time).
 
-var opts := {"map": "hanami", "mode": "time_trial", "out": "/tmp/playthrough", "speed": "2", "shots": "8", "lap_s": "40"}
+var opts := {"map": "hanami", "mode": "time_trial", "out": "/tmp/playthrough", "speed": "2", "shots": "8", "lap_s": "40", "record": ""}
 var main: Node
 var game: Node
 var t0 := 0
@@ -19,6 +24,14 @@ var fps_samples: Array[float] = []
 ## How many times each state was entered, and the counts at the last _mark().
 var reached: Dictionary = {}
 var marked: Dictionary = {}
+var _record: AudioEffectRecord
+var _events: Array[Dictionary] = []
+var _rec_t0 := 0
+var _last_gear := -99
+var _last_surface: StringName = &""
+var _watched: Car
+var _trace: Array[PackedFloat32Array] = []
+var _trace_next := 0.0
 
 
 func _initialize() -> void:
@@ -31,11 +44,13 @@ func _initialize() -> void:
 	game = root.get_node("Game")
 	game.state_changed.connect(func(s: int, _o: int) -> void:
 		reached[s] = int(reached.get(s, 0)) + 1
-		_log("STATE %s" % (game.State as Dictionary).find_key(s)))
+		_log("STATE %s" % (game.State as Dictionary).find_key(s))
+		_event(str((game.State as Dictionary).find_key(s)).to_lower()))
 	game.race_finished.connect(func(r: Dictionary) -> void:
 		_log("FINISHED time=%.3f medal=%s record=%s top=%.0f" % [r["time"], r["medal"], r["is_record"], r.get("top_speed_kmh", 0.0)]))
 	game.checkpoint_passed.connect(func(i: int, n: int, t: float, _d: float) -> void:
-		_log("CHECKPOINT %d/%d %.2f" % [i + 1, n, t]))
+		_log("CHECKPOINT %d/%d %.2f" % [i + 1, n, t])
+		_event("cp%d" % (i + 1)))
 	game.notice.connect(func(text: String) -> void: _log("NOTICE %s" % text))
 	t0 = Time.get_ticks_msec()
 	main = load("res://scenes/main.tscn").instantiate()
@@ -44,6 +59,14 @@ func _initialize() -> void:
 
 
 func _run() -> void:
+	# Here, not in _initialize: Sound only builds the Master compressor/limiter on an
+	# empty Master bus, so the recorder must be appended after the autoloads are ready.
+	if opts["record"] != "":
+		_record = AudioEffectRecord.new()
+		AudioServer.add_bus_effect(0, _record, -1) # after the Master limiter: what the player hears
+		_record.set_recording_active(true)
+		_rec_t0 = Time.get_ticks_msec()
+		physics_frame.connect(_watch_car)
 	await _until_state(&"MENU", 60.0)
 	_log("title up")
 	await _seconds(3.0)
@@ -120,7 +143,58 @@ func _run() -> void:
 	if n > 0:
 		_log("FPS drive: min=%.0f p10=%.0f median=%.0f" % [fps_samples[0], fps_samples[n / 10], fps_samples[n / 2]])
 	_log("PLAYTHROUGH DONE")
-	quit()
+	_save_recording()
+	game.request_quit()
+
+
+## Gear and rear-wheel surface changes of the player car plus its one-shot events
+## (backfire, impact, landing), for the spectrogram marks.
+func _watch_car() -> void:
+	var car: Car = game.player_car
+	if car == null or not is_instance_valid(car):
+		_last_gear = -99
+		return
+	if car != _watched:
+		_watched = car
+		car.backfire.connect(_event.bind("bf"))
+		car.impact.connect(func(s: float, _p: Vector3) -> void: _event("hit%.1f" % s))
+		car.landed.connect(func(s: float) -> void: _event("land%.1f" % s))
+	if car.gear != _last_gear:
+		_last_gear = car.gear
+		_event("g%d" % car.gear)
+	var t := (Time.get_ticks_msec() - _rec_t0) / 1000.0
+	if t >= _trace_next:
+		_trace_next = t + 0.05
+		var v := car.linear_velocity
+		var fwd := -car.global_basis.z
+		_trace.append(PackedFloat32Array([snappedf(t, 0.001), car.input_throttle, car.input_brake, car.gear,
+				car.drivetrain.rpm, v.dot(fwd) * 3.6, car.angular_velocity.y * v.length(), car.drivetrain._accel]))
+	var s: StringName = car.wheels[2].surface if car.wheels[2].contact else &"air"
+	if s != _last_surface:
+		_last_surface = s
+		_event(str(s))
+
+
+func _event(label: String) -> void:
+	if _record != null:
+		_events.append({"t": snappedf((Time.get_ticks_msec() - _rec_t0) / 1000.0, 0.001), "label": label})
+
+
+func _save_recording() -> void:
+	if _record == null:
+		return
+	_event("end")
+	_record.set_recording_active(false)
+	var wav := _record.get_recording()
+	var path := "%s/playthrough.wav" % opts["out"]
+	wav.save_to_wav(path)
+	var f := FileAccess.open("%s/playthrough_events.json" % opts["out"], FileAccess.WRITE)
+	f.store_string(JSON.stringify(_events))
+	f.close()
+	f = FileAccess.open("%s/playthrough_trace.json" % opts["out"], FileAccess.WRITE)
+	f.store_string(JSON.stringify(_trace))
+	f.close()
+	_log("RECORDING %s (%.1f s, %d events)" % [path, wav.get_length(), _events.size()])
 
 
 func _log(msg: String) -> void:

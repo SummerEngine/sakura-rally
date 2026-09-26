@@ -31,7 +31,9 @@ var _side: float = 1.0
 var _orbit_a: float = 0.0
 var _hint: int = -1
 var _rng := RandomNumberGenerator.new()
-var _smooth_look: Vector3 = Vector3.ZERO
+var _smooth_c: Vector3 = Vector3.ZERO
+var _smooth_fwd: Vector3 = Vector3.FORWARD
+var _lift: float = 0.0
 var _smooth_pos: Vector3 = Vector3.ZERO
 var _fresh: bool = true
 
@@ -72,6 +74,17 @@ func start_finish(new_car: Car) -> void:
 	var rel := global_position - car.get_global_transform_interpolated().origin
 	_orbit_a = atan2(rel.x, rel.z)
 	_fresh = true
+	make_current()
+
+
+## Cuts to one flyover shot now and keeps cycling from it (the demo reel's director).
+## `side`: +1 right / -1 left of the car (or of the road for roadside / scenic).
+## `anchor_s`: road distance of the roadside / scenic camera; NAN = ahead of the car.
+func cut_to(new_car: Car, new_track: Track, shot: String, side: float, anchor_s: float = NAN) -> void:
+	car = new_car
+	track = new_track
+	mode = Mode.MENU
+	_begin_shot(MENU_SHOTS.find(shot), side, anchor_s)
 	make_current()
 
 
@@ -132,19 +145,28 @@ func _finish(delta: float) -> void:
 # ------------------------------------------------------------------ menu flyover
 
 func _next_shot() -> void:
-	_shot_i = (_shot_i + 1) % MENU_SHOTS.size()
-	_shot = MENU_SHOTS[_shot_i]
+	_begin_shot((_shot_i + 1) % MENU_SHOTS.size(), -1.0 if _rng.randf() < 0.5 else 1.0, NAN)
+
+
+func _begin_shot(i: int, side: float, anchor_s: float) -> void:
+	_shot_i = i
+	_shot = MENU_SHOTS[i]
 	_shot_t = 0.0
-	_side = -1.0 if _rng.randf() < 0.5 else 1.0
+	_side = side
 	_fresh = true
 	var s := _car_s()
 	match _shot:
 		"roadside":
-			_anchor_s = s + 70.0
-			_anchor = _roadside_point(_anchor_s, _side * 6.5, 1.1)
+			_anchor_s = s + 70.0 if is_nan(anchor_s) else anchor_s
+			# Map generation bakes marker posts and chevron boards (no colliders, so _clear_anchor
+			# cannot see them) along the outside of every bend: on a bend the camera takes the inside.
+			var turn := _turn_at(_anchor_s)
+			if absf(turn) > deg_to_rad(10.0):
+				_side = -signf(turn)
+			_anchor = _clear_anchor(_anchor_s, _side * 6.5, 1.1, 5.0, [-40.0, -25.0, -12.0, 0.0, 12.0, 24.0])
 		"scenic":
-			_anchor_s = s + 110.0
-			_anchor = _roadside_point(_anchor_s, _side * 38.0, 14.0)
+			_anchor_s = s + 110.0 if is_nan(anchor_s) else anchor_s
+			_anchor = _clear_anchor(_anchor_s, _side * 38.0, 14.0, 12.0, [-60.0, -35.0, -10.0, 15.0, 40.0])
 	fov = 55.0 if _shot in ["roadside", "scenic"] else 60.0
 
 
@@ -166,14 +188,91 @@ func _roadside_point(s: float, lat: float, h: float) -> Vector3:
 	return p
 
 
+## Heading change of the road over the 30 m around distance s (radians, + = turning left).
+func _turn_at(s: float) -> float:
+	var a := track.forward_at_abs(s - 15.0)
+	var b := track.forward_at_abs(s + 15.0)
+	return atan2(a.cross(b).y, a.dot(b))
+
+
+## A roadside / scenic camera spot near road distance s (lateral lat, height h) that keeps props
+## (tyre stacks, fences, spectators, gate pillars) out of the picture and sees the road at every
+## `sights` offset from s. Each sight is a direction the shot looks while the car goes by, so the
+## near 7 m of the view toward it must hold no prop, and the line to it must be open. Tries spots
+## shifted along the road by `step`, wider, then higher; falls back to the spot that passes the
+## most checks.
+func _clear_anchor(s: float, lat: float, h: float, step: float, sights: Array) -> Vector3:
+	var space := get_world_3d().direct_space_state
+	var room := PhysicsShapeQueryParameters3D.new()
+	var ball := SphereShape3D.new()
+	ball.radius = 2.5 # tree trunk colliders are as tall as the tree: this keeps out of canopies too
+	room.shape = ball
+	room.collision_mask = MapWorld.LAYER_PROPS
+	# The near part of the frame: a pyramid from the lens, 7 m deep, 85% of the 16:9 view at fov 55.
+	var view := PhysicsShapeQueryParameters3D.new()
+	var cone := ConvexPolygonShape3D.new()
+	var hh := 7.0 * tan(deg_to_rad(55.0) * 0.5) * 0.85
+	var hw := hh * 16.0 / 9.0
+	cone.points = PackedVector3Array([Vector3.ZERO, Vector3(-hw, -hh, -7.0), Vector3(hw, -hh, -7.0),
+			Vector3(hw, hh, -7.0), Vector3(-hw, hh, -7.0)])
+	view.shape = cone
+	view.collision_mask = MapWorld.LAYER_PROPS
+	var targets: Array[Vector3] = []
+	for d: float in sights:
+		targets.append(track.position_at_abs(s + d) + Vector3.UP * 1.0)
+	var best := _roadside_point(s, lat, h)
+	var best_score := -1
+	for dh: float in [1.0, 1.6]:
+		for ds: float in [0.0, -1.0, 1.0, -2.0, 2.0, -3.0, 3.0]:
+			for k: float in [1.0, 1.3, 1.6, 2.0]:
+				var p := _roadside_point(s + ds * step, lat * k, h * dh)
+				room.transform = Transform3D(Basis.IDENTITY, p)
+				if not space.intersect_shape(room, 1).is_empty():
+					continue
+				var score := 0
+				for t in targets:
+					view.transform = Transform3D(Basis.looking_at(t - p, Vector3.UP), p)
+					if space.intersect_shape(view, 1).is_empty():
+						score += 1
+					var q := PhysicsRayQueryParameters3D.create(p, t, MapWorld.LAYER_WORLD | MapWorld.LAYER_PROPS)
+					if space.intersect_ray(q).is_empty():
+						score += 1
+				if score == targets.size() * 2:
+					return p
+				if score > best_score:
+					best_score = score
+					best = p
+	return best
+
+
+## Follow frame of the car-relative shots. The origin is predicted from the car's velocity and
+## corrected toward its interpolated transform, so it filters bumps without trailing at speed (a
+## plain lerp lags v / rate metres, ~4.7 m at 100 km/h, which slid the wheel close-up off the car).
+## The heading is the direction of travel, so a drift shows its angle against the frame; the wheel
+## shot follows the body instead so its wheel stays framed.
+func _follow(xf: Transform3D, delta: float) -> void:
+	var head := -xf.basis.z
+	var v := car.linear_velocity
+	v.y = 0.0
+	if _shot != "wheel" and v.length() > 3.0:
+		head = v
+	head.y = 0.0
+	head = head.normalized() if head.length_squared() > 0.0001 else Vector3.FORWARD
+	if _fresh:
+		_smooth_c = xf.origin
+		_smooth_fwd = head
+		return
+	_smooth_c += car.linear_velocity * Engine.time_scale * delta
+	_smooth_c = _smooth_c.lerp(xf.origin, 1.0 - exp(-delta * 10.0))
+	_smooth_fwd = _smooth_fwd.slerp(head, 1.0 - exp(-delta * (8.0 if _shot == "wheel" else 3.0))).normalized()
+
+
 func _menu(delta: float) -> void:
 	_shot_t += delta
-	var xf := car.get_global_transform_interpolated()
-	var fwd := -xf.basis.z
-	fwd.y = 0.0
-	fwd = fwd.normalized() if fwd.length_squared() > 0.01 else Vector3.FORWARD
+	_follow(car.get_global_transform_interpolated(), delta)
+	var fwd := _smooth_fwd
 	var right := fwd.cross(Vector3.UP)
-	var c := xf.origin
+	var c := _smooth_c
 	var pos := global_position
 	var look := c + Vector3.UP * 0.8
 	var length := 7.0
@@ -204,16 +303,14 @@ func _menu(delta: float) -> void:
 	if _shot_t > length and not _shot in ["roadside", "scenic"]:
 		_next_shot()
 		return
-	pos.y = maxf(pos.y, _ground(pos) + 0.3)
-	if _fresh:
-		_smooth_pos = pos
-		_smooth_look = look
-		_fresh = false
-	_smooth_pos = _smooth_pos.lerp(pos, 1.0 - exp(-delta * 6.0))
-	_smooth_look = _smooth_look.lerp(look, 1.0 - exp(-delta * 8.0))
-	global_position = _smooth_pos
-	if global_position.distance_squared_to(_smooth_look) > 0.01:
-		look_at(_smooth_look, Vector3.UP)
+	# Never below the ground: lift at once, settle back slowly.
+	var need := maxf(0.0, _ground(pos) + 0.3 - pos.y)
+	_lift = need if _fresh else maxf(need, lerpf(_lift, need, 1.0 - exp(-delta * 4.0)))
+	pos.y += _lift
+	_fresh = false
+	global_position = pos
+	if pos.distance_squared_to(look) > 0.01:
+		look_at(look, Vector3.UP)
 
 
 # ------------------------------------------------------------------ helpers

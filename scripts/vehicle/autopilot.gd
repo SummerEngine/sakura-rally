@@ -17,8 +17,9 @@ signal lap_completed(lap_time: float)
 ## Drive this many metres to the right (+) / left (-) of the line.
 @export var lateral_offset: float = 0.0
 @export var max_speed_kmh: float = 195.0
-## Fraction of the available grip used in corners and under braking.
-@export var corner_grip: float = 0.82
+## Fraction of the surface grip used in corners and under braking. The car reaches about 90 %
+## of the surface mu on a skidpad; 0.76 in corners keeps ~15 % in hand for following the line.
+@export var corner_grip: float = 0.76
 @export var brake_grip: float = 0.72
 ## Pure-pursuit lookahead: base metres + seconds of travel, clamped.
 @export var lookahead_base: float = 5.0
@@ -169,17 +170,22 @@ func _drive(delta: float) -> void:
 	var delta_angle := atan(k * Car.WHEELBASE)
 	_car.input_steer = clampf(delta_angle / _car.steer_lock_at(kmh), -1.0, 1.0)
 
-	# Speed: profile value a little ahead, scaled.
+	# Speed: profile value a little ahead, scaled. Off the line on a slower surface (grass
+	# beside a gravel hairpin) the profile's grip is not under the tyres: scale down to it.
 	var lead := speed * 0.35 + 3.0
 	var i_ahead := int(fposmod(progress + lead, length) / (length / count)) % count
-	target_speed = minf(_speeds[_index], _speeds[i_ahead]) * speed_scale
+	var grip_ratio := clampf(_car.current_grip() / _grip_at_cached(_index), 0.5, 1.0)
+	target_speed = minf(_speeds[_index], _speeds[i_ahead]) * speed_scale * sqrt(grip_ratio)
 	var err := target_speed - speed
 	if err >= 0.0:
-		_car.input_throttle = clampf(err / 2.5 + 0.15, 0.0, 1.0)
+		# No power while sideways: flooring it in a slide turns the slide into a spin.
+		var v := _car.local_velocity
+		var slip := rad_to_deg(absf(atan2(v.x, maxf(-v.z, 0.5))))
+		_car.input_throttle = clampf(err / 2.5 + 0.15, 0.0, 1.0) * clampf(1.0 - (slip - 8.0) / 12.0, 0.3, 1.0)
 		_car.input_brake = 0.0
 	else:
 		_car.input_throttle = clampf(0.15 + err / 2.0, 0.0, 1.0)
-		_car.input_brake = clampf((-err - 0.8) / 3.0, 0.0, 1.0)
+		_car.input_brake = clampf((-err - 0.3) / 1.5, 0.0, 1.0)
 	_car.input_handbrake = false
 
 	# Recover if wedged somewhere.

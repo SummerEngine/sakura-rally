@@ -5,6 +5,11 @@ extends RefCounted
 ## and the cel look stay on every preset; lower presets trade shadow resolution and
 ## reach, anti-aliasing, render scale, prop draw distance and particle counts.
 
+## 3D pixels drawn per frame before a preset's own `scale`. Windows bigger than 1080p (a
+## Retina window, fullscreen) render at this budget and FSR upscales the frame: the ink lines
+## and cel bands survive the upscale, and the frame costs what a 1080p window does.
+const RENDER_BUDGET_PX := 1920.0 * 1080.0
+
 const PRESETS := {
 	"high": {
 		"msaa": Viewport.MSAA_4X, "fxaa": false, "scale": 1.0,
@@ -24,12 +29,11 @@ const PRESETS := {
 }
 
 
-static func apply(q: String, viewport: Viewport, map: MapWorld) -> void:
+static func apply(q: String, window: Window, map: MapWorld) -> void:
 	var p: Dictionary = PRESETS.get(q, PRESETS["high"])
-	viewport.msaa_3d = p["msaa"]
-	viewport.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA if p["fxaa"] else Viewport.SCREEN_SPACE_AA_DISABLED
-	viewport.scaling_3d_scale = p["scale"]
-	viewport.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if p["scale"] < 1.0 else Viewport.SCALING_3D_MODE_BILINEAR
+	window.msaa_3d = p["msaa"]
+	window.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA if p["fxaa"] else Viewport.SCREEN_SPACE_AA_DISABLED
+	apply_render_scale(q, window)
 	RenderingServer.directional_shadow_atlas_set_size(p["shadow_atlas"], true)
 	if map == null or not map.is_built:
 		return
@@ -60,3 +64,14 @@ static func apply(q: String, viewport: Viewport, map: MapWorld) -> void:
 			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		else:
 			mmi.cast_shadow = base_shadow as GeometryInstance3D.ShadowCastingSetting
+
+
+## The preset's 3D render scale within RENDER_BUDGET_PX at the window's current pixel size
+## (the 3D render target under the canvas_items stretch). Main calls it again whenever the
+## window is resized or goes fullscreen.
+static func apply_render_scale(q: String, window: Window) -> void:
+	var p: Dictionary = PRESETS.get(q, PRESETS["high"])
+	var fit := minf(sqrt(RENDER_BUDGET_PX / maxf(window.size.x * window.size.y, 1.0)), 1.0)
+	var s: float = p["scale"] * fit
+	window.scaling_3d_scale = s
+	window.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if s < 1.0 else Viewport.SCALING_3D_MODE_BILINEAR

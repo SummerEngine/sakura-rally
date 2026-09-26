@@ -68,6 +68,17 @@ var upshift_rpm_light: float = 4300.0
 var upshift_rpm_full: float = 7250.0
 var downshift_rpm_light: float = 1900.0
 var downshift_rpm_full: float = 3700.0
+## Light-throttle upshifts (below `upshift_rpm_full`) wait until the driver has cruised this
+## long (s): no throttle above 0.8 and no brake. Lifting before a corner, braking into it and
+## feeding the throttle back in on the way out all keep the gear instead of short-shifting
+## and kicking down again a moment later.
+var cruise_time: float = 1.5
+## No light-throttle upshifts while the car decelerates harder than this (m/s^2), e.g. losing
+## speed uphill on part throttle.
+var upshift_min_accel: float = -0.8
+## Low-rpm and kickdown downshifts only into a gear that stays below this rpm, leaving room to
+## pull before the next upshift (no 1st-gear blip while rolling at 40+ km/h).
+var downshift_target_max: float = 5250.0
 
 # ---------------------------------------------------------------- state
 var rpm: float = 900.0
@@ -92,6 +103,9 @@ var _launch_hold: bool = false
 var _prev_thr_in: float = 0.0
 var _overrun_timer: float = 0.0
 var _backfire_cooldown: float = 0.0
+var _cruise_t: float = 0.0 ## time since the last throttle stab (> 0.8) or brake
+var _v_prev: float = NAN ## NAN = seed from the next tick (after reset / launch hold)
+var _accel: float = 0.0 ## smoothed forward acceleration (m/s^2)
 var _split: PackedFloat32Array = [0.2, 0.2, 0.3, 0.3]
 
 
@@ -111,6 +125,9 @@ func reset() -> void:
 	_cut_timer = 0.0
 	_reverse_hold = 0.0
 	_overrun_timer = 0.0
+	_cruise_t = 0.0
+	_accel = 0.0
+	_v_prev = NAN
 	engine_torque = 0.0
 	if old != gear:
 		gear_changed.emit(gear, old)
@@ -174,6 +191,9 @@ func set_launch_hold(on: bool) -> void:
 	_engage = 0.0
 	_shift_timer = 0.0
 	_reverse_hold = 0.0
+	_cruise_t = 0.0
+	_v_prev = NAN
+	_accel = 0.0
 	if old != gear:
 		gear_changed.emit(gear, old)
 
@@ -182,6 +202,13 @@ func update_transmission(dt: float, v_fwd: float, thr_in: float, brk_in: float, 
 		automatic: bool, wheel_radius: float) -> void:
 	_shift_cooldown = maxf(_shift_cooldown - dt, 0.0)
 	_backfire_cooldown = maxf(_backfire_cooldown - dt, 0.0)
+	_cruise_t = 0.0 if thr_in > 0.8 or brk_in > 0.1 else _cruise_t + dt
+	# Smoothed forward acceleration, updated every tick (also while shifting). The first tick
+	# after reset() only seeds the previous speed.
+	if is_nan(_v_prev):
+		_v_prev = v_fwd
+	_accel += ((v_fwd - _v_prev) / maxf(dt, 1e-4) - _accel) * (1.0 - exp(-dt / 0.25))
+	_v_prev = v_fwd
 	if is_shifting:
 		return
 	# Reverse by holding the brake at a standstill (both modes); throttle drives off in 1st.
@@ -209,15 +236,18 @@ func update_transmission(dt: float, v_fwd: float, thr_in: float, brk_in: float, 
 			_start_shift(1)
 		return
 	var up_rpm := lerpf(upshift_rpm_light, upshift_rpm_full, clampf(thr_in, 0.0, 1.0))
-	if gear < top_gear() and here > up_rpm and brk_in < 0.1:
+	# Near the full-throttle point the box always upshifts (no bouncing off the limiter);
+	# below it only while cruising and not slowing down.
+	var may_upshift := here > upshift_rpm_full or (_cruise_t > cruise_time and _accel > upshift_min_accel)
+	if gear < top_gear() and here > up_rpm and brk_in < 0.1 and may_upshift:
 		_start_shift(gear + 1)
 		return
 	if gear <= 1:
 		return
 	var below := rpm_for_speed(v_fwd, gear - 1, wheel_radius)
 	var down_rpm := lerpf(downshift_rpm_light, downshift_rpm_full, clampf(thr_in, 0.0, 1.0))
-	var want_down := here < down_rpm and below < 6500.0
-	var kickdown := thr_in > 0.85 and here < 4300.0 and below < 5800.0
+	var want_down := here < down_rpm and below < downshift_target_max
+	var kickdown := thr_in > 0.85 and here < 4300.0 and below < downshift_target_max
 	var braking := brk_in > 0.2 and below < 5000.0
 	if want_down or kickdown or braking:
 		_start_shift(gear - 1)

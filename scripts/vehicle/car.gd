@@ -103,8 +103,11 @@ var livery_secondary: Color = Color("e8517c")
 ## Lock = low / (1 + kmh / ref), clamped to the high-speed lock.
 @export var steer_lock_speed_ref: float = 55.0
 @export var ackermann: float = 0.6
-## Front wheels turn towards the direction of travel by this fraction of the body slip angle.
+## Front wheels turn towards the direction of travel by this fraction of the body slip angle
+## beyond `countersteer_deadzone_deg`: it catches slides without dulling grip cornering, where
+## a few degrees of body slip are normal (at 150 km/h it would cancel half the steering).
 @export var countersteer_gain: float = 0.55
+@export var countersteer_deadzone_deg: float = 4.0
 
 @export_group("Assists")
 ## Yaw torque (Nm per rad/s) that resists rotation beyond what the steering asks for.
@@ -366,8 +369,9 @@ func _update_steering(v_fwd: float) -> void:
 	# Countersteer assist: front wheels lean towards the direction of travel when the body slides.
 	if v_fwd > 3.0 and grounded_wheels >= 2:
 		var slip_angle := atan2(local_velocity.x, -local_velocity.z)
+		var excess := signf(slip_angle) * maxf(absf(slip_angle) - deg_to_rad(countersteer_deadzone_deg), 0.0)
 		var gain := countersteer_gain * smoothstep(3.0, 12.0, v_fwd) * (1.0 - 0.7 * handbrake)
-		delta += clampf(slip_angle, -0.7, 0.7) * gain
+		delta += clampf(excess, -0.7, 0.7) * gain
 	var max_total := deg_to_rad(steer_lock_low_deg + 4.0)
 	delta = clampf(delta, -max_total, max_total)
 	steer = clampf(delta / lock, -1.0, 1.0)
