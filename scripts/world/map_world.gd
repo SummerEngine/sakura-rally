@@ -86,6 +86,8 @@ var arrival: Transform3D
 var arrival_radius: float = 0.0
 var arrival_progress: float = 0.0
 var checkpoints: Array[Dictionary] = []
+## The garage display spot (map.json "garage": pos on the ground, yaw); identity when absent.
+var garage: Transform3D = Transform3D.IDENTITY
 var soft_course: SoftCourse
 var terrain_body: StaticBody3D
 var sun_dir: Vector3 = Vector3.UP
@@ -133,6 +135,8 @@ func build(yield_frames: bool = false) -> void:
 	soft_course.build_gates(checkpoints, track, closed, _arches)
 	_build_signs()
 	_build_parked()
+	if info.has("garage"):
+		add_child(GarageSet.new().setup(self, info["garage"]))
 	sky_rig = Node3D.new()
 	sky_rig.set_script(SkyRigScript)
 	sky_rig.name = "SkyRig"
@@ -287,6 +291,9 @@ func _build_track() -> void:
 		arrival = Transform3D(Basis(Vector3.UP, ar["yaw"]), Vector3(ar["pos"][0], ar["pos"][1], ar["pos"][2]))
 		arrival_radius = ar["radius"]
 		arrival_progress = track.length
+	var gr: Dictionary = info.get("garage", {})
+	if not gr.is_empty():
+		garage = Transform3D(Basis(Vector3.UP, gr["yaw"]), Vector3(gr["pos"][0], gr["pos"][1], gr["pos"][2]))
 
 
 # ------------------------------------------------------------------ meshes and colliders
