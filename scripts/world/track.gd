@@ -134,11 +134,13 @@ func forward_at_abs(s: float) -> Vector3:
 
 ## Transform standing on the road at a lap progress, facing along the road.
 func transform_at_progress(progress: float, lat: float = 0.0, lift: float = 0.0) -> Transform3D:
-	var s := start_s + progress
+	return transform_at_abs(start_s + progress, lat, lift)
+
+
+## Transform standing on the road at absolute distance s, facing along the road.
+func transform_at_abs(s: float, lat: float = 0.0, lift: float = 0.0) -> Transform3D:
 	var p := position_at_abs(s, lat) + Vector3.UP * lift
-	var fwd := forward_at_abs(s)
-	var basis := Basis.looking_at(fwd, Vector3.UP)
-	return Transform3D(basis, p)
+	return Transform3D(Basis.looking_at(forward_at_abs(s), Vector3.UP), p)
 
 
 ## Surface under pos if it is on the carriageway or shoulder, else &"".
