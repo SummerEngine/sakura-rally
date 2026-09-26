@@ -1,0 +1,18 @@
+{
+  "model": "fal-ai/elevenlabs/sound-effects/v2",
+  "params": {
+    "text": "Japanese bell crickets (suzumushi) chirping at dusk in autumn grass, soft ringing insect chorus, continuous, calm, gentle and distant, no wind",
+    "loop": true,
+    "duration_seconds": 22,
+    "prompt_influence": 0.5,
+    "output_format": "mp3_44100_192"
+  },
+  "request_id": "01a0dc48-d0e8-7c41-9a1d-1f2af1dc94b6",
+  "response": {},
+  "audio": {
+    "url": "https://v3b.fal.media/files/b/0aabefd8/F1h_Vt0O0h7RLxP4KrndY_sound_effect.mp3",
+    "content_type": "audio/mpeg",
+    "file_name": "sound_effect.mp3",
+    "file_size": 529807
+  }
+}

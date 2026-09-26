@@ -1,0 +1,17 @@
+{
+  "model": "elevenlabs/music/v2.5",
+  "params": {
+    "prompt": "Steady, sparse instrumental city-pop groove with Japanese instrumentation for a relaxed driving game, played underneath loud car engine sound. 104 BPM, 4/4, key of D major. Tight crisp drums with clean hi-hats and snappy rimshot, occasional taiko drum accents, clean funky electric guitar chops, bright koto hook melody, light shamisen fills, airy high synth pad. Keep the low-mids and bass light and clean: small tight bass, no thick pads, no muddy low end, lots of space in the arrangement. Upbeat but chill, polished modern mix. Consistent tempo and energy throughout, no fade out, no ending. Instrumental only, no vocals.",
+    "music_length_ms": 160000,
+    "force_instrumental": true,
+    "output_format": "mp3_44100_192"
+  },
+  "request_id": "01a0dc48-abcb-71d1-9808-48b0b945a628",
+  "response": {},
+  "audio": {
+    "url": "https://v3b.fal.media/files/b/0aabefd7/pVULoLXL8ZZQWbpCMaXXK_music_generated.mp3",
+    "content_type": "audio/mpeg",
+    "file_name": "music_generated.mp3",
+    "file_size": 3840671
+  }
+}

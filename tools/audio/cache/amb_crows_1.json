@@ -1,0 +1,17 @@
+{
+  "model": "fal-ai/elevenlabs/sound-effects/v2",
+  "params": {
+    "text": "Two or three distant crows cawing far away across an autumn valley at sunset, spacious and echoing, quiet background",
+    "duration_seconds": 6,
+    "prompt_influence": 0.6,
+    "output_format": "mp3_44100_192"
+  },
+  "request_id": "01a0dc48-d4ce-7da1-a8a9-13ebb43729b0",
+  "response": {},
+  "audio": {
+    "url": "https://v3b.fal.media/files/b/0aabefd7/f0xMdB8AKDWsnec7w6IqE_sound_effect.mp3",
+    "content_type": "audio/mpeg",
+    "file_name": "sound_effect.mp3",
+    "file_size": 145493
+  }
+}

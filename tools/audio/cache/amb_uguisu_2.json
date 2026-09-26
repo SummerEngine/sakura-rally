@@ -1,0 +1,17 @@
+{
+  "model": "fal-ai/elevenlabs/sound-effects/v2",
+  "params": {
+    "text": "A single Japanese bush warbler calling 'hoo-hokekyo' from a nearby tree in spring, long rising whistle followed by a quick warble, clean recording, quiet background",
+    "duration_seconds": 6,
+    "prompt_influence": 0.6,
+    "output_format": "mp3_44100_192"
+  },
+  "request_id": "01a0dc48-abca-7623-af0f-f1863c016833",
+  "response": {},
+  "audio": {
+    "url": "https://v3b.fal.media/files/b/0aabefd6/UCn24FxNLRo0xD7DjEa4__sound_effect.mp3",
+    "content_type": "audio/mpeg",
+    "file_name": "sound_effect.mp3",
+    "file_size": 145493
+  }
+}

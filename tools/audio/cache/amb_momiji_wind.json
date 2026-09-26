@@ -1,0 +1,18 @@
+{
+  "model": "fal-ai/elevenlabs/sound-effects/v2",
+  "params": {
+    "text": "Soft autumn evening wind blowing through a valley of maple trees, gentle slow gusts with dry leaves rustling in the branches, continuous, calm, no birds",
+    "loop": true,
+    "duration_seconds": 22,
+    "prompt_influence": 0.5,
+    "output_format": "mp3_44100_192"
+  },
+  "request_id": "01a0dc48-c6a1-7351-9094-39249da59d59",
+  "response": {},
+  "audio": {
+    "url": "https://v3b.fal.media/files/b/0aabefd7/d0RgE_37MUmqCHI7Pnab7_sound_effect.mp3",
+    "content_type": "audio/mpeg",
+    "file_name": "sound_effect.mp3",
+    "file_size": 529807
+  }
+}
