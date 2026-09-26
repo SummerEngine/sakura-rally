@@ -32,6 +32,7 @@ from lib.road import (LOT_DROP, PROFILE, SURFACES, build_bridge, build_delineato
                       road_chunks, road_height_at, road_index, road_vertices)
 from lib import roadside  # noqa: E402
 from lib.corridor import SMASHABLE, WALLS, Corridor, enforce, format_survey, survey  # noqa: E402
+from lib.garage import drop_kept_out, garage_layout, garage_lot, garage_pad, keep_out_circles  # noqa: E402
 from lib.scatter import Placer  # noqa: E402
 from lib.terrain import LOT_SKIRT, build_terrain, build_water, chunk_mesh  # noqa: E402
 
@@ -550,7 +551,14 @@ def build(map_id: str) -> None:
     out_dir = os.path.join(REPO, "assets", "maps", map_id)
     os.makedirs(out_dir, exist_ok=True)
 
+    # the garage (maps' GARAGE entry, lib/garage.py): a paved lay-by on the road, a pad under
+    # the workshop and a keep-out for props
+    garage = spec.get("garage")
+    if garage is not None:
+        spec = dict(spec, road=dict(spec["road"], lots=list(spec["road"].get("lots", [])) + [garage_lot(garage)]),
+                    terrain=dict(spec["terrain"], pads=list(spec["terrain"].get("pads", [])) + [garage_pad(garage)]))
     road = build_road(spec["road"])
+    garage_info = garage_layout(garage, road) if garage is not None else None
     grade = np.abs(np.diff(road.pos[:, 1])) / np.maximum(np.diff(road.dist), 1e-6)
     print(f"[{map_id}] road {road.length:.0f} m, y {road.pos[:, 1].min():.1f}..{road.pos[:, 1].max():.1f}, "
           f"max grade {grade.max() * 100:.1f}%, min radius {1.0 / max(np.abs(road.curv).max(), 1e-6):.1f} m")
@@ -585,6 +593,10 @@ def build(map_id: str) -> None:
     placer.start_s = start_s
     placer.route = route
     # keep the start area and road corridor clear
+    if garage_info is not None:
+        for x, z, r in keep_out_circles(garage_info):
+            placer.occ.add(x, z, r)
+        placer.features(garage.get("dressing", []))
     placer.features(spec.get("features", []))
     signs = place_signs(spec.get("signs", []), placer, cor)
     parked = place_parked(spec.get("parked", []), placer)
@@ -632,6 +644,9 @@ def build(map_id: str) -> None:
 
     # nothing rigid in the road corridor: offenders move out (or go), smashables leave the tarmac
     res = enforce(cor, placer, manifest, boxes)
+    if garage_info is not None:
+        print(f"[{map_id}] garage at {garage_info['pos']}: dropped {drop_kept_out(garage_info, placer.out)} "
+              f"instances in its keep-out")
     after = survey(cor, placer.out, manifest)
     print(f"[{map_id}] corridor before: {format_survey(before)}")
     print(f"[{map_id}] corridor moved {res['moved']}, dropped {res['dropped']}: "
@@ -714,6 +729,8 @@ def build(map_id: str) -> None:
     }
     if arrival is not None:
         out["arrival"] = arrival
+    if garage_info is not None:
+        out["garage"] = garage_info
     pack.save(os.path.join(out_dir, "map.bin"))
     with open(os.path.join(out_dir, "map.json"), "w") as f:
         json.dump(out, f, separators=(",", ":"))

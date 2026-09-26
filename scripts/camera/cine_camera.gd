@@ -3,7 +3,7 @@ extends Camera3D
 ## Cinematic camera for everything that is not driving: the title-screen flyover
 ## (a cycle of shots around the autopilot car), the race intro swoop that lands
 ## in the chase pose, the slow orbit behind the results card and the garage's low
-## showroom orbit around the parked car.
+## showroom orbit around its display spot (the workshop behind the car).
 ## Follows the car's interpolated transform in _process, in real time (ignores
 ## Engine.time_scale), and keeps running while the tree is paused.
 
@@ -12,8 +12,8 @@ signal intro_finished
 enum Mode { IDLE, MENU, INTRO, FINISH, GARAGE }
 
 const MENU_SHOTS: Array[String] = ["tracking", "roadside", "drone", "front", "scenic", "wheel"]
-## Garage orbit: closest distance, lens height and look height above the car's origin, angular
-## speed, lens.
+## Garage orbit around the display spot: closest distance, lens height and look height above the
+## spot, angular speed, lens.
 const GARAGE_RADIUS := 6.4
 const GARAGE_HEIGHT := 1.15
 const GARAGE_LOOK := 0.55
@@ -24,6 +24,18 @@ const GARAGE_SCREEN_X := 0.3
 ## Half the car's length plus some air: the orbit backs off until this fits between the car's
 ## screen position and the right edge, so a long car seen side-on stays in frame on narrow screens.
 const GARAGE_HALF_SPAN := 2.7
+## The open side the orbit keeps to (spot space, see `_garage_pos`: 0 = ahead, -90° = the spot's
+## right, where the road is): centre and half width. The workshop stays behind the car.
+const GARAGE_SECTOR := Vector2(-1.2217, 0.7854)
+## Distance and height scale of the establishing view the garage opens on (eases to 1), and of
+## the wider view during a car switch (`garage_wide`), with the easing rate (1/s).
+const GARAGE_OPEN_ZOOM := 1.9
+const GARAGE_WIDE_ZOOM := 1.45
+const GARAGE_ZOOM_RATE := 0.9
+## During a car switch the look turns after `garage_follow`, at most this far off the spot (m),
+## easing at this rate (1/s).
+const GARAGE_FOLLOW := 18.0
+const GARAGE_FOLLOW_RATE := 2.2
 
 
 var car: Car
@@ -51,11 +63,18 @@ var _smooth_fwd: Vector3 = Vector3.FORWARD
 var _lift: float = 0.0
 var _smooth_pos: Vector3 = Vector3.ZERO
 var _fresh: bool = true
-## Garage orbit: angle (car space, 0 = straight ahead of the car) and the clear arc it swings
-## through ([centre, half width]; half width >= PI = free to circle).
+## Garage orbit: the display spot it circles, the angle (spot space, 0 = straight ahead) and the
+## clear arc it swings through ([centre, half width] inside GARAGE_SECTOR).
+var _garage_spot: Transform3D = Transform3D.IDENTITY
 var _garage_a: float = 0.0
 var _garage_arc: Vector2 = Vector2(0.0, PI)
 var _garage_t: float = 0.0
+var _garage_zoom: float = 1.0
+## Set by MenuStage while a car switch runs: the orbit backs off to show the cars come and go.
+var garage_wide: bool = false
+## Set by MenuStage during a car switch: the car the look turns after (null = the spot).
+var garage_follow: Node3D
+var _garage_aim: Vector3 = Vector3.ZERO
 
 
 func _ready() -> void:
@@ -108,15 +127,19 @@ func cut_to(new_car: Car, new_track: Track, shot: String, side: float, anchor_s:
 	make_current()
 
 
-## Low showroom orbit around a parked car. Circles from the front three-quarter view when the
-## ground around the car is clear, otherwise swings through the widest clear arc (props,
-## terrain, line of sight). Call again with the respawned car after a car switch; the orbit
-## carries on.
-func start_garage(new_car: Car) -> void:
+## Low showroom orbit around the garage's display spot (`spot`, where `new_car` stands or is
+## heading), on its open side. Opens on a wider establishing view that eases in; swings through
+## the widest clear arc of GARAGE_SECTOR (props, terrain, line of sight). Call again with the new
+## car on a car switch; the orbit carries on.
+func start_garage(new_car: Car, spot: Transform3D) -> void:
 	var fresh := mode != Mode.GARAGE
 	car = new_car
 	mode = Mode.GARAGE
+	_garage_spot = spot
 	if fresh:
+		garage_wide = false
+		garage_follow = null
+		_garage_zoom = GARAGE_OPEN_ZOOM
 		_garage_arc = _clear_arc()
 		_garage_t = 0.0
 		_fresh = true
@@ -184,70 +207,78 @@ func _finish(delta: float) -> void:
 
 # ------------------------------------------------------------------ garage orbit
 
-## Orbit angle `a` (radians, car space: 0 = ahead of the car, positive = towards its left) to a
-## world position around the parked car at `xf`.
-func _garage_pos(xf: Transform3D, a: float, radius: float) -> Vector3:
+## Orbit angle `a` (radians, spot space: 0 = ahead along the spot's heading, positive = towards
+## its left) to a world position around the display spot `xf`, `height` above it.
+func _garage_pos(xf: Transform3D, a: float, radius: float, height: float = GARAGE_HEIGHT) -> Vector3:
 	var b := Basis(Vector3.UP, xf.basis.get_euler().y)
-	return xf.origin + b * Vector3(-sin(a) * radius, GARAGE_HEIGHT, -cos(a) * radius)
+	return xf.origin + b * Vector3(-sin(a) * radius, height, -cos(a) * radius)
 
 
-## Widest run of orbit angles (10° steps) whose camera spot is clear of props with a clear line
-## to the car and above the ground. Returns (centre, half width); PI when every angle is clear.
+## Widest run of orbit angles (5° steps across GARAGE_SECTOR) whose camera spot is clear of props
+## with a clear line to the display spot and above the ground. Returns (centre, half width).
 func _clear_arc() -> Vector2:
-	var xf := car.global_transform
+	var xf := _garage_spot
 	var space := get_world_3d().direct_space_state
 	var room := PhysicsShapeQueryParameters3D.new()
 	var ball := SphereShape3D.new()
 	ball.radius = 1.1
 	room.shape = ball
 	room.collision_mask = MapWorld.LAYER_PROPS
-	var steps := 36
+	var step := deg_to_rad(5.0)
+	var steps := int(round(GARAGE_SECTOR.y * 2.0 / step)) + 1
+	var a0 := GARAGE_SECTOR.x - GARAGE_SECTOR.y
 	var clear: Array[bool] = []
 	var target := xf.origin + Vector3.UP * GARAGE_LOOK
 	for i in steps:
-		var p := _garage_pos(xf, TAU * i / steps, _garage_radius())
+		var p := _garage_pos(xf, a0 + i * step, _garage_radius())
 		room.transform = Transform3D(Basis.IDENTITY, p)
 		var ok := space.intersect_shape(room, 1).is_empty() and _ground(p) < p.y - 0.45
 		if ok:
 			var q := PhysicsRayQueryParameters3D.create(p, target, MapWorld.LAYER_WORLD | MapWorld.LAYER_PROPS)
-			q.exclude = [car.get_rid()]
+			if car != null and is_instance_valid(car):
+				q.exclude = [car.get_rid()]
 			ok = space.intersect_ray(q).is_empty()
 		clear.append(ok)
-	if not clear.has(false):
-		return Vector2(deg_to_rad(35.0), PI)
-	# Longest circular run of clear steps.
+	# Longest run of clear steps.
 	var best_start := 0
 	var best_len := 0
-	for s in steps:
-		if clear[s] and not clear[(s - 1 + steps) % steps]:
-			var n := 0
-			while n < steps and clear[(s + n) % steps]:
-				n += 1
-			if n > best_len:
-				best_len = n
-				best_start = s
+	var s := 0
+	while s < steps:
+		var n := 0
+		while s + n < steps and clear[s + n]:
+			n += 1
+		if n > best_len:
+			best_len = n
+			best_start = s
+		s += maxi(n, 1)
 	if best_len == 0:
-		return Vector2(deg_to_rad(35.0), 0.0)
-	var step := TAU / steps
-	return Vector2((best_start + (best_len - 1) * 0.5) * step, maxf(best_len - 1, 0) * 0.5 * step)
+		return Vector2(GARAGE_SECTOR.x, 0.0)
+	return Vector2(a0 + (best_start + (best_len - 1) * 0.5) * step, (best_len - 1) * 0.5 * step)
 
 
 func _garage(delta: float) -> void:
 	_garage_t += delta
-	var xf := car.get_global_transform_interpolated()
+	var xf := _garage_spot
 	var half := _garage_arc.y
-	if half >= PI:
-		_garage_a = _garage_arc.x + _garage_t * GARAGE_SPEED
-	elif half > 0.01:
+	if half > 0.01:
 		# Swing through the clear arc, easing at its ends (peak speed GARAGE_SPEED).
 		_garage_a = _garage_arc.x + half * sin(_garage_t * GARAGE_SPEED / half)
 	else:
 		_garage_a = _garage_arc.x
-	var radius := _garage_radius()
-	var pos := _garage_pos(xf, _garage_a, radius)
+	_garage_zoom = lerpf(_garage_zoom, GARAGE_WIDE_ZOOM if garage_wide else 1.0,
+			1.0 - exp(-GARAGE_ZOOM_RATE * delta))
+	var radius := _garage_radius() * _garage_zoom
+	var pos := _garage_pos(xf, _garage_a, radius, GARAGE_HEIGHT * _garage_zoom)
 	pos.y = maxf(pos.y, _ground(pos) + 0.5)
 	global_position = pos
-	look_at(xf.origin + Vector3.UP * GARAGE_LOOK, Vector3.UP)
+	# The camera stays on its orbit and turns its head after the car on the move (a car switch),
+	# at most GARAGE_FOLLOW metres off the spot, eased so a hand-over between cars pans.
+	var aim := xf.origin
+	if garage_follow != null and is_instance_valid(garage_follow):
+		var off := garage_follow.get_global_transform_interpolated().origin - xf.origin
+		aim += off.limit_length(GARAGE_FOLLOW)
+	_garage_aim = aim if _fresh else _garage_aim.lerp(aim, 1.0 - exp(-GARAGE_FOLLOW_RATE * delta))
+	look_at(_garage_aim + Vector3.UP * (GARAGE_LOOK + (_garage_zoom - 1.0) * 1.1), Vector3.UP)
 	fov = GARAGE_FOV
 	# Shift the frame so the car sits right of centre, clear of the garage panel on the left.
 	h_offset = -GARAGE_SCREEN_X * _garage_half_width() * radius

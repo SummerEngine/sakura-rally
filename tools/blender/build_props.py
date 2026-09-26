@@ -22,7 +22,7 @@ if HERE not in sys.path:
 import bpy  # noqa: E402
 
 from props import common, registry  # noqa: E402
-from props import vegetation, rocks, village, rally, people, corner  # noqa: E402,F401  (register props)
+from props import vegetation, rocks, village, rally, people, corner, garage  # noqa: E402,F401  (register props)
 
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
 
