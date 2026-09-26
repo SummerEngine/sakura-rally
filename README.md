@@ -10,7 +10,8 @@ Claude Opus 5.5 built it from one prompt in about five hours: the code, the car 
 the work across parallel sub-agents for the car, props, physics, audio and UI, which coordinated
 through [docs/CONTRACTS.md](docs/CONTRACTS.md). A second round, from the author's playtest
 notes, added the campaign with a drivable liaison road, a second car, the garage and a physics
-rework aimed at fun rather than realism.
+rework aimed at fun rather than realism. The next playtest made crashes forgiving, turned the
+roadside dressing soft and taught the title flyover car to drift.
 
 ![Hanami Pass from above](docs/renders/hanami_aerial.jpg)
 ![Momiji Valley from above](docs/renders/momiji_aerial.jpg)
@@ -62,6 +63,13 @@ to the Momiji Valley time control, a service park where the car stops in the arr
 
 ![Natsu Road from above](docs/renders/natsu_aerial.jpg)
 
+The roadside is soft, as in Forza Horizon. Cones, tape, flags, banners, fences, benches, road
+signs, tyre stacks and hay bales break when you drive through them and cost 1–12 % of your
+speed. Checkpoints are fabric banners on soft uprights that billow as you pass. Trees, rocks,
+walls, guardrails and buildings stay solid. Hitting them scrapes the car along the wall rather
+than spinning it round, and nothing launches it. A restart or a reset (R) puts the course back
+together.
+
 The garage has two cars and five liveries, painted onto the parked car as you pick them:
 
 | Car | Drivetrain | Character |
@@ -89,11 +97,11 @@ writes `/tmp/sakura_demo/sakura_rally_demo.mp4`.
 | Part | Source | What it is |
 |---|---|---|
 | Cars | `tools/blender/build_car.py`, `build_car_hayate.py` → `assets/models/car/` | Low-poly rally car and coupe built by scripts. Tyre and rim are one object per wheel, spinning and steering; calipers steer without spinning |
-| Physics | `scripts/vehicle/`, [docs/PHYSICS.md](docs/PHYSICS.md) | Custom raycast car on a `RigidBody3D` (Jolt, 120 Hz): suspension, a combined-slip tyre model per surface, 6-speed gearbox, turbo, AWD with limited-slip couplings or RWD, and assists tuned for fun: stability that lets deliberate drifts through, strong brakes, sharp turn-in |
+| Physics | `scripts/vehicle/`, [docs/PHYSICS.md](docs/PHYSICS.md) | Custom raycast car on a `RigidBody3D` (Jolt, 120 Hz): suspension, a combined-slip tyre model per surface, 6-speed gearbox, turbo, AWD with limited-slip couplings or RWD, and assists tuned for fun: stability that lets deliberate drifts through, strong brakes, sharp turn-in. Crashes are arcade: walls take a share of speed that depends on the impact angle and ease the nose along them, poles deflect the car, and a short guard caps yaw, roll and climb after any hit |
 | Look | `shaders/`, `scripts/fx/` | Toon ramps with violet shade bands, depth-based ink lines, anime colour grade, painted sky, petals, low-poly dust |
-| Maps | `tools/mapgen/` → `assets/maps/` | Python map compiler: terrain, closed (stage) or open (liaison) road spline, surfaces, checkpoints, instances from an 86-prop kit (`tools/blender/build_props.py`) |
+| Maps | `tools/mapgen/` → `assets/maps/` | Python map compiler: terrain, closed (stage) or open (liaison) road spline, surfaces, checkpoints, instances from an 86-prop kit (`tools/blender/build_props.py`), and a road corridor kept clear of rigid props. At runtime `scripts/world/soft_course.gd` tests the soft dressing against each car outside the solver, with pooled debris and fabric checkpoint gates |
 | Audio | `tools/audio/`, [docs/AUDIO.md](docs/AUDIO.md) | Synthesised engine loops (8 on load, 8 off load), turbo whistle and blow-off, dog-box gearbox whine, tyre sounds per surface, UI and stingers. Music is ElevenLabs Music via fal; ambience is fal sound-effect beds with synthesised birds and crickets |
-| UI | `scripts/ui/`, [docs/UI.md](docs/UI.md) | Title hub, Time Attack cards with top-down maps, garage, journey map, liaison HUD, settings, ink transitions, countdown, HUD, results, rally classification and pause, all built in code |
+| UI | `scripts/ui/`, [docs/UI.md](docs/UI.md) | Title hub over a flyover whose car drifts the corners, Time Attack cards with top-down maps, garage, journey map, liaison HUD, settings, ink transitions, countdown, HUD, results, rally classification and pause, all built in code |
 
 Shared conventions and the runtime APIs: [docs/CONTRACTS.md](docs/CONTRACTS.md). Rebuild commands:
 

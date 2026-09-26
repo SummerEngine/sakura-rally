@@ -43,6 +43,8 @@ var _anchor_s: float = 0.0
 var _side: float = 1.0
 var _orbit_a: float = 0.0
 var _hint: int = -1
+## Seconds the car has been out of sight of the roadside / scenic camera (terrain in between).
+var _hidden_t: float = 0.0
 var _rng := RandomNumberGenerator.new()
 var _smooth_c: Vector3 = Vector3.ZERO
 var _smooth_fwd: Vector3 = Vector3.FORWARD
@@ -273,21 +275,30 @@ func _begin_shot(i: int, side: float, anchor_s: float) -> void:
 	_shot_t = 0.0
 	_side = side
 	_fresh = true
+	_hidden_t = 0.0
 	var s := _car_s()
 	match _shot:
 		"roadside":
 			_anchor_s = s + 70.0 if is_nan(anchor_s) else anchor_s
 			# A showoff autopilot slides the corners: stand at the next slid one when it is near.
+			# Searched around the car, so a switchback's other leg cannot claim the apex.
 			if is_nan(anchor_s):
 				var apex := _next_slide_point()
 				if apex.is_finite():
-					_anchor_s = track.abs_s(track.nearest(apex), apex)
+					_anchor_s = track.abs_s(track.nearest(apex, _hint, ceili(140.0 / track.spacing)), apex)
 			# Map generation bakes marker posts and chevron boards (no colliders, so _clear_anchor
 			# cannot see them) along the outside of every bend: on a bend the camera takes the inside.
 			var turn := _turn_at(_anchor_s)
 			if absf(turn) > deg_to_rad(10.0):
 				_side = -signf(turn)
-			_anchor = _clear_anchor(_anchor_s, _side * 6.5, 1.1, 5.0, [-40.0, -25.0, -12.0, 0.0, 12.0, 24.0])
+			# The camera must see the whole approach, from where the car is now.
+			var sights: Array = [-40.0, -25.0, -12.0, 0.0, 12.0, 24.0]
+			var ahead := -_past(_anchor_s)
+			var d := -55.0
+			while d > -ahead:
+				sights.push_front(d)
+				d -= 15.0
+			_anchor = _clear_anchor(_anchor_s, _side * 6.5, 1.1, 5.0, sights)
 		"scenic":
 			_anchor_s = s + 110.0 if is_nan(anchor_s) else anchor_s
 			_anchor = _clear_anchor(_anchor_s, _side * 38.0, 14.0, 12.0, [-60.0, -35.0, -10.0, 15.0, 40.0])
@@ -302,11 +313,35 @@ func _next_slide_point() -> Vector3:
 	return Vector3.INF
 
 
+## Road distance of the car.
 func _car_s() -> float:
 	if track == null:
 		return 0.0
-	_hint = track.nearest(car.global_position, _hint)
+	_track_car()
 	return track.abs_s(_hint, car.global_position)
+
+
+## Keeps `_hint`, the car's nearest track sample, on the car. `Track.nearest` only searches 40
+## samples (80 m) around the hint, so it runs every menu frame; a car that is out of the window
+## anyway (a reset, a respawn, a cut in from another mode) gets a full search.
+func _track_car() -> void:
+	var p := car.global_position
+	_hint = track.nearest(p, _hint)
+	var q := track.point(_hint)
+	if Vector2(q.x - p.x, q.z - p.z).length() > 30.0:
+		_hint = track.nearest(p)
+
+
+## Seconds the car has been hidden from a camera at `pos` by the terrain. Props are not tested:
+## the spot was picked with clear lines past them, and a tree in between only covers the car briefly.
+func _hidden_for(pos: Vector3, delta: float) -> float:
+	var q := PhysicsRayQueryParameters3D.create(pos, car.global_position + Vector3.UP * 1.0, MapWorld.LAYER_WORLD)
+	q.exclude = [car.get_rid()]
+	if get_world_3d().direct_space_state.intersect_ray(q).is_empty():
+		_hidden_t = 0.0
+	else:
+		_hidden_t += delta
+	return _hidden_t
 
 
 ## Metres the car is past road distance s (negative before it), across the lap seam.
@@ -401,6 +436,8 @@ func _follow(xf: Transform3D, delta: float) -> void:
 
 func _menu(delta: float) -> void:
 	_shot_t += delta
+	if track != null:
+		_track_car()
 	_follow(car.get_global_transform_interpolated(), delta)
 	var fwd := _smooth_fwd
 	var right := fwd.cross(Vector3.UP)
@@ -424,12 +461,12 @@ func _menu(delta: float) -> void:
 			length = 8.0
 		"roadside":
 			pos = _anchor
-			if _past(_anchor_s) > 30.0 or _shot_t > 14.0:
+			if _past(_anchor_s) > 30.0 or _shot_t > 14.0 or _hidden_for(pos, delta) > 0.8:
 				_next_shot()
 				return
 		"scenic":
 			pos = _anchor
-			if _past(_anchor_s) > 70.0 or _shot_t > 16.0:
+			if _past(_anchor_s) > 70.0 or _shot_t > 16.0 or _hidden_for(pos, delta) > 0.8:
 				_next_shot()
 				return
 	if _shot_t > length and not _shot in ["roadside", "scenic"]:
