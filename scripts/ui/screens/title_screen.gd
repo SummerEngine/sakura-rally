@@ -331,13 +331,8 @@ func enter() -> void:
 	_garage.visible = false
 	_time_attack.visible = false
 	_hint.modulate.a = 0.0
-	_hub.queue_sort()
-	_small_row.queue_sort()
-	# Wait for this frame's deferred container sorts (after a button press, process_frame
-	# resumes before them), so entrance tweens read the laid-out positions.
-	await RenderingServer.frame_pre_draw
-	if not active:
-		return
+	# Entrance tweens read the laid-out positions.
+	UIMotion.layout_now(self)
 	_play_intro()
 	if view == "time_attack":
 		_time_attack.enter(0.9)
@@ -486,13 +481,8 @@ func _back_to_hub() -> void:
 func _show_hub(delay: float) -> void:
 	_refresh_hub()
 	_hub.visible = true
-	_hub.queue_sort()
-	_small_row.queue_sort()
-	# Wait for this frame's deferred container sorts (after a button press, process_frame
-	# resumes before them), so entrance tweens read the laid-out positions.
-	await RenderingServer.frame_pre_draw
-	if not active or view != "title":
-		return
+	UIMotion.layout_now(_hub)
+	UIMotion.layout_now(_small_row)
 	_rise_hub(delay)
 	var target: Control = _last_hub if _last_hub != null and _last_hub.visible else _campaign_item
 	target.grab_focus()

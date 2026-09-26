@@ -15,6 +15,18 @@ static func tween(node: Node) -> Tween:
 	return tw
 
 
+## Lays out every visible container under `node` now, parents first, instead of at the end of
+## the frame, so an entrance can read final positions straight away. (Waiting for a drawn frame
+## instead would stall the entrance for as long as the window does not draw: on a first launch
+## the pipeline compiles hold drawing back for seconds while the game keeps processing.)
+static func layout_now(node: Node) -> void:
+	var c := node as Container
+	if c != null and c.is_visible_in_tree():
+		c.notification(Container.NOTIFICATION_SORT_CHILDREN)
+	for child in node.get_children():
+		layout_now(child)
+
+
 static func kill(tw: Tween) -> void:
 	if tw != null and tw.is_valid():
 		tw.kill()

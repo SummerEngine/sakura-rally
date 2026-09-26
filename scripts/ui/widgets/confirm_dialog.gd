@@ -90,9 +90,7 @@ func ask(title: String, body: String, no_text: String, yes_text: String) -> bool
 	_tween = UIMotion.tween(self)
 	_tween.tween_property(_scrim, "modulate:a", 1.0, 0.3)
 	_no.grab_focus()
-	# Wait for this frame's deferred container sorts (after a button press, process_frame
-	# resumes before them), so entrance tweens read the laid-out positions.
-	await RenderingServer.frame_pre_draw
+	UIMotion.layout_now(self)
 	_card.reveal = 0.0
 	UIMotion.tween(_card).tween_property(_card, "reveal", 1.0, 0.45).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	UIMotion.rise_in(_card, 0.0, 26.0, 0.5)

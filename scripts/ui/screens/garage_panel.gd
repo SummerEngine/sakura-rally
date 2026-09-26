@@ -126,11 +126,7 @@ func enter(delay: float = 0.0) -> void:
 	modulate.a = 1.0
 	car_selector.set_selected(_car_index())
 	livery_picker.set_selected(int(UIApi.game().get_setting("car_color")))
-	# Wait for this frame's deferred container sorts (after a button press, process_frame
-	# resumes before them), so entrance tweens read the laid-out positions.
-	await RenderingServer.frame_pre_draw
-	if not visible:
-		return
+	UIMotion.layout_now(self)
 	_card.reveal = 0.0
 	UIMotion.tween(_card).tween_property(_card, "reveal", 1.0, 0.6).set_delay(delay) \
 			.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)

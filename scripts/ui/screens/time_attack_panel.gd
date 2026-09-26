@@ -171,13 +171,7 @@ func enter(delay: float = 0.0) -> void:
 		c.refresh()
 		c.scale = Vector2.ONE
 	# Undo the last exit's slide offsets before the entrance reads the laid-out positions.
-	_col.queue_sort()
-	_cards_row.queue_sort()
-	# Wait for this frame's deferred container sorts (after a button press, process_frame
-	# resumes before them), so entrance tweens read the laid-out positions.
-	await RenderingServer.frame_pre_draw
-	if not visible:
-		return
+	UIMotion.layout_now(self)
 	var d := delay
 	for r: Control in [_header, _mode_row]:
 		UIMotion.rise_in(r, d, 26.0)
