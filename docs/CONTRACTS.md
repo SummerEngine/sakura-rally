@@ -235,8 +235,8 @@ meets only walls it can scrape along or props it knocks over.
   `map.checkpoints` entry (room for the runtime's fabric gate uprights).
 - **Rigid** props (every collider not listed below: trees, poles, rocks, lanterns, jizo,
   buildings, spectators …) stay out of the corridor. Low rocks, stumps and logs stay out of
-  the wide corridor everywhere. Natsu's sign boards (`signs`, posts in `collision_boxes`) step
-  out until their posts clear it.
+  the wide corridor everywhere. Natsu's sign boards (`signs`) break like smashables but still
+  step out until their posts clear the corridor.
 - **Smashable** props (`SMASHABLE`, the mirror of `SoftCourse.SMASHABLE` in
   `scripts/world/soft_course.gd`; keep the two in step) may stand in the corridor but never on
   the tarmac: |lateral| >= half width + 0.3 m.
@@ -251,6 +251,14 @@ meets only walls it can scrape along or props it knocks over.
 - Bridge ends: where the carve fades out towards a deck, the ground is capped under the road
   and ramps down under the deck (`road.bridge_clearance`, default 1.6 m below the deck), so no
   bank shows through the road.
+- Sign boards (`map.json` `signs[i]`, natsu only): each is its own `meshes` entry named by
+  `signs[i].mesh` (`sign_<i>`, `"local": true`, material `props_vc`), in sign-local
+  coordinates: origin at the base centre on the ground, board front +Z, yaw 0. The runtime
+  places it at `Transform3D(Basis(Vector3.UP, yaw), base)` and must not add `local` meshes at
+  the world origin. `signs[i].collider` = `{"type": "box", "size": [w, h, d], "center": [x, y, z]}`,
+  sign-local, covers posts and board. `pos` (board face centre, world) and `lines` feed the
+  Label3D text. No sign geometry is left in `dressing` and no sign post in `collision_boxes`:
+  the runtime (SoftCourse) builds and breaks the signs.
 
 ### Session and campaign (Campaign)
 

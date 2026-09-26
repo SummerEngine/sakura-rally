@@ -174,10 +174,9 @@ def mode_of(name: str, manifest: dict) -> str | None:
     return "rigid"
 
 
-def survey(cor: Corridor, placed: dict, manifest: dict, extra: list | None = None) -> dict:
+def survey(cor: Corridor, placed: dict, manifest: dict) -> dict:
     """Rigid colliders inside the corridor by bucket, smashables on the tarmac, and the
-    smallest clearance of any rigid collider from the carriageway edge.
-    extra: [(bucket, col, x, z, yaw, scale)] colliders that are not props (sign posts)."""
+    smallest clearance of any rigid collider from the carriageway edge."""
     out = {"trees": 0, "poles": 0, "rocks": 0, "other": 0, "soft_on_tarmac": 0, "min_edge": 1e9, "offenders": []}
     items = []
     for name, inst in placed.items():
@@ -187,8 +186,6 @@ def survey(cor: Corridor, placed: dict, manifest: dict, extra: list | None = Non
         col = manifest[name]["collision"]
         for x, _y, z, yaw, sc in inst:
             items.append((name, mode, col, x, z, yaw, sc))
-    for bucket, col, x, z, yaw, sc in extra or []:
-        items.append((bucket, "rigid", col, x, z, yaw, sc))
     for name, mode, col, x, z, yaw, sc in items:
         m, _ = cor.prop_margin(col, x, z, yaw, sc, mode)
         if mode != "soft":
@@ -198,7 +195,7 @@ def survey(cor: Corridor, placed: dict, manifest: dict, extra: list | None = Non
             if mode == "soft":
                 out["soft_on_tarmac"] += 1
             else:
-                out[name if name in ("trees", "poles", "rocks", "other") else kind_of(name, manifest)] += 1
+                out[kind_of(name, manifest)] += 1
             out["offenders"].append((name, round(float(x), 1), round(float(z), 1), round(m, 2)))
     return out
 
@@ -212,8 +209,9 @@ def format_survey(s: dict) -> str:
 
 def enforce(cor: Corridor, placer, manifest: dict, boxes: list) -> dict:
     """Move rigid props and low obstacles out of the corridor (smashables off the tarmac),
-    in place in placer.out. boxes: map collision boxes (guardrails, bridge rails, sign posts),
-    which moved props must not land on. Returns {"moved": n, "dropped": n, "by_name": {...}}."""
+    in place in placer.out. boxes: map collision boxes (guardrails, bridge rails), which moved
+    props must not land on, nor on placer.reserved (parked cars, sign boards).
+    Returns {"moved": n, "dropped": n, "by_name": {...}}."""
     ter = placer.ter
     road = cor.road
     rw = ter.water.river_width / 2.0
@@ -247,8 +245,8 @@ def enforce(cor: Corridor, placer, manifest: dict, boxes: list) -> dict:
         steps = max(1, int(L / max(w, 0.5)))
         for t in np.linspace(-L / 2, L / 2, steps + 1):
             occ.add(bx + ax[0] * t, bz + ax[1] * t, max(w, 0.3) / 2)
-    for s in placer.parked_spots:
-        occ.add(s[0], s[1], 2.4)
+    for x, z, r in placer.reserved:
+        occ.add(x, z, r)
 
     moved = dropped = 0
     by_name: dict[str, list[int]] = {}

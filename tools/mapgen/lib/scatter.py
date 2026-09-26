@@ -50,7 +50,8 @@ class Placer:
         self.ny = ter.normal_y()
         self.start_s = 0.0  # start line distance; features may use `lap_frac` instead of `road_at`
         self.route = road.length  # start line to finish (the lap, or start to arrival on an open road)
-        self.parked_spots: list[tuple[float, float]] = []  # (x, z) of parked cars (scene instances)
+        # (x, z, radius) of scene instances that are not props (parked cars, sign boards)
+        self.reserved: list[tuple[float, float, float]] = []
 
     # ---------------------------------------------------------------- helpers
     def footprint(self, name: str) -> float:
