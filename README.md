@@ -89,8 +89,11 @@ With Godot on macOS, settings and records live in
 
 The trailer is rendered offline from the game itself: `tools/video/demo.gd` drives a scripted run
 under Movie Maker, and `tools/video/cut_demo.py` cuts the footage on the beat of the drive theme.
-`tools/video/render_demo.sh` does both (about 10 min for the footage, 3 min for the cut) and
-writes `/tmp/sakura_demo/sakura_rally_demo.mp4`.
+`tools/video/render_demo.sh` does both, offscreen and muted (about 11 min for the footage under
+`nice`, 4 min for the cut; ~11 GB of footage in `/tmp`), and writes
+`/tmp/sakura_demo/sakura_rally_demo.mp4`. The run goes title → garage (a livery change) → Time
+Attack → a showoff lap of Hanami under directed cuts (a fabric gate, the hay bales on the tarmac
+hairpin) → results → Next map → Momiji → pause → back to the title.
 
 ## How it is built
 

@@ -3,7 +3,10 @@
 # in an AVI) while tools/video/demo.gd drives the real game, then cuts the edit (cut_demo.py).
 #   tools/video/render_demo.sh [out_dir]             # default /tmp/sakura_demo
 #   tools/video/render_demo.sh --cut-only [out_dir]  # re-cut existing footage
-# The footage (4.4 min, ~11 GB) renders in ~10 min on an M-series Mac; the cut takes ~3 min.
+# The footage (4.4 min, ~11 GB) renders offscreen at ~40 % of real time under nice (~11 min on
+# an M1 Max); the cut takes ~4 min. Nothing shows on screen and nothing plays aloud:
+# --summer-offscreen keeps the window hidden, and Movie Maker records the game mix itself, so
+# the Dummy audio driver only mutes the speakers.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
@@ -35,8 +38,9 @@ window/size/window_height_override=1080
 movie_writer/video_quality=0.95
 movie_writer/disable_vsync=true
 EOF
-	"$SUMMER" --disable-crash-handler --path . --write-movie "$OUT/raw.avi" \
-		-s res://tools/video/demo.gd -- out="$OUT"
+	nice -n 15 "$SUMMER" --summer-offscreen --audio-driver Dummy --disable-crash-handler --path . \
+		--write-movie "$OUT/raw.avi" \
+		-s res://tools/video/demo.gd -- footage="$OUT"
 	rm -f override.cfg
 fi
 
