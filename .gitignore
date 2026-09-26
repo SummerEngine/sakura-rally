@@ -1,0 +1,11 @@
+.godot/
+/android/
+*.tmp
+.DS_Store
+/export/
+/captures/
+/tools/audio/.venv/
+/tools/**/__pycache__/
+
+# Summer Engine local-only state (SummerGit, caches, locks)
+.summer/local/
