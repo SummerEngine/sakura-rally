@@ -117,6 +117,8 @@ var _puffs: Array[GPUParticles3D] = []
 var _chips: Array[GPUParticles3D] = []
 var _chip_mats: Array[ParticleProcessMaterial] = []
 var _burst_next: int = 0
+var _burst_ticks: int = 0 ## physics ticks the latest burst stays on screen
+var _burst_car: Car ## the dust clears the line of sight to this car (dust.gdshader `focus`)
 var _dust_material: ShaderMaterial
 
 var _rng := RandomNumberGenerator.new()
@@ -436,6 +438,10 @@ func _physics_process(delta: float) -> void:
 		_age_debris(delta)
 	if _arch_wobbling > 0:
 		_step_arches(delta)
+	if _burst_ticks > 0:
+		_burst_ticks -= 1
+		if is_instance_valid(_burst_car):
+			_dust_material.set_shader_parameter("focus", _burst_car.global_position + Vector3.UP * 0.6)
 
 
 func _scan_car(ci: int, car: Car) -> void:
@@ -534,6 +540,8 @@ func _smash(id: int, car: Car, ci: int) -> void:
 	var point := Vector3(_cx[id], clampf(car.global_position.y + 0.5, _y0[id], _y1[id]), _cz[id])
 	_spawn_debris(_kind[id], xf, v, car.global_position, float(data["fling"]))
 	_burst(point, v, data["chip"], speed)
+	_burst_car = car
+	_burst_ticks = 240
 	var sound := get_node_or_null(^"/root/Sound")
 	if sound != null:
 		var db: float = float(data["db"]) + linear_to_db(clampf(speed / 22.0, 0.2, 1.0))
@@ -787,8 +795,8 @@ func _make_burst(mesh: Mesh, amount: int, life: float, chips: bool) -> GPUPartic
 		m.damping_max = 5.0
 		m.angular_velocity_min = -30.0
 		m.angular_velocity_max = 30.0
-		m.scale_min = 0.6
-		m.scale_max = 1.1
+		m.scale_min = 0.45
+		m.scale_max = 0.85
 		m.color = Color("e6d7bb")
 		var sc := Curve.new()
 		sc.add_point(Vector2(0.0, 0.5))

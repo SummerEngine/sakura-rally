@@ -28,8 +28,8 @@ instance uniform vec4 lean = vec4(0.0);
 varying vec3 v_world;
 varying vec2 v_uv;
 
-// Out-of-plane displacement (m) of the cloth at (u across, v up).
-float cloth_z(vec2 uv) {
+// Cloth displacement (m) at (u across, v up): x = out of the banner plane, y = up.
+vec2 cloth_offset(vec2 uv) {
 	float u = uv.x;
 	float v = uv.y;
 	float pin = sin(PI * u);
@@ -40,31 +40,37 @@ float cloth_z(vec2 uv) {
 	float w = 0.09 * sin(u * 11.0 - t * 2.4 + v * 1.3)
 			+ 0.045 * sin(u * 23.0 - t * 3.9 + v * 2.6)
 			+ 0.03 * sin(u * 5.0 + t * 1.3);
-	float z = w * pin * loose * wind * gust;
+	vec2 o = vec2(w * pin * loose * wind * gust, 0.0);
 	float env = billow * exp(-1.3 * billow_age);
 	if (env > 0.001) {
+		// the car's wake throws the bottom hem back and up, and ripples run out to the ties
 		float rise = smoothstep(0.0, 0.18, billow_age);
-		float bulge = billow_dir * 0.62 * rise * pin * (0.45 + 0.55 * (1.0 - v));
+		float low = 1.0 - v;
+		float bulge = 0.7 * rise * pin * (0.35 + 0.65 * low);
+		float lift = 0.95 * rise * pin * low * low;
 		float d = abs(u - 0.5) * span_m;
-		float ripple = 0.26 * sin(d * 1.5 - billow_age * 11.0 + v * 1.8) * smoothstep(billow_age * 14.0 + 1.0, billow_age * 14.0 - 2.0, d);
-		z += env * (bulge + ripple * pin);
+		float front = smoothstep(billow_age * 14.0 + 1.0, billow_age * 14.0 - 2.0, d);
+		float ripple = 0.38 * sin(d * 1.5 - billow_age * 11.0 + v * 1.8) * front * pin;
+		o.x += env * billow_dir * (bulge + ripple);
+		o.y += env * (lift + 0.6 * ripple * low);
 	}
-	return z;
+	return o;
 }
 
 void vertex() {
 	vec2 uv = UV;
-	float z = cloth_z(uv);
+	vec2 o = cloth_offset(uv);
 	float e = 0.01;
-	float dzu = (cloth_z(uv + vec2(e, 0.0)) - cloth_z(uv - vec2(e, 0.0))) / (2.0 * e);
-	float dzv = (cloth_z(uv + vec2(0.0, e)) - cloth_z(uv - vec2(0.0, e))) / (2.0 * e);
-	// dP/du = (span, 0, dzu), dP/dv = (0, height, dzv): normal = cross
-	vec3 n = vec3(-dzu * banner_height, -dzv * span_m, span_m * banner_height);
-	NORMAL = normalize(n);
-	// a light sag between the ties, a little more when the cloth is thrown about
+	vec2 du = (cloth_offset(uv + vec2(e, 0.0)) - cloth_offset(uv - vec2(e, 0.0))) / (2.0 * e);
+	vec2 dv = (cloth_offset(uv + vec2(0.0, e)) - cloth_offset(uv - vec2(0.0, e))) / (2.0 * e);
+	// dP/du = (span, dy/du, dz/du), dP/dv = (0, height + dy/dv, dz/dv): normal = cross
+	vec3 a = vec3(span_m, du.y, du.x);
+	vec3 b = vec3(0.0, banner_height + dv.y, dv.x);
+	NORMAL = normalize(cross(a, b));
+	// a light sag between the ties
 	float sag = 0.14 * sin(PI * uv.x);
 	vec2 l = mix(lean.xy, lean.zw, uv.x);
-	VERTEX += vec3(l.x, -sag, z + l.y);
+	VERTEX += vec3(l.x, o.y - sag, o.x + l.y);
 	v_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	v_uv = uv;
 }
