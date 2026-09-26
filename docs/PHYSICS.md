@@ -34,7 +34,9 @@ static weight), principal inertia `(1550, 1700, 480)` kg·m² (pitch, yaw, roll)
 1050 kg, centre of mass `(0, 0.42, 0)` (50:50), inertia `(1250, 1400, 390)`. The collision hulls
 are convex (hatchback 4.2 × 1.8 × 1.4 m; the Hayate's coupe hull is lower, 1.24 m at the roof)
 with the floor 0.2 m above the ground, so only the wheels touch the road; the body only collides on
-crashes, rolls and big landings. Body linear damping is off (aero drag is modelled), angular
+crashes, rolls and big landings. The hull's physics material has friction 0 and bounce 0: what
+happens on a crash is decided by `Car._update_crash` (see "Crashes and walls"), not by the solver
+dragging a corner along a wall. Body linear damping is off (aero drag is modelled), angular
 damping is a token 0.02.
 
 ### Suspension (per wheel)
@@ -229,6 +231,9 @@ overrides in `car_hayate.tscn`.
 | `tc_slip_multiple` / `drift_tc_relax` | 1.5 / 2.0 | 1.25 / 5.0 | TC threshold; how much more wheelspin a held drift may use |
 | `air_level_torque` / `air_damping` / `air_yaw_torque` | 5500 / 5800 / 900 | | In-flight levelling, spin damping, steering yaw |
 | `auto_reset_time` | 2.5 s | | Stuck/upside-down time before auto-reset |
+| `wall_scrape_loss` / `wall_scrape_drag` / `wall_align_rate` | 0.22 / 2 m/s² / 4 | | Wall hit speed loss × sin(angle); drag while scraping; nose-to-wall alignment |
+| `impact_guard_time` / `impact_yaw_limit` / `impact_tilt_limit` / `impact_climb_speed` | 0.6 s / 1.1 / 1.0 rad/s / 1 m/s | | Rate and launch limits after any wall/obstacle contact |
+| `low_obstacle_height` / `thin_obstacle_radius` | 0.5 m / 0.6 m | | Ride-over obstacles; poles and trunks that deflect the car |
 | `drag_area` / `downforce_area` / `aero_front_share` | 0.8 / 0.45 / 0.45 | 0.74 / 0.3 / | Top speed; high-speed planting |
 | `engine_sound` | `turbo4` | `na4` | Read by `CarAudio` |
 
@@ -350,6 +355,74 @@ Other ep1 → ep2 numbers from the suites: 0-100 tarmac 5.04 → 3.54 s, 100-0 t
 gravel 46.2 → 35.2 m, skidpad gravel 0.73 → 0.93 g, Hanami lap 123.4 → 113.3 s, Momiji
 108.2 → 99.5 s.
 
+## Crashes and walls
+Vel's ep2 playtest: a crash threw the car somewhere and could spin it several times; leaning on a
+wall in a corner should cost a little speed and let you drive round along it, not cost 10 s of
+recovery. `Car._update_crash` runs first in every tick on the contacts the solver reported for
+the previous step and replaces what they did to the velocity:
+
+- **What counts.** Only `StaticBody3D` contacts (loose and smashable props are left to the
+  solver). A contact is a *wall* when its normal is mostly horizontal (`|n.y| < 0.6`: guardrails,
+  bridge rails, stone walls, buildings, cliff and rock faces) and an *obstacle* when the body is on
+  layer 3 (`PROPS_LAYER`, MapWorld's `Barriers` and `PropBody_x_y`). Obstacles whose top is less
+  than `low_obstacle_height` (0.5 m) above the car's ground (rocks, stumps, logs) get the guard
+  only: the car rides over them.
+- **Wall scrape.** On the first hit of a crash the velocity keeps its component along the wall,
+  scaled by `1 - wall_scrape_loss · sin(impact angle)` (0.22), and loses the part into the wall
+  (no bounce-back); the rotation is restored to what it was before the solver's off-centre
+  impulse. While the body stays against the wall the into-wall component is removed each tick,
+  a `wall_scrape_drag` of 2 m/s² is the penalty for leaning on it, and above 8 m/s the yaw rate
+  is steered to line the nose up with the velocity (`wall_align_rate` 4 /s per rad of slip,
+  capped at the impact yaw limit), so the car ends up pointing along the wall and can drive on.
+- **Thin cylinders** (radius < `thin_obstacle_radius` 0.6 m: poles, trunks) push the car sideways
+  off the pole's axis and backwards in proportion to how much of the car's width overlaps it: a
+  glancing hit deflects past it, a centred one stops.
+- **Impact guard.** Any wall or obstacle contact (re)starts a 0.6 s guard (`impact_guard_time`).
+  For its first half the yaw rate is limited to `impact_yaw_limit` (1.1 rad/s) and roll/pitch
+  rates to `impact_tilt_limit` (1.0 rad/s); over the second half the limits relax to 3x. The car
+  may not rise faster than `impact_climb_speed` (1 m/s) above its vertical speed before the hit,
+  so a rock or a rail cannot launch it. The guard is gated on real contacts, so drifts, jumps
+  and landings on open ground never see it.
+
+Tests (`only=crash`, both cars, tarmac plaza, keyboard path): the car runs at the given speed into
+a guardrail-like box (0.25 m thick, 1.0 m tall, the `Barriers` kind, on layer 3) crossing its path
+at 10/25/45°, then holds throttle with the wheel centred. Loss is the lowest speed in the 0.5 s
+after contact against the speed before it; yaw is the heading rate over 0.1 s windows (a one-tick
+solver spike at contact is not what the driver sees); heading error is to the wall tangent 1 s
+after contact; a spin is body slip > 75°. Pole and trunk hits are quarter-overlap (a quarter of
+the 1.74 m body width) at 80 km/h; the rock is a 0.4 m tall, 1 m wide cylinder at 70 km/h; the
+hairpin is a 90° right-hander (radius 20 m, 8 m wide) entered at 100 km/h with full lock and
+throttle held and a rail on the outside.
+
+Before = the car code and hull material of 54d0738 (ep2 as merged), after = this branch, same test
+file:
+
+| Test | Sakura before | Sakura after | Hayate before | Hayate after | Target |
+| --- | --- | --- | --- | --- | --- |
+| wall 10° at 90 km/h | loss 6 %, yaw 69°/s, head 1° @1s, air 0.00 s | loss 6 %, yaw 22°/s, head 0° @1s, air 0.00 s | loss 7 %, yaw 70°/s, head 0° @1s, air 0.00 s | loss 6 %, yaw 20°/s, head 1° @1s, air 0.00 s | loss 5-10 %, yaw < 90°/s, head < 10°, air < 0.05 s, 0 spins |
+| wall 25° at 90 km/h | loss 20 %, yaw 163°/s, head 3° @1s, air 0.00 s **FAIL** | loss 18 %, yaw 52°/s, head 1° @1s, air 0.00 s | loss 22 %, yaw 163°/s, head 2° @1s, air 0.00 s **FAIL** | loss 18 %, yaw 50°/s, head 1° @1s, air 0.00 s | loss 15-25 %, yaw < 90°/s, head < 10°, air < 0.05 s, 0 spins |
+| wall 45° at 90 km/h | loss 52 %, yaw 145°/s, head 0° @1s, air 0.00 s **FAIL** | loss 41 %, yaw 66°/s, head 2° @1s, air 0.00 s | loss 50 %, yaw 175°/s, head 0° @1s, air 0.00 s **FAIL** | loss 43 %, yaw 66°/s, head 4° @1s, air 0.00 s | loss 30-45 %, yaw < 90°/s, head < 10°, air < 0.05 s, 0 spins |
+| wall 10° at 130 km/h | loss 7 %, yaw 86°/s, head 2° @1s, air 0.00 s | loss 5 %, yaw 25°/s, head 0° @1s, air 0.00 s | loss 7 %, yaw 80°/s, head 2° @1s, air 0.00 s | loss 5 %, yaw 24°/s, head 1° @1s, air 0.00 s | loss 5-10 %, yaw < 90°/s, head < 10°, air < 0.05 s, 0 spins |
+| wall 25° at 130 km/h | loss 22 %, yaw 203°/s, head 0° @1s, air 0.00 s **FAIL** | loss 18 %, yaw 58°/s, head 0° @1s, air 0.00 s | loss 25 %, yaw 244°/s, head 6° @1s, air 0.00 s **FAIL** | loss 19 %, yaw 61°/s, head 1° @1s, air 0.00 s | loss 15-25 %, yaw < 90°/s, head < 10°, air < 0.05 s, 0 spins |
+| wall 45° at 130 km/h | loss 53 %, yaw 173°/s, head 1° @1s, air 0.00 s **FAIL** | loss 41 %, yaw 65°/s, head 1° @1s, air 0.00 s | loss 51 %, yaw 224°/s, head 1° @1s, air 0.00 s **FAIL** | loss 44 %, yaw 67°/s, head 2° @1s, air 0.00 s | loss 30-45 %, yaw < 90°/s, head < 10°, air < 0.05 s, 0 spins |
+| pole (r 0.16) hit 80 km/h (quarter overlap) | rotation 126°, yaw 144°/s, air 0.00 s, 69 km/h after **FAIL** | rotation 23°, yaw 41°/s, air 0.00 s, 74 km/h after | rotation 104°, yaw 146°/s, air 0.00 s, 49 km/h after **FAIL** | rotation 48°, yaw 54°/s, air 0.00 s, 50 km/h after | rotation < 90°, air < 0.2 s, upright |
+| tree trunk (r 0.3) hit 80 km/h (quarter overlap) | rotation 92°, yaw 168°/s, air 0.00 s, 72 km/h after **FAIL** | rotation 28°, yaw 45°/s, air 0.00 s, 73 km/h after | rotation 53°, yaw 133°/s, air 0.00 s, 0 km/h after | rotation 29°, yaw 42°/s, air 0.00 s, 53 km/h after | rotation < 90°, air < 0.2 s, upright |
+| 0.4 m rock at 70 km/h | air 1.23 s, min up 0.89, rotation 8°, 79 km/h after **FAIL** | air 0.26 s, min up 0.99, rotation 0°, 114 km/h after | air 0.72 s, min up 0.98, rotation 1°, 91 km/h after **FAIL** | air 0.20 s, min up 0.99, rotation 1°, 105 km/h after | air < 0.3 s, no roll-over |
+| hairpin with outside rail, 100 km/h | exit 0.82 s later at 76 km/h, yaw 240°/s | exit 0.92 s later at 87 km/h, yaw 74°/s | exit 0.57 s later at 67 km/h, yaw 236°/s | exit 0.89 s later at 79 km/h, yaw 72°/s | exit <= 2.0 s after contact, 0 spins |
+
+Before, none of these scripted hits spun the car outright (the multi-spins Vel saw came from hits
+with steering and throttle already loading the car), but every 25-45° hit flicked it off the wall
+at 145-245°/s, the pole hit rotated the Sakura 126°, and the rock launched it for 1.23 s. In the
+hairpin the old car left the rail sooner only because it bounced off at 240°/s. After, no hit
+turns the car faster than 74°/s, it points along the wall within 4° a second later, pole and trunk
+hits turn it less than 50°, and nothing leaves the ground for more than 0.26 s. The hairpin exit
+is 10 km/h faster.
+
+Footage: `capture.gd only=crash` (see Visual review) on both versions. In the overhead pole sheet
+the old car is swung round to about 90° across its path within 0.9 s; the new one is deflected
+past the pole with the nose turned about 20° and drives on. `docs/renders/physics_wall_scrape.png`
+is the chase view 0.25 s into a 25° guardrail hit at 110 km/h: the car runs along the rail.
+
 ## Telemetry (`tools/physics/run_tests.gd`)
 
 ```
@@ -360,14 +433,15 @@ timeout 2400 $S --headless --disable-crash-handler --fixed-fps 120 --path . -s r
 
 Every test except the straight-line braking tests and the skidpads drives through the real
 keyboard path: `controlled_by_player = true` plus `Input.action_press/release` on the InputMap
-actions, so `CarInput`'s keyboard shaping is part of every number. The skidpad measures lateral g
+actions, so `CarInput`'s keyboard shaping is part of every number. The `crash` group is described
+under "Crashes and walls". The skidpad measures lateral g
 from the turn rate of the velocity itself, not the body's yaw rate (which also counts changes of
 body slip while the car slides in or out of the circle). "panic steer" reports max body slip /
 time until the slip is below 3° after the key is released, for throttle held, lifted and full brake.
 The `maps` group runs one lap per car and map with the analog autopilot and with the keyboard bot,
 and prints the medal times the analog laps imply.
 
-Latest results (2026-09-26, Apple M1 Max, headless, both cars): **88/88 PASS**.
+Latest results (2026-09-26, Apple M1 Max, headless, both cars): **108/108 PASS**.
 
 | Test | Result | Target | |
 | --- | --- | --- | --- |
@@ -399,7 +473,17 @@ Latest results (2026-09-26, Apple M1 Max, headless, both cars): **88/88 PASS**.
 | sakura: drift gravel: catch by centring | 0.76 s to < 5 deg, 88 km/h | <= 1.2 s, > 45 km/h | PASS |
 | sakura: handbrake turn 60 km/h gravel | 117 deg/s peak, 83 deg @1.2s | > 60 deg/s, > 70 deg | PASS |
 | sakura: handbrake turn drive-out | 70 deg total, 49 km/h @2s | > 15 km/h forward | PASS |
-| sakura: jump airtime | 1.16 s (landing 0.99) | > 0.6 s | PASS |
+| sakura: wall 10° at 90 km/h | loss 6 %, yaw 22°/s, head 0° @1s, air 0.00 s, spins 0 | loss 5-10 %, yaw < 90°/s, head < 10°, air < 0.05 s, 0 spins | PASS |
+| sakura: wall 25° at 90 km/h | loss 18 %, yaw 52°/s, head 1° @1s, air 0.00 s, spins 0 | loss 15-25 %, yaw < 90°/s, head < 10°, air < 0.05 s, 0 spins | PASS |
+| sakura: wall 45° at 90 km/h | loss 41 %, yaw 66°/s, head 2° @1s, air 0.00 s, spins 0 | loss 30-45 %, yaw < 90°/s, head < 10°, air < 0.05 s, 0 spins | PASS |
+| sakura: wall 10° at 130 km/h | loss 5 %, yaw 25°/s, head 0° @1s, air 0.00 s, spins 0 | loss 5-10 %, yaw < 90°/s, head < 10°, air < 0.05 s, 0 spins | PASS |
+| sakura: wall 25° at 130 km/h | loss 18 %, yaw 58°/s, head 0° @1s, air 0.00 s, spins 0 | loss 15-25 %, yaw < 90°/s, head < 10°, air < 0.05 s, 0 spins | PASS |
+| sakura: wall 45° at 130 km/h | loss 41 %, yaw 65°/s, head 1° @1s, air 0.00 s, spins 0 | loss 30-45 %, yaw < 90°/s, head < 10°, air < 0.05 s, 0 spins | PASS |
+| sakura: pole (r 0.16) hit 80 km/h (quarter overlap) | rotation 23°, yaw 41°/s, air 0.00 s, 74 km/h after | rotation < 90°, air < 0.2 s, upright | PASS |
+| sakura: tree trunk (r 0.3) hit 80 km/h (quarter overlap) | rotation 28°, yaw 45°/s, air 0.00 s, 73 km/h after | rotation < 90°, air < 0.2 s, upright | PASS |
+| sakura: 0.4 m rock at 70 km/h | air 0.26 s, min up 0.99, rotation 0°, 114 km/h after | air < 0.3 s, no roll-over | PASS |
+| sakura: hairpin with outside rail, 100 km/h | contact yes, out along the road 0.92 s later at 87 km/h, yaw 74°/s, spins 0 | exit <= 2.0 s after contact, 0 spins | PASS |
+| sakura: jump airtime | 1.18 s (landing 1.00) | > 0.6 s | PASS |
 | sakura: jump landing settle | 0.27 s, 0 bounces | < 1.0 s, 0 bounces | PASS |
 | sakura: rest on 15° slope (up) | 0.069 cm / 5 s | < 1 cm | PASS |
 | sakura: rest on 15° slope (across) | 0.044 cm / 5 s | < 1 cm | PASS |
@@ -408,9 +492,9 @@ Latest results (2026-09-26, Apple M1 Max, headless, both cars): **88/88 PASS**.
 | sakura: autopilot laps (3 flying) | 67.2, 64.7, 64.7, 64.7 s | 3 laps | PASS |
 | sakura: autopilot max line error | 1.06 m, 0 ticks off | wheels on road | PASS |
 | sakura: autopilot crashes | 0 impacts > 0.25 | 0 | PASS |
-| sakura: physics cost per tick (car) | 222 us avg, 1806 us max | < 400 us avg | PASS |
-| sakura: soak 309 s (loop, jumps, wall, bumps, banking) | NaN=false vmax=44 m/s wmax=5.7 rad/s | no NaN, v<70, w<15 | PASS |
-| sakura: soak events | 30 impacts (6 hard), 6 landings | signals fire | PASS |
+| sakura: physics cost per tick (car) | 198 us avg, 7781 us max | < 400 us avg | PASS |
+| sakura: soak 309 s (loop, jumps, wall, bumps, banking) | NaN=false vmax=44 m/s wmax=2.9 rad/s | no NaN, v<70, w<15 | PASS |
+| sakura: soak events | 21 impacts (3 hard), 6 landings | signals fire | PASS |
 | hayate: 0-100 km/h tarmac | 4.99 s | 4.3-5.2 s | PASS |
 | hayate: 0-60 km/h tarmac | 2.60 s | <= 2.8 s | PASS |
 | hayate: 0-100 km/h gravel | 5.99 s | 4.8-6.4 s | PASS |
@@ -439,6 +523,16 @@ Latest results (2026-09-26, Apple M1 Max, headless, both cars): **88/88 PASS**.
 | hayate: drift gravel: catch by centring | 1.06 s to < 5 deg, 51 km/h | <= 1.2 s, > 45 km/h | PASS |
 | hayate: handbrake turn 60 km/h gravel | 133 deg/s peak, 82 deg @1.2s | > 60 deg/s, > 70 deg | PASS |
 | hayate: handbrake turn drive-out | 83 deg total, 34 km/h @2s | > 15 km/h forward | PASS |
+| hayate: wall 10° at 90 km/h | loss 6 %, yaw 20°/s, head 1° @1s, air 0.00 s, spins 0 | loss 5-10 %, yaw < 90°/s, head < 10°, air < 0.05 s, 0 spins | PASS |
+| hayate: wall 25° at 90 km/h | loss 18 %, yaw 50°/s, head 1° @1s, air 0.00 s, spins 0 | loss 15-25 %, yaw < 90°/s, head < 10°, air < 0.05 s, 0 spins | PASS |
+| hayate: wall 45° at 90 km/h | loss 43 %, yaw 66°/s, head 4° @1s, air 0.00 s, spins 0 | loss 30-45 %, yaw < 90°/s, head < 10°, air < 0.05 s, 0 spins | PASS |
+| hayate: wall 10° at 130 km/h | loss 5 %, yaw 24°/s, head 1° @1s, air 0.00 s, spins 0 | loss 5-10 %, yaw < 90°/s, head < 10°, air < 0.05 s, 0 spins | PASS |
+| hayate: wall 25° at 130 km/h | loss 19 %, yaw 61°/s, head 1° @1s, air 0.00 s, spins 0 | loss 15-25 %, yaw < 90°/s, head < 10°, air < 0.05 s, 0 spins | PASS |
+| hayate: wall 45° at 130 km/h | loss 44 %, yaw 67°/s, head 2° @1s, air 0.00 s, spins 0 | loss 30-45 %, yaw < 90°/s, head < 10°, air < 0.05 s, 0 spins | PASS |
+| hayate: pole (r 0.16) hit 80 km/h (quarter overlap) | rotation 48°, yaw 54°/s, air 0.00 s, 50 km/h after | rotation < 90°, air < 0.2 s, upright | PASS |
+| hayate: tree trunk (r 0.3) hit 80 km/h (quarter overlap) | rotation 29°, yaw 42°/s, air 0.00 s, 53 km/h after | rotation < 90°, air < 0.2 s, upright | PASS |
+| hayate: 0.4 m rock at 70 km/h | air 0.20 s, min up 0.99, rotation 1°, 105 km/h after | air < 0.3 s, no roll-over | PASS |
+| hayate: hairpin with outside rail, 100 km/h | contact yes, out along the road 0.89 s later at 79 km/h, yaw 72°/s, spins 0 | exit <= 2.0 s after contact, 0 spins | PASS |
 | hayate: jump airtime | 1.11 s (landing 0.95) | > 0.6 s | PASS |
 | hayate: jump landing settle | 0.27 s, 0 bounces | < 1.0 s, 0 bounces | PASS |
 | hayate: rest on 15° slope (up) | 0.169 cm / 5 s | < 1 cm | PASS |
@@ -448,8 +542,8 @@ Latest results (2026-09-26, Apple M1 Max, headless, both cars): **88/88 PASS**.
 | hayate: autopilot laps (3 flying) | 69.9, 66.6, 66.6, 66.6 s | 3 laps | PASS |
 | hayate: autopilot max line error | 0.77 m, 0 ticks off | wheels on road | PASS |
 | hayate: autopilot crashes | 0 impacts > 0.25 | 0 | PASS |
-| hayate: physics cost per tick (car) | 243 us avg, 54621 us max | < 400 us avg | PASS |
-| hayate: soak 309 s (loop, jumps, wall, bumps, banking) | NaN=false vmax=40 m/s wmax=4.5 rad/s | no NaN, v<70, w<15 | PASS |
+| hayate: physics cost per tick (car) | 199 us avg, 5033 us max | < 400 us avg | PASS |
+| hayate: soak 309 s (loop, jumps, wall, bumps, banking) | NaN=false vmax=40 m/s wmax=4.8 rad/s | no NaN, v<70, w<15 | PASS |
 | hayate: soak events | 21 impacts (6 hard), 6 landings | signals fire | PASS |
 | sakura: hanami analog lap | 113.31 s, 0 resets, 0 hard, off 0.0 s | clean | PASS |
 | sakura: hanami keyboard-bot lap | 114.43 s (x1.010), 0 resets, 0 hard, slip 8° | clean, slip < 25°, <= x1.12 | PASS |
@@ -466,10 +560,13 @@ is the budget figure.
 ## Visual review (`tools/physics/capture.gd`)
 
 ```
-timeout 300 $S --disable-crash-handler --fixed-fps 120 --path . -s res://tools/physics/capture.gd [-- only=corner,slide,jump,wheels,bumps,modes]
+timeout 300 $S --disable-crash-handler --summer-offscreen --fixed-fps 120 --path . -s res://tools/physics/capture.gd [-- only=corner,slide,jump,wheels,bumps,modes,crash]
 ```
 
-Writes `docs/renders/physics_*.png` (corner, gravel slide, jump in the air, wheel close-up, bumps, the
-four camera modes) plus frame strips in `/tmp/sakura_capture/`. `physics_placeholder_wheels.png` shows
+`--summer-offscreen` renders with the real renderer without opening a window; drop it for a
+windowed run. Writes `docs/renders/physics_*.png` (corner, gravel slide, jump in the air, wheel
+close-up, bumps, the four camera modes, a chase frame of a guardrail scrape) plus frame strips in
+`/tmp/sakura_capture/` (`crash_wall_sheet.png` and `crash_pole_sheet.png`: overhead 3x2 contact
+sheets, 0.15 s apart from the moment of contact). `physics_placeholder_wheels.png` shows
 the code-built placeholder; the other renders use the real `rally_car.glb`.
 

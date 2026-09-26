@@ -7,7 +7,10 @@ extends SceneTree
 ##
 ## Shots: corner (autopilot on the tarmac loop, chase cam), slide (gravel handbrake flick, high
 ## side view), jump (side view sequence over the kicker), wheels (front wheel close-up while
-## steering and rolling), bumps (suspension over the bumpy lane), modes (all four camera modes).
+## steering and rolling), bumps (suspension over the bumpy lane), modes (all four camera modes),
+## crash (25° guardrail hit at 110 km/h and a quarter-overlap pole hit at 80 km/h on the tarmac
+## plaza: an overhead contact sheet of each in /tmp/sakura_capture/ and a chase frame of the scrape).
+## Runs offscreen with `--summer-offscreen` (real renderer, no window) as well as windowed.
 
 const DT := 1.0 / 120.0
 const OUT_DIR := "res://docs/renders/"
@@ -53,6 +56,8 @@ func _initialize() -> void:
 		await shot_bumps()
 	if _want("modes"):
 		await shot_modes()
+	if _want("crash") and not occluded:
+		await shot_crash()
 	root.get_node("Game").request_quit()
 
 
@@ -72,9 +77,28 @@ func _ticks(n: int) -> void:
 		await physics_frame
 
 
-func _save(path: String) -> void:
+## The last frame counter a capture saw. Offscreen on macOS the window only draws while part of
+## it is uncovered; a counter that stops advancing means the frames would be stale.
+var _last_drawn := -1
+var occluded := false
+
+
+## The current frame, or null (and `occluded` set) when the renderer has stopped drawing.
+func _grab() -> Image:
 	await RenderingServer.frame_post_draw
-	var img := root.get_texture().get_image()
+	var drawn := Engine.get_frames_drawn()
+	if drawn == _last_drawn:
+		occluded = true
+		push_warning("capture: no new frame drawn (window occluded?), frames are not verified")
+		return null
+	_last_drawn = drawn
+	return root.get_texture().get_image()
+
+
+func _save(path: String) -> void:
+	var img: Image = await _grab()
+	if img == null:
+		return
 	var abs_path := ProjectSettings.globalize_path(path) if path.begins_with("res://") else path
 	img.save_png(abs_path)
 	print("saved ", abs_path)
@@ -252,3 +276,110 @@ func shot_modes() -> void:
 		await _save(OUT_DIR + "physics_cam_%s.png" % m)
 	ap.queue_free()
 	await physics_frame
+
+
+func shot_crash() -> void:
+	await _crash_scene("wall", 110.0, func(origin: Vector3, fwd: Vector3) -> Node3D:
+		# Guardrail 0.25 m thick, 1 m tall, crossing the path 40 m ahead at 25°, running right.
+		var dir := fwd.rotated(Vector3.UP, -deg_to_rad(25.0))
+		var box := BoxMesh.new()
+		box.size = Vector3(0.25, 1.0, 120.0)
+		var shape := BoxShape3D.new()
+		shape.size = box.size
+		return _crash_body(box, shape, Transform3D(Basis.looking_at(dir, Vector3.UP),
+				origin + fwd * 40.0 + dir * 55.0 + Vector3.UP * 0.5)))
+	if occluded:
+		return
+	await _crash_scene("pole", 80.0, func(origin: Vector3, fwd: Vector3) -> Node3D:
+		# Telephone pole (r 0.16) overlapping the right quarter of the car's width.
+		var right := fwd.cross(Vector3.UP)
+		var mesh := CylinderMesh.new()
+		mesh.top_radius = 0.16
+		mesh.bottom_radius = 0.16
+		mesh.height = 6.0
+		var shape := CylinderShape3D.new()
+		shape.radius = 0.16
+		shape.height = 6.0
+		return _crash_body(mesh, shape, Transform3D(Basis(),
+				origin + fwd * 40.0 + right * (0.87 - 0.435 + 0.16) + Vector3.UP * 3.0)))
+
+
+## A static obstacle on the props layer (like MapWorld's Barriers), with a visible mesh.
+func _crash_body(mesh: Mesh, shape: Shape3D, xf: Transform3D) -> Node3D:
+	var body := StaticBody3D.new()
+	body.collision_layer = 4
+	body.collision_mask = 0
+	body.transform = xf
+	var cs := CollisionShape3D.new()
+	cs.shape = shape
+	body.add_child(cs)
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color("d8d4cc")
+	mi.material_override = mat
+	body.add_child(mi)
+	root.add_child(body)
+	return body
+
+
+## Runs straight at `kmh` on the tarmac plaza into the obstacle, then holds throttle with the
+## wheel centred. Overhead frames every 0.15 s from just before contact go into a 3x2 sheet.
+func _crash_scene(tag: String, kmh: float, build: Callable) -> void:
+	car.reset_to(ground.call("spawn", "plaza_tarmac"))
+	await _ticks(60)
+	var lane := car.global_position.x
+	while car.speed_kmh < kmh:
+		_controls(1.0, 0.0, _lane_steer(lane))
+		await physics_frame
+	var fwd := -car.global_transform.basis.z
+	fwd.y = 0.0
+	fwd = fwd.normalized()
+	var body: Node3D = build.call(car.global_position * Vector3(1, 0, 1), fwd)
+	var contact_at := -1
+	var frames: Array[Image] = []
+	var chase_saved := false
+	for i in int(6.0 / DT):
+		var touching := car.get_colliding_bodies().has(body)
+		if contact_at < 0 and touching:
+			contact_at = i
+		var hold := car.speed_kmh < kmh
+		_controls(1.0 if contact_at >= 0 or hold else 0.3, 0.0, _lane_steer(lane) if contact_at < 0 else 0.0)
+		await physics_frame
+		var ahead := contact_at < 0 and (body.global_position - car.global_position).dot(fwd) < 60.0
+		if contact_at >= 0 or ahead:
+			var p := car.global_position
+			fixed_cam.make_current()
+			fixed_cam.fov = 50.0
+			fixed_cam.global_position = p + Vector3.UP * 30.0 - fwd * 6.0
+			fixed_cam.look_at(p + fwd * 4.0)
+		var since := i - contact_at if contact_at >= 0 else -1
+		if contact_at >= 0 and since % 18 == 0 and frames.size() < 6:
+			var img: Image = await _grab()
+			if img == null:
+				break
+			frames.append(img)
+		if tag == "wall" and not chase_saved and since == 30:
+			_use_chase()
+			await _ticks(2)
+			await _save(OUT_DIR + "physics_wall_scrape.png")
+			chase_saved = true
+		if frames.size() >= 6 or occluded:
+			break
+	_save_sheet(frames, SEQ_DIR + "crash_%s_sheet.png" % tag)
+	body.queue_free()
+	await physics_frame
+
+
+func _save_sheet(frames: Array[Image], path: String) -> void:
+	if frames.is_empty():
+		return
+	var w := frames[0].get_width() / 2
+	var h := frames[0].get_height() / 2
+	var sheet := Image.create(w * 3, h * 2, false, frames[0].get_format())
+	for k in frames.size():
+		var img := frames[k].duplicate() as Image
+		img.resize(w, h, Image.INTERPOLATE_BILINEAR)
+		sheet.blit_rect(img, Rect2i(0, 0, w, h), Vector2i((k % 3) * w, (k / 3) * h))
+	sheet.save_png(path)
+	print("saved ", path)

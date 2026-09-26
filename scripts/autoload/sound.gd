@@ -129,6 +129,18 @@ func _ready() -> void:
 		game.settings_changed.connect(_apply_volumes)
 		game.paused_changed.connect(_on_paused_changed)
 	_apply_volumes()
+	_warm_cache()
+
+
+## Reads every short one-shot into the cache at boot. Loading on first play puts a disk read
+## on the frame of the event itself (the first smash, checkpoint or menu click).
+func _warm_cache() -> void:
+	for table: Dictionary in [UI_SOUNDS, STINGERS]:
+		for path: String in table.values():
+			_load(path)
+	for variants: Array in SFX_3D.values():
+		for path: String in variants:
+			_load(path)
 
 
 # ---------------------------------------------------------------- buses
