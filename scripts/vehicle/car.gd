@@ -192,7 +192,9 @@ var livery_secondary: Color = Color("e8517c")
 @export var wall_align_rate: float = 4.0
 ## After any wall or obstacle contact, for `impact_guard_time` s (decaying): the yaw rate is
 ## limited to `impact_yaw_limit`, roll/pitch rates to `impact_tilt_limit` (rad/s), and the car may
-## rise no faster than `impact_climb_speed` m/s above its speed before the hit (no launch).
+## rise off the road no faster than `impact_climb_speed` m/s above its speed before the hit (no
+## launch). "Off the road" is along the mean contact normal of the wheels, so following a climb or
+## a dip is not rising; with no wheel on the ground it is world up.
 @export var impact_guard_time: float = 0.6
 @export var impact_yaw_limit: float = 1.1
 @export var impact_tilt_limit: float = 1.0
@@ -248,11 +250,12 @@ var _rear_loose: bool = false
 var _prev_slip: float = 0.0
 var _steer_memory: float = 0.0
 ## Velocity at the start of the previous tick (before its contacts were solved) and the impact
-## guard: seconds left, vertical speed cap, and whether the last contact was a wall.
+## guard: seconds left, cap on the speed away from the road, and whether the last contact was a
+## wall.
 var _last_lin: Vector3 = Vector3.ZERO
 var _last_ang: Vector3 = Vector3.ZERO
 var _guard: float = 0.0
-var _guard_vy: float = 0.0
+var _guard_rise: float = 0.0
 var _wall_contact: bool = false
 
 
@@ -940,13 +943,21 @@ func _update_crash(state: PhysicsDirectBodyState3D, xf: Transform3D, com: Vector
 			var nh := Vector3(n.x, 0.0, n.z)
 			if nh.length_squared() > 1e-6:
 				wall_n += nh.normalized()
+	# Speeds away from the road are measured along the wheels' mean contact normal (from the last
+	# suspension update).
+	var road_n := Vector3.ZERO
+	for i in 4:
+		var w: WheelState = wheels[i]
+		if w.contact:
+			road_n += w.contact_normal
+	road_n = road_n.normalized() if road_n.length_squared() > 1e-6 else Vector3.UP
 	var first_hit := _guard <= 0.0
 	if not obstacle:
 		_wall_contact = false
 		_guard = maxf(_guard - dt, 0.0)
 	else:
 		if _guard <= 0.0:
-			_guard_vy = maxf(_last_lin.y, 0.0) + impact_climb_speed
+			_guard_rise = maxf(_last_lin.dot(road_n), 0.0) + impact_climb_speed
 		_guard = impact_guard_time
 		_wall_contact = wall_n.length_squared() > 1e-6
 	if _wall_contact:
@@ -991,7 +1002,9 @@ func _update_crash(state: PhysicsDirectBodyState3D, xf: Transform3D, com: Vector
 		if tilt.length() > tilt_max:
 			tilt = tilt.normalized() * tilt_max
 		ang = up * yaw + tilt
-		lin.y = minf(lin.y, _guard_vy)
+		var rise := lin.dot(road_n)
+		if rise > _guard_rise:
+			lin -= road_n * (rise - _guard_rise)
 	state.linear_velocity = lin
 	state.angular_velocity = ang
 	_last_lin = lin
