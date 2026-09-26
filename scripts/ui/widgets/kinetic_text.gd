@@ -66,7 +66,20 @@ func _init() -> void:
 
 func _ready() -> void:
 	_relayout()
-	set_process(false)
+	# A play() / play_out() issued before the node entered the tree keeps running.
+	set_process(_animating())
+
+
+func _notification(what: int) -> void:
+	# Redraw requests made while hidden are dropped; draw the current state when shown again.
+	if what == NOTIFICATION_VISIBILITY_CHANGED and is_visible_in_tree():
+		queue_redraw()
+
+
+func _animating() -> bool:
+	if leaving:
+		return t_out <= total_in_time() + 0.3
+	return t_in <= total_in_time() + 0.05
 
 
 func play(delay: float = 0.0) -> void:
@@ -102,9 +115,7 @@ func _process(delta: float) -> void:
 	t_in += d
 	if leaving:
 		t_out += d
-		if t_out > total_in_time() + 0.3:
-			set_process(false)
-	elif t_in > total_in_time() + 0.05:
+	if not _animating():
 		set_process(false)
 	queue_redraw()
 

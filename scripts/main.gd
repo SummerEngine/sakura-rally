@@ -166,6 +166,9 @@ func _enter_menu(map_id: String, run: int) -> void:
 	Game.set_state(Game.State.LOADING)
 	_clear_car()
 	cine.stop()
+	# The flyover autopilot loops the road, so an open liaison road hands over to the menu map.
+	if map != null and map.map_id == map_id and not map.closed:
+		map_id = MENU_MAP
 	if map == null or map.map_id != map_id:
 		await _load_map(map_id)
 		if run != _run:

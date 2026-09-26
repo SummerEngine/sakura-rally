@@ -35,7 +35,12 @@ func _run() -> void:
 	ui = main.ui
 	await _until(func() -> bool: return int(game.state) == int(game.State.MENU), 90.0)
 	await _seconds(3.5)
-	await _shot("title")
+	var wm: Control = ui.title._wordmark
+	_check(wm.is_visible_in_tree() and not wm.leaving and wm.t_in >= wm.total_in_time() and not wm.is_processing(),
+		"wordmark settled (t_in %.2f, leaving %s)" % [wm.t_in, wm.leaving])
+	var img := await _shot("title")
+	var ink := _ink_pixels(img, wm.get_global_rect())
+	_check(ink > 800, "wordmark drawn on the title frame (%d ink pixels)" % ink)
 
 	# Time Attack: the page over the flyover, then back.
 	ui.title._time_attack_item.grab_focus()
@@ -111,12 +116,25 @@ func _check(ok: bool, what: String) -> void:
 		failures.append(what)
 
 
-func _shot(shot: String) -> void:
+func _shot(shot: String) -> Image:
 	await process_frame
 	await RenderingServer.frame_post_draw
 	var path := "%s/menu_%s_%s.png" % [opts["out"], shot, opts["aspect"]]
-	root.get_texture().get_image().save_png(path)
+	var img := root.get_texture().get_image()
+	img.save_png(path)
 	print("MENU_TOUR SHOT ", path)
+	return img
+
+
+## Dark ink pixels inside `rect` (the wordmark's ink over the bright sky and hills), every 2nd.
+func _ink_pixels(img: Image, rect: Rect2) -> int:
+	var r := Rect2i(rect).intersection(Rect2i(Vector2i.ZERO, img.get_size()))
+	var n := 0
+	for y in range(r.position.y, r.end.y, 2):
+		for x in range(r.position.x, r.end.x, 2):
+			if img.get_pixel(x, y).get_luminance() < 0.3:
+				n += 1
+	return n
 
 
 func _press(action: StringName) -> void:
