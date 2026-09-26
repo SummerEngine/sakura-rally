@@ -17,6 +17,10 @@ const TRACK_HALF := 0.78
 const FRONT_AXLE_Z := -1.27
 const REAR_AXLE_Z := 1.28
 const WHEEL_REST_Y := 0.33
+## Physics layer of barriers and prop colliders (MapWorld.LAYER_PROPS).
+const PROPS_LAYER := 4
+## Half the body's width (m), for how much of it overlaps a pole.
+const BODY_HALF_WIDTH := 0.87
 const CAR_AUDIO_SCRIPT := "res://scripts/vehicle/car_audio.gd"
 ## Lateral slip uses at least this forward speed in its denominator (m/s).
 const LAT_SPEED_FLOOR := 1.2
@@ -175,6 +179,31 @@ var livery_secondary: Color = Color("e8517c")
 @export var downforce_area: float = 0.45
 @export var aero_front_share: float = 0.45
 
+@export_group("Crashes")
+## Walls: a hull contact whose normal is mostly horizontal (guardrails, stone walls, bridge rails,
+## cliff faces, buildings). An impact keeps the velocity along the wall, scaled by
+## 1 - `wall_scrape_loss` * sin(impact angle), and removes the part into it (no bounce-back),
+## instead of whatever the solver's off-centre impulse would have done.
+@export var wall_scrape_loss: float = 0.22
+## Deceleration while the body scrapes along a wall (m/s^2): the small penalty for leaning on it.
+@export var wall_scrape_drag: float = 2.0
+## While in contact with a wall above 8 m/s the yaw rate is steered to line the nose up with the
+## velocity (1/s per rad of body slip, capped at the impact yaw limit).
+@export var wall_align_rate: float = 4.0
+## After any wall or obstacle contact, for `impact_guard_time` s (decaying): the yaw rate is
+## limited to `impact_yaw_limit`, roll/pitch rates to `impact_tilt_limit` (rad/s), and the car may
+## rise no faster than `impact_climb_speed` m/s above its speed before the hit (no launch).
+@export var impact_guard_time: float = 0.6
+@export var impact_yaw_limit: float = 1.1
+@export var impact_tilt_limit: float = 1.0
+@export var impact_climb_speed: float = 1.0
+## Obstacles whose top is lower than this above the car's ground (rocks, stumps, logs) are ridden
+## over: only the guard applies, no wall response.
+@export var low_obstacle_height: float = 0.5
+## Cylinders thinner than this (poles, trunks) push the car away from their axis rather than along
+## the face normal of the hull, so a glancing hit deflects the car past the pole.
+@export var thin_obstacle_radius: float = 0.6
+
 @export_group("Engine")
 ## Engine, gearbox and driveline tuning; null = the Sakura defaults of `Drivetrain`.
 @export var drivetrain: Drivetrain
@@ -218,6 +247,13 @@ var _rear_lat_peak: float = 0.125
 var _rear_loose: bool = false
 var _prev_slip: float = 0.0
 var _steer_memory: float = 0.0
+## Velocity at the start of the previous tick (before its contacts were solved) and the impact
+## guard: seconds left, vertical speed cap, and whether the last contact was a wall.
+var _last_lin: Vector3 = Vector3.ZERO
+var _last_ang: Vector3 = Vector3.ZERO
+var _guard: float = 0.0
+var _guard_vy: float = 0.0
+var _wall_contact: bool = false
 
 
 func _ready() -> void:
@@ -357,6 +393,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	var up := xf.basis.y
 	var fwd := -xf.basis.z
 	var com := xf.origin + state.center_of_mass
+	_update_crash(state, xf, com, dt)
 	var lin := state.linear_velocity
 	var ang := state.angular_velocity
 	local_velocity = xf.basis.inverse() * lin
@@ -852,6 +889,115 @@ func _read_contacts(state: PhysicsDirectBodyState3D) -> void:
 		impact.emit(minf(strength, 2.0), point)
 
 
+## Wall scrape and impact guard. Runs first in the tick, on the contacts the solver reported for
+## the previous step, and replaces what those contacts did to the velocity with the arcade answer.
+func _update_crash(state: PhysicsDirectBodyState3D, xf: Transform3D, com: Vector3, dt: float) -> void:
+	var lin := state.linear_velocity
+	var ang := state.angular_velocity
+	var wall_n := Vector3.ZERO
+	var obstacle := false
+	for c in state.get_contact_count():
+		# Only static geometry is a wall or an obstacle; loose and smashable props (rigid bodies)
+		# are left to the solver.
+		var co := state.get_contact_collider_object(c) as StaticBody3D
+		if co == null:
+			continue
+		var point := state.get_contact_collider_position(c)
+		var n := state.get_contact_local_normal(c)
+		if n.dot(com - point) < 0.0:
+			n = -n
+		var props := (co.collision_layer & PROPS_LAYER) != 0
+		var wall := absf(n.y) < 0.6
+		if not (props or wall):
+			continue
+		obstacle = true
+		var shape_xf := Transform3D.IDENTITY
+		var shape: Shape3D = null
+		var owner_id := co.shape_find_owner(state.get_contact_collider_shape(c))
+		if co.shape_owner_get_shape_count(owner_id) == 1:
+			shape = co.shape_owner_get_shape(owner_id, 0)
+			shape_xf = co.global_transform * co.shape_owner_get_transform(owner_id)
+		var top := INF
+		if shape is BoxShape3D:
+			var s := (shape as BoxShape3D).size * 0.5
+			var b := shape_xf.basis
+			top = shape_xf.origin.y + absf(b.x.y) * s.x + absf(b.y.y) * s.y + absf(b.z.y) * s.z
+		elif shape is CylinderShape3D:
+			var cyl := shape as CylinderShape3D
+			top = shape_xf.origin.y + absf(shape_xf.basis.y.y) * cyl.height * 0.5 + cyl.radius * Vector2(shape_xf.basis.y.x, shape_xf.basis.y.z).length()
+			if cyl.radius < thin_obstacle_radius:
+				# Pushed sideways off the pole, and backwards in proportion to how much of the
+				# car's width overlaps it: a glancing hit deflects, a centred one stops.
+				var lp := xf.affine_inverse() * shape_xf.origin
+				var ov := clampf((BODY_HALF_WIDTH + cyl.radius - absf(lp.x)) / (2.0 * BODY_HALF_WIDTH), 0.0, 1.0)
+				var side := xf.basis.x * (-1.0 if lp.x > 0.0 else 1.0)
+				var back := xf.basis.z * (1.0 if lp.z < 0.0 else -1.0)
+				n = side * (1.0 - ov) + back * (2.0 * ov)
+				wall = true
+		if top - xf.origin.y < low_obstacle_height:
+			continue
+		if wall:
+			var nh := Vector3(n.x, 0.0, n.z)
+			if nh.length_squared() > 1e-6:
+				wall_n += nh.normalized()
+	var first_hit := _guard <= 0.0
+	if not obstacle:
+		_wall_contact = false
+		_guard = maxf(_guard - dt, 0.0)
+	else:
+		if _guard <= 0.0:
+			_guard_vy = maxf(_last_lin.y, 0.0) + impact_climb_speed
+		_guard = impact_guard_time
+		_wall_contact = wall_n.length_squared() > 1e-6
+	if _wall_contact:
+		var nh := wall_n.normalized()
+		var base := _last_lin
+		var vh := Vector3(base.x, 0.0, base.z)
+		var vn := vh.dot(nh)
+		if vn < -1.0:
+			# A fresh hit: keep the velocity along the wall, scaled by the impact angle (only on
+			# the first hit of a crash, not when the car touches again while it lines up), and
+			# the rotation the car had before it.
+			var sin_a := clampf(-vn / maxf(vh.length(), 0.1), 0.0, 1.0)
+			var vt := (vh - nh * vn) * ((1.0 - wall_scrape_loss * sin_a) if first_hit else 1.0)
+			lin = vt + Vector3.UP * minf(lin.y, base.y)
+			ang = _last_ang
+		else:
+			var into := Vector3(lin.x, 0.0, lin.z).dot(nh)
+			if into < 0.0:
+				lin -= nh * into
+		var flat := Vector3(lin.x, 0.0, lin.z)
+		var v := flat.length()
+		if v > 0.5:
+			lin -= flat / v * minf(wall_scrape_drag * dt, v)
+		if v > 8.0:
+			var up := xf.basis.y
+			var local := xf.basis.inverse() * lin
+			var slip := atan2(local.x, -local.z)
+			if absf(slip) < deg_to_rad(110.0):
+				var target := clampf(-slip * wall_align_rate, -impact_yaw_limit, impact_yaw_limit)
+				var yaw := ang.dot(up)
+				ang += up * ((target - yaw) * (1.0 - exp(-dt / 0.12)))
+	if _guard > 0.0:
+		var g := _guard / impact_guard_time
+		var up := xf.basis.y
+		var yaw := ang.dot(up)
+		var tilt := ang - up * yaw
+		# Full strength for the first half of the guard, then it relaxes to 3x.
+		var hold := clampf(g * 2.0, 0.0, 1.0)
+		var yaw_max := lerpf(impact_yaw_limit * 3.0, impact_yaw_limit, hold)
+		var tilt_max := lerpf(impact_tilt_limit * 3.0, impact_tilt_limit, hold)
+		yaw = clampf(yaw, -yaw_max, yaw_max)
+		if tilt.length() > tilt_max:
+			tilt = tilt.normalized() * tilt_max
+		ang = up * yaw + tilt
+		lin.y = minf(lin.y, _guard_vy)
+	state.linear_velocity = lin
+	state.angular_velocity = ang
+	_last_lin = lin
+	_last_ang = ang
+
+
 func _update_reset(state: PhysicsDirectBodyState3D, xf: Transform3D, lin: Vector3, dt: float) -> void:
 	var upside_down := xf.basis.y.y < 0.3
 	var speed := lin.length()
@@ -885,6 +1031,10 @@ func _find_reset_transform(from: Transform3D) -> Transform3D:
 
 func _reset_state() -> void:
 	_stuck_time = 0.0
+	_last_lin = Vector3.ZERO
+	_last_ang = Vector3.ZERO
+	_guard = 0.0
+	_wall_contact = false
 	airborne_time = 0.0
 	_tc_scale = 1.0
 	_hold_active = false

@@ -49,10 +49,11 @@ POINTS = [
 
 # ---------------------------------------------------------------------------- dressing
 # Road-relative placement: (control point, metres along the road from it, lateral metres,
-# + = right of the driving direction). The road corridor (half width + verge + 1 m = 5.9 m)
-# stays free of anything solid; spectators stand 8 m or more from the road edge
-# (road_clear 8), behind tape or bales. Order matters: singles first (they reserve their
-# footprint), then lines (they skip occupied spots), then groups.
+# + = right of the driving direction). Nothing rigid stands in the road corridor (half width +
+# verge + 1.5 m = 6.4 m, wider at tight corners; lib/corridor.py moves offenders out);
+# spectators stand 8 m or more from the road edge (road_clear 8), behind tape or bales. Order
+# matters: singles first (they reserve their footprint), then lines (they skip occupied spots),
+# then groups.
 
 SPECTATORS = ["spectator_a", "spectator_b", "spectator_c", "spectator_d", "spectator_e", "spectator_f"]
 FLAGS = ["flag_pole_pink", "flag_pole", "flag_pole_blue"]
@@ -87,10 +88,10 @@ def bale_stack(cp, off, lat, face="road_side"):
 
 
 def gate(k):
-    """Checkpoint gate over the road with a bale at the foot of each post."""
+    """Checkpoint dressing: a bale and a flag either side of the road (the runtime builds the
+    fabric gate itself from map.checkpoints)."""
     off = LAP * k / 6.0
-    return [one("checkpoint_gate", 4, off, 0.0, "along", scale=1.25, sink=0.2),
-            one("hay_bale_square", 4, off, 7.9, "road_side"), one("hay_bale_square", 4, off, -7.9, "road_side"),
+    return [one("hay_bale_square", 4, off, 7.9, "road_side"), one("hay_bale_square", 4, off, -7.9, "road_side"),
             one("flag_pole_pink", 4, off + 3.0, 9.0, "road_side"), one("flag_pole_blue", 4, off + 3.0, -9.0, "road_side")]
 
 
