@@ -30,6 +30,7 @@ from lib.meshpack import MeshBuilder, MeshPack, rotation  # noqa: E402
 from lib.road import (LOT_DROP, PROFILE, SURFACES, build_bridge, build_delineators,  # noqa: E402
                       build_guardrails, build_road, guardrail_runs, phys_surface, ribbon_indices,
                       road_chunks, road_height_at, road_index, road_vertices)
+from lib.corridor import Corridor, enforce, format_survey, survey  # noqa: E402
 from lib.scatter import Placer  # noqa: E402
 from lib.terrain import LOT_SKIRT, build_terrain, build_water, chunk_mesh  # noqa: E402
 
@@ -444,44 +445,6 @@ def emit_backdrop(pack: MeshPack, spec: dict) -> None:
     pack.add("backdrop", p, np.arange(len(p)), col=c, nrm=np.repeat(fn, 3, axis=0), material="backdrop")
 
 
-def check_corridor(map_id: str, road, ter, placed: dict, manifest: dict) -> None:
-    """Warn about solid props (their collision shapes) inside the drivable corridor:
-    half width + verge + 1 m from the centreline of any stretch of road."""
-    corridor = road.half_width.max() + road.verge + 1.0
-    bad = []
-    for name, inst in placed.items():
-        m = manifest.get(name, {})
-        col = m.get("collision", {})
-        if m.get("category") == "ground_cover" or col.get("type", "none") == "none" or not inst:
-            continue
-        a = np.array(inst, dtype=np.float64)
-        near = ter.sample(ter.road_dist, a[:, 0], a[:, 2]) < corridor + 25.0
-        for x, y, z, yaw, sc in a[near]:
-            cy, sy = math.cos(yaw), math.sin(yaw)
-            pts = []
-            for o in col.get("offsets", [[0.0, 0.0, 0.0]]):
-                ox, oz = o[0] * sc, o[2] * sc
-                cx, cz = x + ox * cy + oz * sy, z - ox * sy + oz * cy
-                if col["type"] == "box":
-                    hx, hz = col["size"][0] * sc / 2, col["size"][2] * sc / 2
-                    ccx, ccz = col.get("center", [0, 0, 0])[0] * sc, col.get("center", [0, 0, 0])[2] * sc
-                    for lx, lz in ((ccx - hx, ccz - hz), (ccx + hx, ccz - hz), (ccx - hx, ccz + hz),
-                                   (ccx + hx, ccz + hz), (ccx, ccz)):
-                        pts.append((cx + lx * cy + lz * sy, cz - lx * sy + lz * cy, 0.0))
-                else:
-                    pts.append((cx, cz, col.get("radius", 0.3) * sc))
-            for px, pz, rad in pts:
-                d = np.sqrt(((road.pos[:, 0] - px) ** 2 + (road.pos[:, 2] - pz) ** 2).min()) - rad
-                if d < corridor:
-                    bad.append((name, round(float(x), 1), round(float(z), 1), round(float(d), 2)))
-                    break
-    for b in bad[:30]:
-        print(f"[{map_id}] WARN solid prop in road corridor ({corridor:.1f} m): {b[0]} at ({b[1]}, {b[2]}) "
-              f"edge {b[3]} m from centreline")
-    if len(bad) > 30:
-        print(f"[{map_id}] WARN ... {len(bad) - 30} more props in the road corridor")
-
-
 # ---------------------------------------------------------------------- main build
 
 def _feature_frame(f: dict, placer: Placer) -> tuple[float, float, float, float]:
@@ -498,11 +461,25 @@ def _feature_frame(f: dict, placer: Placer) -> tuple[float, float, float, float]
     return x, placer.ground_at(x, z), z, yaw
 
 
-def place_signs(signs: list, placer: Placer) -> list[dict]:
-    """Resolve road signs (boards with painted text) and keep scatter away from them."""
+def sign_posts(s: dict) -> dict:
+    """Collision shape of a sign's posts (see build_signs) in manifest form, board frame."""
+    w = s["board"][0]
+    xs = (0.0,) if s.get("posts", 2) == 1 else (-w * 0.34, w * 0.34)
+    return {"type": "cylinder", "radius": 0.08, "offsets": [[x, 0.0, -0.07] for x in xs]}
+
+
+def place_signs(signs: list, placer: Placer, cor: Corridor) -> list[dict]:
+    """Resolve road signs (boards with painted text) and keep scatter away from them. Their
+    posts are rigid: a sign authored inside the road corridor steps out until they clear it."""
     out = []
     for f in signs:
+        f = dict(f)
         x, y, z, yaw = _feature_frame(f, placer)
+        col = sign_posts(f)
+        side = 1.0 if f.get("lateral", 0.0) >= 0.0 else -1.0
+        while cor.prop_margin(col, x, z, yaw, 1.0, "rigid")[0] < 0.0:
+            f["lateral"] = f.get("lateral", 0.0) + side * 0.25
+            x, y, z, yaw = _feature_frame(f, placer)
         placer.occ.add(x, z, f["board"][0] * 0.5 + 0.5)
         out.append(dict(f, x=x, y=y, z=z, yaw=yaw))
     return out
@@ -517,6 +494,7 @@ def place_parked(cars: list, placer: Placer) -> list[dict]:
         yaw = placer.resolve_yaw(f.get("face", "along"), x, z, i) + math.radians(f.get("yaw_add", 0.0))
         y = placer.ground_at(x, z)
         placer.occ.add(x, z, 2.4)
+        placer.parked_spots.append((x, z))
         out.append({"pos": [round(x, 3), round(y, 3), round(z, 3)], "yaw": round(yaw % (2 * math.pi), 4),
                     "car": f["car"], "livery": int(f["livery"])})
     return out
@@ -585,12 +563,17 @@ def build(map_id: str) -> None:
         arrival_s = float(road.control_s[rs["arrival_cp"]] + rs.get("arrival_offset", 0.0))
         route = arrival_s - start_s
 
+    # the road corridor, widened around every checkpoint (the runtime's fabric gates)
+    ncp = rs.get("checkpoints", 6)
+    cp_abs = [start_s + route * k / ncp for k in range(1, ncp + 1)]
+    cor = Corridor(road, [s % road.length if road.closed else s for s in cp_abs])
+
     placer = Placer(ter, road, manifest, spec["season"], spec["seed"] + 7, spec["play_half"])
     placer.start_s = start_s
     placer.route = route
     # keep the start area and road corridor clear
     placer.features(spec.get("features", []))
-    signs = place_signs(spec.get("signs", []), placer)
+    signs = place_signs(spec.get("signs", []), placer, cor)
     parked = place_parked(spec.get("parked", []), placer)
     counts = {}
     for r in spec.get("scatter", []):
@@ -599,16 +582,8 @@ def build(map_id: str) -> None:
     print(f"[{map_id}] scatter {counts}")
     if placer.missing:
         print(f"[{map_id}] WARN missing props (skipped): {sorted(placer.missing)}")
-    check_corridor(map_id, road, ter, placer.out, manifest)
-
-    rgba, surf = paint_terrain(spec, ter, road, placer.out, manifest)
-
-    pack = MeshPack()
-    emit_terrain(pack, ter, rgba, spec)
-    emit_road(pack, road, ter, rgba, spec)
-    emit_lots(pack, road, ter, rgba)
-    water_info = emit_water(pack, ter, spec)
-    emit_backdrop(pack, spec)
+    posts = [("other", sign_posts(s), s["x"], s["z"], s["yaw"], 1.0) for s in signs]
+    before = survey(cor, placer.out, manifest, posts)
 
     # roadside dressing
     pal = spec["palette"]
@@ -643,6 +618,26 @@ def build(map_id: str) -> None:
             bridge_info.append({"from": float(road.dist[i] - s_off), "to": float(road.dist[(j - 1) % n] - s_off),
                                 "style": br[i]})
     sign_info = build_signs(signs, dress, boxes)
+
+    # nothing rigid in the road corridor: offenders move out (or go), smashables leave the tarmac
+    res = enforce(cor, placer, manifest, boxes)
+    after = survey(cor, placer.out, manifest, posts)
+    print(f"[{map_id}] corridor before: {format_survey(before)}")
+    print(f"[{map_id}] corridor moved {res['moved']}, dropped {res['dropped']}: "
+          + ", ".join(f"{k} {v[0]}/{v[1]}" for k, v in sorted(res["by_name"].items())))
+    print(f"[{map_id}] corridor after:  {format_survey(after)}")
+    for name, x, z, m in after["offenders"]:
+        print(f"[{map_id}] WARN {name} at ({x}, {z}) is {-m:.2f} m inside the road corridor")
+
+    rgba, surf = paint_terrain(spec, ter, road, placer.out, manifest)
+
+    pack = MeshPack()
+    emit_terrain(pack, ter, rgba, spec)
+    emit_road(pack, road, ter, rgba, spec)
+    emit_lots(pack, road, ter, rgba)
+    water_info = emit_water(pack, ter, spec)
+    emit_backdrop(pack, spec)
+
     p, nr, c, idx = dress.flat()
     if len(idx):
         pack.add("dressing", p, idx, col=c, nrm=nr, material="props_vc", collide="none")
