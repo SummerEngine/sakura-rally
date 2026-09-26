@@ -20,6 +20,8 @@ class Water:
     river: np.ndarray | None = None           # (n, 3) centreline, y = water surface
     river_s: np.ndarray | None = None
     river_width: float = 0.0
+    falls: list = field(default_factory=list)  # [(sample index of the lip, drop m, pool radius m)]
+    pools: list = field(default_factory=list)  # [(x, water level, z, radius)] filled by build_terrain
 
 
 @dataclass
@@ -109,6 +111,12 @@ def build_water(spec: dict) -> Water:
         rp, rs = geom.resample(rp, 2.0, closed=False)
         # water never flows uphill
         rp[:, 1] = np.minimum.accumulate(geom.smooth(rp[:, 1], 6.0, closed=False))
+        # waterfalls: everything upstream of the lip is lifted by `drop`, so the authored
+        # heights stay true below the fall and the step stays sharp (one 2 m sample)
+        for f in river.get("falls", []):
+            k = int(np.argmin(np.hypot(rp[:, 0] - f["at"][0], rp[:, 2] - f["at"][1])))
+            rp[:k + 1, 1] += f["drop"]
+            w.falls.append((k, float(f["drop"]), float(f.get("pool", 0.0))))
         w.river = rp
         w.river_s = rs
         w.river_width = river["width"]
@@ -206,9 +214,30 @@ def build_terrain(spec: dict, road: Road, water: Water) -> Terrain:
         hn = H[near]
         dh = np.abs(hn - wy)
         E = np.clip(8.0 + 1.5 * dh, 8.0, 95.0)
+        # gorges: steeper banks (shorter blend) around the listed points
+        for st in spec["river"].get("steep", []):
+            dg = np.hypot(X[near] - st["pos"][0], Z[near] - st["pos"][1])
+            wg = 1.0 - geom.smoothstep(st["radius"] * 0.5, st["radius"], dg)
+            E = E * (1.0 - wg * (1.0 - st["bank"]))
         bed = wy - depth * (1.0 - (np.minimum(dn, inner) / inner) ** 2) - 0.15
         bank = wy + 0.25 + (hn - wy - 0.25) * geom.smoothstep(inner, inner + E, dn)
         H[near] = np.where(dn < inner, bed, bank)
+        # plunge pools below waterfalls: a round basin just downstream of the lip
+        fr, _, _ = geom.frames(water.river, closed=False)
+        for k, drop, pool in water.falls:
+            if pool <= 0.0:
+                continue
+            base = water.river[min(k + 1, len(water.river) - 1)]
+            cx = base[0] + fr[k, 0] * pool * 0.55
+            cz = base[2] + fr[k, 1] * pool * 0.55
+            dp = np.hypot(X - cx, Z - cz)
+            below = (dp < pool + 10.0) & (river_y <= base[1] + 0.01) & np.isfinite(river_dist)
+            pb = base[1] - depth * 1.6 * (1.0 - (np.minimum(dp, pool) / pool) ** 2) - 0.15
+            pk = base[1] + 0.25 + (H - base[1] - 0.25) * geom.smoothstep(pool, pool + 10.0, dp)
+            H = np.where(below, np.minimum(H, np.where(dp < pool, pb, pk)), H)
+            water.pools.append((float(cx), float(base[1]), float(cz), pool))
+            # the pool counts as river water for shores and scatter clearance
+            river_dist = np.where(below, np.minimum(river_dist, dp - pool + inner), river_dist)
 
     # --- road cut and fill
     rf = geom.RoadField(X, Z, -size / 2, cell)
@@ -227,11 +256,38 @@ def build_terrain(spec: dict, road: Road, water: Water) -> Terrain:
     cw = road.carve[si]
     tt = 1.0 - (1.0 - tt) * cw
     H[near] = y_road + (hn - y_road) * tt
+    clr = spec["road"].get("bridge_clearance", 0.0)
+    if clr > 0.0:
+        # bridge ends: natural ground never pokes through the deck; it ramps down under it
+        # at ~40 degrees from the deck edge so abutments read as cut banks
+        edge = np.maximum(rf.dist[near] - hw - road.verge, 0.0)
+        cap = y_road - clr * (1.0 - cw) + edge * 0.85
+        H[near] = np.where(cw < 1.0, np.minimum(H[near], cap), H[near])
 
     road_dist = np.where(near, rf.dist, D_far)
     road_seg = np.full(X.shape, -1, dtype=np.int64)
     road_seg[near] = si
     road_lat = np.where(near, rf.lat, 0.0)
+
+    # --- pads: flat ground for buildings and plazas, kept off the road corridor
+    for pad in t.get("pads", []):
+        if "road_at" in pad:
+            s = (road.control_s[pad["road_at"]] + pad.get("offset_m", 0.0)) % road.length
+            i = int(round(s)) % len(road.pos)
+            px = road.pos[i, 0] + road.right[i, 0] * pad.get("lateral", 0.0)
+            pz = road.pos[i, 2] + road.right[i, 1] * pad.get("lateral", 0.0)
+            h0 = road.pos[i, 1] - CARVE_DROP
+        else:
+            px, pz = pad["pos"]
+            h0 = float(geom.bilinear(H, -size / 2, cell, np.array([px]), np.array([pz]))[0])
+        h0 = pad.get("height", h0) + pad.get("rise", 0.0)
+        r = pad["radius"]
+        blend = pad.get("blend", 10.0)
+        dpad = np.hypot(X - px, Z - pz)
+        wpad = 1.0 - geom.smoothstep(r, r + blend, dpad)
+        keep = geom.smoothstep(road.half_width.max() + road.verge + 1.5,
+                               road.half_width.max() + road.verge + 5.0, road_dist)
+        H = H + (h0 - H) * wpad * keep
 
     diag = cell_diag(n - 1, seed)
     return Terrain(size=size, cell=cell, n=n, xs=xs, X=X, Z=Z, H=H, diag=diag,

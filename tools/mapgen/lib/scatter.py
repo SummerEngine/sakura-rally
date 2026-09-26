@@ -48,6 +48,7 @@ class Placer:
         self.out: dict[str, list[list[float]]] = {}
         self.missing: set[str] = set()
         self.ny = ter.normal_y()
+        self.start_s = 0.0  # lap start distance; features may use `lap_frac` instead of `road_at`
 
     # ---------------------------------------------------------------- helpers
     def footprint(self, name: str) -> float:
@@ -109,6 +110,9 @@ class Placer:
     # ---------------------------------------------------------------- features
     def features(self, feats: list[dict]) -> None:
         for f in feats:
+            if "lap_frac" in f:  # position as a fraction of the lap from the start line
+                s = self.start_s + f["lap_frac"] * self.road.length + f.get("offset_m", 0.0)
+                f = dict(f, road_at=0, offset_m=s - float(self.road.control_s[0]))
             kind = f.get("kind", "single")
             if kind == "single":
                 self._single(f)
@@ -116,12 +120,94 @@ class Placer:
                 self._group(f)
             elif kind == "line":
                 self._line(f)
+            elif kind == "row":
+                self._row(f)
+            elif kind == "crowd":
+                self._crowd(f)
             elif kind == "clear":
                 # reserve space (e.g. start area) so scatter keeps out
                 x, z, _ = self.road_point(f) if "road_at" in f else (f["pos"][0], f["pos"][1], None)
                 self.occ.add(x, z, f["radius"])
             else:
                 raise ValueError(kind)
+
+    def _row(self, f: dict) -> None:
+        """Props evenly spaced on a straight line between two absolute points (fences,
+        lantern avenues, torii paths). face: "along" (-Z down the row), "across" or degrees."""
+        x0, z0 = f["from"]
+        x1, z1 = f["to"]
+        L = math.hypot(x1 - x0, z1 - z0)
+        n = max(1, int(round(L / f["spacing"])))
+        base = math.atan2(-(x1 - x0), -(z1 - z0))
+        face = f.get("face", "along")
+        yaw0 = base if face == "along" else base + math.pi / 2 if face == "across" else math.radians(face)
+        yaw0 += math.radians(f.get("yaw_add", 0.0))
+        props = f["props"] if "props" in f else [f["prop"]]
+        for k in range(n + 1):
+            if f.get("skip_ends") and k in (0, n):
+                continue
+            t = k / n
+            x = x0 + (x1 - x0) * t
+            z = z0 + (z1 - z0) * t
+            name = props[k % len(props)]
+            if not f.get("force") and not self.occ.free(x, z, self.footprint(name) * 0.5):
+                continue
+            self.emit(name, x, z, yaw0, f.get("scale", 1.0), sink=f.get("sink", 0.05), radius=f.get("radius"))
+
+    def _crowd(self, f: dict) -> None:
+        """A spectator spot on one side of the road: a barrier row (hay bales or tape)
+        `gap` m from the road edge along `length` m of road, spectators standing 1.5 m
+        and more behind it facing the road, optional `extras` (flags, tent) further back."""
+        road = self.road
+        n = len(road.pos)
+        side = f["side"]
+        s0 = float(road.control_s[f["road_at"]]) + f.get("offset_m", 0.0)
+        length = f.get("length", 14.0)
+        gap = f.get("gap", 6.5)
+        barrier = f.get("barrier", "hay_bale_square")
+        spacing = f.get("barrier_spacing", 2.0 if barrier.startswith("hay") else 3.1)
+        for s in np.arange(s0 - length / 2, s0 + length / 2 + 1e-6, spacing):
+            i = int(round(s)) % n
+            lat = side * (road.half_width[i] + gap)
+            x = float(road.pos[i, 0] + road.right[i, 0] * lat)
+            z = float(road.pos[i, 2] + road.right[i, 1] * lat)
+            yaw = self.road_yaw(i) + (math.pi / 2 if side > 0 else -math.pi / 2)
+            if float(self.ter.sample(self.ter.road_dist, x, z)) < road.half_width[i] + gap - 0.6:
+                continue  # another stretch of road is closer than this one
+            self.emit(barrier, x, z, yaw, 1.0, sink=0.05, radius=0.6)
+        people = f.get("props", ["spectator_a", "spectator_b", "spectator_c", "spectator_d",
+                                 "spectator_e", "spectator_f"])
+        depth = f.get("depth", 4.0)
+        placed = 0
+        tries = 0
+        while placed < f.get("count", 8) and tries < 200:
+            tries += 1
+            s = s0 + float(self.rng.uniform(-0.5, 0.5)) * length
+            i = int(round(s)) % n
+            lat = side * (road.half_width[i] + max(gap + 1.5, 8.0) + float(self.rng.uniform(0.0, depth)))
+            x = float(road.pos[i, 0] + road.right[i, 0] * lat)
+            z = float(road.pos[i, 2] + road.right[i, 1] * lat)
+            if not self.occ.free(x, z, 0.4):
+                continue
+            if float(self.ter.sample(self.ter.road_dist, x, z)) < road.half_width[i] + 7.6:
+                continue
+            name = people[int(self.rng.integers(len(people)))]
+            p = road.pos[i]
+            yaw = math.atan2(-(p[0] - x), -(p[2] - z)) + float(self.rng.normal(0.0, 0.3))
+            self.emit(name, x, z, yaw, float(self.rng.uniform(0.95, 1.05)), sink=0.03, radius=0.45)
+            placed += 1
+        for k, name in enumerate(f.get("extras", [])):
+            s = s0 + (k - (len(f["extras"]) - 1) / 2) * f.get("extras_spacing", 6.0)
+            i = int(round(s)) % n
+            lat = side * (road.half_width[i] + max(gap + 1.5, 8.0) + depth + 2.5)
+            x = float(road.pos[i, 0] + road.right[i, 0] * lat)
+            z = float(road.pos[i, 2] + road.right[i, 1] * lat)
+            if not self.occ.free(x, z, self.footprint(name) * 0.6):
+                continue
+            if float(self.ter.sample(self.ter.road_dist, x, z)) < road.half_width[i] + 9.0:
+                continue
+            p = road.pos[i]
+            self.emit(name, x, z, math.atan2(-(p[0] - x), -(p[2] - z)), 1.0, sink=0.05)
 
     def _single(self, f: dict) -> None:
         if "road_at" in f:
@@ -256,6 +342,8 @@ class Placer:
             for reg in r["exclude"]:
                 cx, cz, rad = reg
                 prob *= (x - cx) ** 2 + (z - cz) ** 2 >= rad * rad
+        for poly in r.get("exclude_poly", []):
+            prob *= ~geom.point_in_polygon(x, z, np.array(poly, dtype=np.float64))
         edge = np.maximum(np.abs(x), np.abs(z))
         prob *= (edge < r.get("edge_max", 790.0)) & (edge >= r.get("edge_min", 0.0))
         keep = self.rng.random(x.shape) < prob

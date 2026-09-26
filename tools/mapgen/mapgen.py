@@ -113,16 +113,39 @@ def paint_terrain(spec: dict, ter, road, placed: dict, manifest: dict) -> tuple[
         lc = mix(lc, lit[2], geom.smoothstep(0.55, 0.8, n2))
         col = mix(col, lc, petals * 0.85)
 
+    # painted forest canopy: away from the road the ground itself carries mottled patches
+    # of tree-top colour, so distant slopes read as dense forest without instances
+    canopy_w = np.zeros(H.shape)
+    can = spec["terrain"].get("canopy")
+    if can and "canopy" in pal:
+        cc = pal["canopy"]
+        nc = noise.fbm(X, Z, can.get("scale", 34.0), 3, 2.0, 0.55, seed + 91) * 0.5 + 0.5
+        nb = noise.fbm(X, Z, can.get("scale", 34.0) * 0.35, 2, 2.0, 0.5, seed + 93) * 0.12
+        ccol = cc[0]
+        for k in range(1, len(cc)):
+            edge = k / len(cc)
+            ccol = mix(ccol, cc[k], geom.smoothstep(edge - 0.03, edge + 0.03, nc + nb))
+        mask = noise.fbm(X, Z, can.get("mask_scale", 160.0), 3, 2.0, 0.5, seed + 95)
+        canopy_w = geom.smoothstep(can.get("near", 50.0), can.get("far", 120.0), ter.road_dist)
+        canopy_w *= geom.smoothstep(can.get("threshold", -0.25) - 0.1, can.get("threshold", -0.25) + 0.1, mask)
+        canopy_w *= can.get("amount", 0.9)
+        # canopy thins out into meadow near the water
+        canopy_w *= geom.smoothstep(12.0, 40.0, np.minimum(ter.lake_sd, ter.river_dist))
+        col = mix(col, ccol, canopy_w)
+
     # terraces read as fields
     for terr in spec["terrain"].get("terraces", []):
         inside = geom.point_in_polygon(X, Z, np.array(terr["poly"], dtype=np.float64))
         fn = noise.fbm(X, Z, 20.0, 2, 2.0, 0.5, seed + 55) * 0.5 + 0.5
         fc = mix(pal["field"], pal.get("field2", pal["field"]), geom.smoothstep(0.4, 0.6, fn))
         col = np.where(inside[..., None], mix(col, fc, 0.9), col)
+        canopy_w = np.where(inside, 0.0, canopy_w)
 
     ny = ter.normal_y()
     slope = 1.0 - ny
     rock = geom.smoothstep(0.22, 0.4, slope + noise.fbm(X, Z, 24.0, 2, 2.0, 0.5, seed + 61) * 0.08)
+    if can:  # forest clings to all but the steepest cliffs
+        rock = rock * (1.0 - canopy_w * geom.smoothstep(0.55, 0.3, slope) * can.get("rock_cover", 0.8))
     rc = mix(pal["rock"], pal["rock_dark"], geom.smoothstep(0.4, 0.7, n2))
     col = mix(col, rc, rock)
 
@@ -264,7 +287,46 @@ def emit_water(pack: MeshPack, ter, spec: dict) -> dict:
                      nrm=np.tile([0.0, 1.0, 0.0], (len(rows) * cols, 1)))
         info["river"] = {"width": w.river_width,
                          "points": [[round(float(p[0]), 2), round(float(p[1]), 2), round(float(p[2]), 2)] for p in rp[::2]]}
+        emit_falls(pack, w, fwd, right)
     return info
+
+
+def emit_falls(pack: MeshPack, w, fwd: np.ndarray, right: np.ndarray) -> None:
+    """Waterfall curtains (a bowed sheet from the lip down to the pool, streaking in the
+    river shader) and flat plunge-pool discs."""
+    rp = w.river
+    for n_fall, (k, drop, _pool) in enumerate(w.falls):
+        top = rp[k].copy()
+        bot = rp[min(k + 1, len(rp) - 1)]
+        half = w.river_width / 2.0 + 0.8
+        cols, rows = 7, 9
+        lat = np.linspace(-half, half, cols)
+        t = np.linspace(0.0, 1.0, rows)
+        # the sheet leaves the lip forward and falls in a parabola, bellying out a little
+        out = 0.4 + 1.6 * np.sqrt(t)
+        y = top[1] + 0.05 - (top[1] + 0.05 - (bot[1] - 0.3)) * t
+        P = np.empty((rows, cols, 3))
+        P[..., 0] = top[0] + fwd[k, 0] * out[:, None] + right[k, 0] * lat[None, :] * (1.0 - 0.08 * t[:, None])
+        P[..., 2] = top[2] + fwd[k, 1] * out[:, None] + right[k, 1] * lat[None, :] * (1.0 - 0.08 * t[:, None])
+        P[..., 1] = y[:, None]
+        # |u| >= 1 everywhere switches on the shader's streak foam; v runs down the sheet
+        U = np.stack([np.broadcast_to(1.0 + (lat / half + 1.0) * 1.5, (rows, cols)),
+                      np.broadcast_to((t * drop * 4.0)[:, None], (rows, cols))], axis=2)
+        C = np.ones((rows, cols, 4))
+        nrm = np.tile([fwd[k, 0], 0.3, fwd[k, 1]], (rows * cols, 1))
+        nrm /= np.linalg.norm(nrm, axis=1, keepdims=True)
+        pack.add(f"waterfall_{n_fall}", P.reshape(-1, 3), ribbon_indices(rows, cols, closed=False),
+                 col=C.reshape(-1, 4), uv=U.reshape(-1, 2), material="water_river", nrm=nrm)
+    for n_pool, (cx, lvl, cz, rad) in enumerate(w.pools):
+        seg = 20
+        ang = np.linspace(0.0, 2.0 * np.pi, seg, endpoint=False)
+        ring = np.stack([cx + np.cos(ang) * (rad + 1.5), np.full(seg, lvl - 0.02), cz + np.sin(ang) * (rad + 1.5)], axis=1)
+        pos = np.vstack([[cx, lvl - 0.02, cz], ring])
+        idx = np.array([[0, 1 + (s + 1) % seg, 1 + s] for s in range(seg)]).ravel()
+        col = np.tile([1.0, 1.0, 1.0, 1.0], (len(pos), 1))
+        col[1:, :3] = 0.3
+        pack.add(f"pool_{n_pool}", pos, idx, col=col, uv=pos[:, [0, 2]] * 0.02, material="water",
+                 nrm=np.tile([0.0, 1.0, 0.0], (len(pos), 1)))
 
 
 def emit_backdrop(pack: MeshPack, spec: dict) -> None:
@@ -316,6 +378,44 @@ def emit_backdrop(pack: MeshPack, spec: dict) -> None:
     pack.add("backdrop", p, np.arange(len(p)), col=c, nrm=np.repeat(fn, 3, axis=0), material="backdrop")
 
 
+def check_corridor(map_id: str, road, ter, placed: dict, manifest: dict) -> None:
+    """Warn about solid props (their collision shapes) inside the drivable corridor:
+    half width + verge + 1 m from the centreline of any stretch of road."""
+    corridor = road.half_width.max() + road.verge + 1.0
+    bad = []
+    for name, inst in placed.items():
+        m = manifest.get(name, {})
+        col = m.get("collision", {})
+        if m.get("category") == "ground_cover" or col.get("type", "none") == "none" or not inst:
+            continue
+        a = np.array(inst, dtype=np.float64)
+        near = ter.sample(ter.road_dist, a[:, 0], a[:, 2]) < corridor + 25.0
+        for x, y, z, yaw, sc in a[near]:
+            cy, sy = math.cos(yaw), math.sin(yaw)
+            pts = []
+            for o in col.get("offsets", [[0.0, 0.0, 0.0]]):
+                ox, oz = o[0] * sc, o[2] * sc
+                cx, cz = x + ox * cy + oz * sy, z - ox * sy + oz * cy
+                if col["type"] == "box":
+                    hx, hz = col["size"][0] * sc / 2, col["size"][2] * sc / 2
+                    ccx, ccz = col.get("center", [0, 0, 0])[0] * sc, col.get("center", [0, 0, 0])[2] * sc
+                    for lx, lz in ((ccx - hx, ccz - hz), (ccx + hx, ccz - hz), (ccx - hx, ccz + hz),
+                                   (ccx + hx, ccz + hz), (ccx, ccz)):
+                        pts.append((cx + lx * cy + lz * sy, cz - lx * sy + lz * cy, 0.0))
+                else:
+                    pts.append((cx, cz, col.get("radius", 0.3) * sc))
+            for px, pz, rad in pts:
+                d = np.sqrt(((road.pos[:, 0] - px) ** 2 + (road.pos[:, 2] - pz) ** 2).min()) - rad
+                if d < corridor:
+                    bad.append((name, round(float(x), 1), round(float(z), 1), round(float(d), 2)))
+                    break
+    for b in bad[:30]:
+        print(f"[{map_id}] WARN solid prop in road corridor ({corridor:.1f} m): {b[0]} at ({b[1]}, {b[2]}) "
+              f"edge {b[3]} m from centreline")
+    if len(bad) > 30:
+        print(f"[{map_id}] WARN ... {len(bad) - 30} more props in the road corridor")
+
+
 # ---------------------------------------------------------------------- main build
 
 def build(map_id: str) -> None:
@@ -335,6 +435,8 @@ def build(map_id: str) -> None:
     print(f"[{map_id}] terrain {ter.n}x{ter.n}, h {ter.H.min():.1f}..{ter.H.max():.1f} ({time.time() - t0:.1f}s)")
 
     placer = Placer(ter, road, manifest, spec["season"], spec["seed"] + 7, spec["play_half"])
+    placer.start_s = float((road.control_s[spec["road"]["start_cp"]] + spec["road"].get("start_offset", 0.0))
+                           % road.length)
     # keep the start area and road corridor clear
     placer.features(spec.get("features", []))
     counts = {}
@@ -344,6 +446,7 @@ def build(map_id: str) -> None:
     print(f"[{map_id}] scatter {counts}")
     if placer.missing:
         print(f"[{map_id}] WARN missing props (skipped): {sorted(placer.missing)}")
+    check_corridor(map_id, road, ter, placer.out, manifest)
 
     rgba, surf = paint_terrain(spec, ter, road, placer.out, manifest)
 
