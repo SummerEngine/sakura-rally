@@ -1,0 +1,1164 @@
+{
+ "version": 1,
+ "units": "metres; size/aabb_center/markers in Godot axes (x right, y up, z back); origin = base centre on ground; front faces -Z (Blender +Y)",
+ "collision_notes": "cylinder: centred on origin, from y=0 to height. box: size/center in prop-local Godot coordinates.",
+ "props": [
+  {
+   "name": "sakura_a",
+   "file": "res://assets/models/props/sakura_a.glb",
+   "category": "tree",
+   "size": [
+    6.549,
+    5.393,
+    5.616
+   ],
+   "aabb_center": [
+    0.07,
+    2.672,
+    0.175
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.26,
+    "height": 5.368
+   },
+   "placement": [
+    "roadside",
+    "forest",
+    "village",
+    "slope"
+   ],
+   "footprint_radius": 3.347,
+   "seasons": [
+    "spring"
+   ],
+   "tris": 1156,
+   "materials": [
+    "Bark_Sakura",
+    "Blossom",
+    "Blossom_Pale",
+    "Blossom_Deep"
+   ],
+   "nodes": [
+    "sakura_a"
+   ]
+  },
+  {
+   "name": "sakura_b",
+   "file": "res://assets/models/props/sakura_b.glb",
+   "category": "tree",
+   "size": [
+    4.369,
+    7.048,
+    5.165
+   ],
+   "aabb_center": [
+    -0.199,
+    3.518,
+    0.168
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.24,
+    "height": 7.043
+   },
+   "placement": [
+    "roadside",
+    "forest",
+    "village",
+    "slope"
+   ],
+   "footprint_radius": 2.752,
+   "seasons": [
+    "spring"
+   ],
+   "tris": 1000,
+   "materials": [
+    "Bark_Sakura",
+    "Blossom",
+    "Blossom_Pale",
+    "Blossom_Deep"
+   ],
+   "nodes": [
+    "sakura_b"
+   ]
+  },
+  {
+   "name": "sakura_c",
+   "file": "res://assets/models/props/sakura_c.glb",
+   "category": "tree",
+   "size": [
+    6.482,
+    5.003,
+    5.731
+   ],
+   "aabb_center": [
+    0.7,
+    2.413,
+    -0.078
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.28,
+    "height": 4.915
+   },
+   "placement": [
+    "roadside",
+    "village",
+    "water_edge"
+   ],
+   "footprint_radius": 3.947,
+   "seasons": [
+    "spring"
+   ],
+   "tris": 1157,
+   "materials": [
+    "Bark_Sakura",
+    "Blossom",
+    "Blossom_Pale",
+    "Blossom_Deep"
+   ],
+   "nodes": [
+    "sakura_c"
+   ]
+  },
+  {
+   "name": "maple_red",
+   "file": "res://assets/models/props/maple_red.glb",
+   "category": "tree",
+   "size": [
+    5.758,
+    5.523,
+    6.231
+   ],
+   "aabb_center": [
+    0.026,
+    2.738,
+    0.149
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.22,
+    "height": 5.5
+   },
+   "placement": [
+    "roadside",
+    "forest",
+    "village",
+    "slope",
+    "water_edge"
+   ],
+   "footprint_radius": 3.308,
+   "seasons": [
+    "autumn"
+   ],
+   "tris": 1245,
+   "materials": [
+    "Bark_Maple",
+    "Leaves_Maple_Red",
+    "Leaves_Maple_Scarlet"
+   ],
+   "nodes": [
+    "maple_red"
+   ]
+  },
+  {
+   "name": "maple_orange",
+   "file": "res://assets/models/props/maple_orange.glb",
+   "category": "tree",
+   "size": [
+    5.92,
+    5.506,
+    5.945
+   ],
+   "aabb_center": [
+    -0.048,
+    2.741,
+    0.063
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.22,
+    "height": 5.495
+   },
+   "placement": [
+    "roadside",
+    "forest",
+    "village",
+    "slope",
+    "water_edge"
+   ],
+   "footprint_radius": 3.107,
+   "seasons": [
+    "autumn"
+   ],
+   "tris": 1245,
+   "materials": [
+    "Bark_Maple",
+    "Leaves_Maple_Orange",
+    "Leaves_Maple_Scarlet",
+    "Leaves_Maple_Amber"
+   ],
+   "nodes": [
+    "maple_orange"
+   ]
+  },
+  {
+   "name": "maple_yellow",
+   "file": "res://assets/models/props/maple_yellow.glb",
+   "category": "tree",
+   "size": [
+    6.132,
+    5.522,
+    6.318
+   ],
+   "aabb_center": [
+    -0.012,
+    2.74,
+    0.173
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.22,
+    "height": 5.501
+   },
+   "placement": [
+    "roadside",
+    "forest",
+    "village",
+    "slope",
+    "water_edge"
+   ],
+   "footprint_radius": 3.431,
+   "seasons": [
+    "autumn"
+   ],
+   "tris": 1245,
+   "materials": [
+    "Bark_Maple",
+    "Leaves_Maple_Amber",
+    "Leaves_Maple_Gold",
+    "Leaves_Maple_Orange"
+   ],
+   "nodes": [
+    "maple_yellow"
+   ]
+  },
+  {
+   "name": "cedar_a",
+   "file": "res://assets/models/props/cedar_a.glb",
+   "category": "tree",
+   "size": [
+    3.589,
+    12.7,
+    4.125
+   ],
+   "aabb_center": [
+    0.025,
+    6.35,
+    0.125
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.3,
+    "height": 12.7
+   },
+   "placement": [
+    "forest",
+    "slope",
+    "roadside"
+   ],
+   "footprint_radius": 2.19,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 680,
+   "materials": [
+    "Bark_Cedar",
+    "Needle_Cedar",
+    "Needle_Cedar_Top"
+   ],
+   "nodes": [
+    "cedar_a"
+   ]
+  },
+  {
+   "name": "cedar_b",
+   "file": "res://assets/models/props/cedar_b.glb",
+   "category": "tree",
+   "size": [
+    3.102,
+    14.713,
+    3.089
+   ],
+   "aabb_center": [
+    -0.014,
+    7.343,
+    0.103
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.26,
+    "height": 14.7
+   },
+   "placement": [
+    "forest",
+    "slope",
+    "roadside"
+   ],
+   "footprint_radius": 1.65,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 780,
+   "materials": [
+    "Bark_Cedar",
+    "Needle_Cedar",
+    "Needle_Cedar_Top"
+   ],
+   "nodes": [
+    "cedar_b"
+   ]
+  },
+  {
+   "name": "pine_a",
+   "file": "res://assets/models/props/pine_a.glb",
+   "category": "tree",
+   "size": [
+    5.354,
+    7.207,
+    5.402
+   ],
+   "aabb_center": [
+    0.272,
+    3.47,
+    -0.119
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.25,
+    "height": 7.073
+   },
+   "placement": [
+    "roadside",
+    "village",
+    "slope",
+    "water_edge"
+   ],
+   "footprint_radius": 3.781,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 1197,
+   "materials": [
+    "Bark_Pine",
+    "Needle_Pine"
+   ],
+   "nodes": [
+    "pine_a"
+   ]
+  },
+  {
+   "name": "pine_b",
+   "file": "res://assets/models/props/pine_b.glb",
+   "category": "tree",
+   "size": [
+    5.701,
+    6.025,
+    5.595
+   ],
+   "aabb_center": [
+    -1.16,
+    2.842,
+    1.795
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.25,
+    "height": 5.854
+   },
+   "placement": [
+    "roadside",
+    "village",
+    "slope",
+    "water_edge"
+   ],
+   "footprint_radius": 4.941,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 831,
+   "materials": [
+    "Bark_Pine",
+    "Needle_Pine"
+   ],
+   "nodes": [
+    "pine_b"
+   ]
+  },
+  {
+   "name": "persimmon_tree",
+   "file": "res://assets/models/props/persimmon_tree.glb",
+   "category": "tree",
+   "size": [
+    4.6,
+    4.216,
+    4.548
+   ],
+   "aabb_center": [
+    0.224,
+    2.061,
+    -0.383
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.2,
+    "height": 4.169
+   },
+   "placement": [
+    "village",
+    "field",
+    "roadside"
+   ],
+   "footprint_radius": 2.874,
+   "seasons": [
+    "autumn"
+   ],
+   "tris": 958,
+   "materials": [
+    "Bark",
+    "Leaves_Persimmon",
+    "Leaves_Maple_Orange",
+    "Fruit_Persimmon"
+   ],
+   "nodes": [
+    "persimmon_tree"
+   ]
+  },
+  {
+   "name": "bamboo_clump",
+   "file": "res://assets/models/props/bamboo_clump.glb",
+   "category": "tree",
+   "size": [
+    5.175,
+    8.68,
+    4.031
+   ],
+   "aabb_center": [
+    0.018,
+    4.338,
+    0.042
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.7,
+    "height": 8.679
+   },
+   "placement": [
+    "forest",
+    "roadside",
+    "village",
+    "slope"
+   ],
+   "footprint_radius": 2.66,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 1380,
+   "materials": [
+    "Foliage_Bamboo",
+    "Leaves_Bamboo"
+   ],
+   "nodes": [
+    "bamboo_clump"
+   ]
+  },
+  {
+   "name": "bush_a",
+   "file": "res://assets/models/props/bush_a.glb",
+   "category": "vegetation",
+   "size": [
+    2.101,
+    0.957,
+    1.633
+   ],
+   "aabb_center": [
+    0.039,
+    0.415,
+    0.104
+   ],
+   "collision": {
+    "type": "none"
+   },
+   "placement": [
+    "roadside",
+    "forest",
+    "village",
+    "field",
+    "slope"
+   ],
+   "footprint_radius": 1.106,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 320,
+   "materials": [
+    "Leaves",
+    "Leaves_Spring"
+   ],
+   "nodes": [
+    "bush_a"
+   ]
+  },
+  {
+   "name": "bush_b",
+   "file": "res://assets/models/props/bush_b.glb",
+   "category": "vegetation",
+   "size": [
+    2.07,
+    1.282,
+    1.698
+   ],
+   "aabb_center": [
+    0.258,
+    0.633,
+    -0.031
+   ],
+   "collision": {
+    "type": "none"
+   },
+   "placement": [
+    "roadside",
+    "village",
+    "field"
+   ],
+   "footprint_radius": 1.31,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 240,
+   "materials": [
+    "Leaves_Dark",
+    "Leaves"
+   ],
+   "nodes": [
+    "bush_b"
+   ]
+  },
+  {
+   "name": "azalea",
+   "file": "res://assets/models/props/azalea.glb",
+   "category": "vegetation",
+   "size": [
+    2.479,
+    1.023,
+    1.448
+   ],
+   "aabb_center": [
+    -0.012,
+    0.375,
+    -0.008
+   ],
+   "collision": {
+    "type": "none"
+   },
+   "placement": [
+    "roadside",
+    "village"
+   ],
+   "footprint_radius": 1.261,
+   "seasons": [
+    "spring"
+   ],
+   "tris": 760,
+   "materials": [
+    "Leaves",
+    "Blossom_Azalea",
+    "Blossom_Rose"
+   ],
+   "nodes": [
+    "azalea"
+   ]
+  },
+  {
+   "name": "grass_tuft",
+   "file": "res://assets/models/props/grass_tuft.glb",
+   "category": "ground_cover",
+   "size": [
+    0.433,
+    0.414,
+    0.448
+   ],
+   "aabb_center": [
+    0.021,
+    0.187,
+    0.051
+   ],
+   "collision": {
+    "type": "none"
+   },
+   "placement": [
+    "roadside",
+    "field",
+    "forest",
+    "slope",
+    "water_edge"
+   ],
+   "footprint_radius": 0.276,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 24,
+   "materials": [
+    "Grass"
+   ],
+   "nodes": [
+    "grass_tuft"
+   ]
+  },
+  {
+   "name": "flowers_patch",
+   "file": "res://assets/models/props/flowers_patch.glb",
+   "category": "ground_cover",
+   "size": [
+    0.38,
+    0.21,
+    0.363
+   ],
+   "aabb_center": [
+    0.001,
+    0.085,
+    -0.018
+   ],
+   "collision": {
+    "type": "none"
+   },
+   "placement": [
+    "roadside",
+    "field",
+    "slope"
+   ],
+   "footprint_radius": 0.2,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 39,
+   "materials": [
+    "Grass",
+    "Blossom_Flower"
+   ],
+   "nodes": [
+    "flowers_patch"
+   ]
+  },
+  {
+   "name": "fern",
+   "file": "res://assets/models/props/fern.glb",
+   "category": "vegetation",
+   "size": [
+    1.63,
+    0.58,
+    1.683
+   ],
+   "aabb_center": [
+    -0.058,
+    0.31,
+    0.033
+   ],
+   "collision": {
+    "type": "none"
+   },
+   "placement": [
+    "forest",
+    "slope",
+    "water_edge",
+    "roadside"
+   ],
+   "footprint_radius": 0.93,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 280,
+   "materials": [
+    "Leaves_Fern"
+   ],
+   "nodes": [
+    "fern"
+   ]
+  },
+  {
+   "name": "reeds",
+   "file": "res://assets/models/props/reeds.glb",
+   "category": "vegetation",
+   "size": [
+    0.816,
+    1.88,
+    1.152
+   ],
+   "aabb_center": [
+    0.033,
+    0.91,
+    -0.028
+   ],
+   "collision": {
+    "type": "none"
+   },
+   "placement": [
+    "water_edge",
+    "field"
+   ],
+   "footprint_radius": 0.667,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 160,
+   "materials": [
+    "Grass_Reed",
+    "Cattail"
+   ],
+   "nodes": [
+    "reeds"
+   ]
+  },
+  {
+   "name": "stump",
+   "file": "res://assets/models/props/stump.glb",
+   "category": "vegetation",
+   "size": [
+    1.088,
+    0.629,
+    1.088
+   ],
+   "aabb_center": [
+    0.0,
+    0.285,
+    0.0
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.38,
+    "height": 0.599
+   },
+   "placement": [
+    "forest",
+    "roadside",
+    "slope"
+   ],
+   "footprint_radius": 0.62,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 77,
+   "materials": [
+    "Bark",
+    "Wood_Cut",
+    "Moss"
+   ],
+   "nodes": [
+    "stump"
+   ]
+  },
+  {
+   "name": "log",
+   "file": "res://assets/models/props/log.glb",
+   "category": "vegetation",
+   "size": [
+    3.236,
+    0.597,
+    0.611
+   ],
+   "aabb_center": [
+    -0.001,
+    0.284,
+    -0.007
+   ],
+   "collision": {
+    "type": "box",
+    "size": [
+     3.236,
+     0.597,
+     0.611
+    ],
+    "center": [
+     -0.001,
+     0.284,
+     -0.007
+    ]
+   },
+   "placement": [
+    "forest",
+    "roadside",
+    "slope",
+    "water_edge"
+   ],
+   "footprint_radius": 1.635,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 124,
+   "materials": [
+    "Bark",
+    "Wood_Cut",
+    "Moss"
+   ],
+   "nodes": [
+    "log"
+   ]
+  },
+  {
+   "name": "rock_a",
+   "file": "res://assets/models/props/rock_a.glb",
+   "category": "rock",
+   "size": [
+    0.746,
+    0.457,
+    0.552
+   ],
+   "aabb_center": [
+    0.01,
+    0.168,
+    0.007
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.3,
+    "height": 0.397
+   },
+   "placement": [
+    "roadside",
+    "field",
+    "forest",
+    "slope",
+    "water_edge"
+   ],
+   "footprint_radius": 0.393,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 48,
+   "materials": [
+    "Rock"
+   ],
+   "nodes": [
+    "rock_a"
+   ]
+  },
+  {
+   "name": "rock_b",
+   "file": "res://assets/models/props/rock_b.glb",
+   "category": "rock",
+   "size": [
+    1.308,
+    0.405,
+    0.937
+   ],
+   "aabb_center": [
+    0.037,
+    0.148,
+    -0.034
+   ],
+   "collision": {
+    "type": "box",
+    "size": [
+     1.308,
+     0.405,
+     0.937
+    ],
+    "center": [
+     0.037,
+     0.148,
+     -0.034
+    ]
+   },
+   "placement": [
+    "roadside",
+    "field",
+    "forest",
+    "slope",
+    "water_edge"
+   ],
+   "footprint_radius": 0.693,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 56,
+   "materials": [
+    "Rock",
+    "Moss"
+   ],
+   "nodes": [
+    "rock_b"
+   ]
+  },
+  {
+   "name": "rock_c",
+   "file": "res://assets/models/props/rock_c.glb",
+   "category": "rock",
+   "size": [
+    1.043,
+    1.315,
+    0.933
+   ],
+   "aabb_center": [
+    0.005,
+    0.439,
+    0.068
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.5,
+    "height": 1.096
+   },
+   "placement": [
+    "roadside",
+    "forest",
+    "slope",
+    "water_edge"
+   ],
+   "footprint_radius": 0.55,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 46,
+   "materials": [
+    "Rock"
+   ],
+   "nodes": [
+    "rock_c"
+   ]
+  },
+  {
+   "name": "rock_d",
+   "file": "res://assets/models/props/rock_d.glb",
+   "category": "rock",
+   "size": [
+    1.34,
+    0.595,
+    0.995
+   ],
+   "aabb_center": [
+    0.067,
+    0.213,
+    -0.021
+   ],
+   "collision": {
+    "type": "box",
+    "size": [
+     1.34,
+     0.595,
+     0.995
+    ],
+    "center": [
+     0.067,
+     0.213,
+     -0.021
+    ]
+   },
+   "placement": [
+    "roadside",
+    "field",
+    "forest",
+    "slope",
+    "water_edge"
+   ],
+   "footprint_radius": 0.748,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 88,
+   "materials": [
+    "Rock",
+    "Moss"
+   ],
+   "nodes": [
+    "rock_d"
+   ]
+  },
+  {
+   "name": "rock_e",
+   "file": "res://assets/models/props/rock_e.glb",
+   "category": "rock",
+   "size": [
+    2.301,
+    1.066,
+    1.764
+   ],
+   "aabb_center": [
+    0.09,
+    0.395,
+    -0.029
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.85,
+    "height": 0.928
+   },
+   "placement": [
+    "roadside",
+    "forest",
+    "slope",
+    "field"
+   ],
+   "footprint_radius": 1.24,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 60,
+   "materials": [
+    "Rock",
+    "Moss"
+   ],
+   "nodes": [
+    "rock_e"
+   ]
+  },
+  {
+   "name": "boulder",
+   "file": "res://assets/models/props/boulder.glb",
+   "category": "rock",
+   "size": [
+    4.287,
+    2.406,
+    3.471
+   ],
+   "aabb_center": [
+    0.382,
+    0.913,
+    -0.084
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 1.5,
+    "height": 2.116
+   },
+   "placement": [
+    "roadside",
+    "forest",
+    "slope",
+    "field",
+    "water_edge"
+   ],
+   "footprint_radius": 2.643,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 100,
+   "materials": [
+    "Rock",
+    "Moss"
+   ],
+   "nodes": [
+    "boulder"
+   ]
+  },
+  {
+   "name": "cliff_a",
+   "file": "res://assets/models/props/cliff_a.glb",
+   "category": "rock",
+   "size": [
+    14.129,
+    12.726,
+    7.922
+   ],
+   "aabb_center": [
+    -0.057,
+    4.217,
+    0.279
+   ],
+   "collision": {
+    "type": "box",
+    "size": [
+     14.129,
+     12.726,
+     7.922
+    ],
+    "center": [
+     -0.057,
+     4.217,
+     0.279
+    ]
+   },
+   "placement": [
+    "slope"
+   ],
+   "footprint_radius": 7.343,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 240,
+   "materials": [
+    "Rock",
+    "Moss",
+    "Rock_Dark"
+   ],
+   "nodes": [
+    "cliff_a"
+   ]
+  },
+  {
+   "name": "cliff_b",
+   "file": "res://assets/models/props/cliff_b.glb",
+   "category": "rock",
+   "size": [
+    17.691,
+    9.743,
+    7.914
+   ],
+   "aabb_center": [
+    -0.177,
+    2.929,
+    0.243
+   ],
+   "collision": {
+    "type": "box",
+    "size": [
+     17.691,
+     9.743,
+     7.914
+    ],
+    "center": [
+     -0.177,
+     2.929,
+     0.243
+    ]
+   },
+   "placement": [
+    "slope"
+   ],
+   "footprint_radius": 9.051,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 236,
+   "materials": [
+    "Rock",
+    "Moss",
+    "Rock_Dark"
+   ],
+   "nodes": [
+    "cliff_b"
+   ]
+  }
+ ]
+}
