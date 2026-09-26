@@ -208,8 +208,7 @@ func _build_loop() -> void:
 			var surf := &"tarmac" if off <= loop_length * 0.5 else &"gravel"
 			st.set_color(COLORS[surf])
 			st.set_normal(Vector3.UP)
-			for v in [prev_l, prev_r, r, prev_l, r, l]:
-				st.add_vertex(v)
+			_add_up_quad(st, prev_l, prev_r, r, l)
 			if surf == &"tarmac":
 				st.set_color(Color("f5f2ea"))
 				for edge: float in [-1.0, 1.0]:
@@ -217,11 +216,7 @@ func _build_loop() -> void:
 					var a1 := (l if edge < 0.0 else r) + Vector3.UP * 0.005
 					var inward0 := (prev_r - prev_l).normalized() * (0.35 * -edge)
 					var inward1 := (r - l).normalized() * (0.35 * -edge)
-					var quad: Array[Vector3] = [a0, a0 + inward0, a1 + inward1, a1]
-					if edge > 0.0:
-						quad = [a0 + inward0, a0, a1, a1 + inward1]
-					for v in [quad[0], quad[1], quad[2], quad[0], quad[2], quad[3]]:
-						st.add_vertex(v)
+					_add_up_quad(st, a0, a0 + inward0, a1 + inward1, a1)
 		prev_l = l
 		prev_r = r
 	var mi := MeshInstance3D.new()
@@ -229,11 +224,27 @@ func _build_loop() -> void:
 	mi.mesh = st.commit()
 	var m := StandardMaterial3D.new()
 	m.vertex_color_use_as_albedo = true
+	m.vertex_color_is_srgb = true
 	m.roughness = 0.95
-	m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	mi.material_override = m
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mi)
+
+
+## Adds quad a-b-c-d as two triangles facing up (Godot front faces are clockwise seen from the front).
+func _add_up_quad(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, d: Vector3) -> void:
+	_add_up_tri(st, a, b, c)
+	_add_up_tri(st, a, c, d)
+
+
+func _add_up_tri(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3) -> void:
+	st.add_vertex(a)
+	if (b - a).cross(c - a).y > 0.0:
+		st.add_vertex(c)
+		st.add_vertex(b)
+	else:
+		st.add_vertex(b)
+		st.add_vertex(c)
 
 
 func _static_body(body_name: String, surface: StringName) -> StaticBody3D:
@@ -293,7 +304,6 @@ func _wedge(body_name: String, centre_x: float, start_z: float, length: float, h
 	var mi := MeshInstance3D.new()
 	mi.mesh = st.commit()
 	var m := _mat(colour)
-	m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	mi.material_override = m
 	b.position.x = centre_x
 	b.add_child(mi)
@@ -374,7 +384,6 @@ func _build_banked_turn() -> void:
 	var mi := MeshInstance3D.new()
 	mi.mesh = st.commit()
 	var m := _mat(COLORS[&"tarmac"])
-	m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	mi.material_override = m
 	b.add_child(mi)
 

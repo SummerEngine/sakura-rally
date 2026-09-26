@@ -189,7 +189,7 @@ func _chase(xf: Transform3D, vel: Vector3, speed: float, delta: float, far: bool
 
 
 func _mounted(xf: Transform3D, hood: bool) -> Transform3D:
-	var local := Vector3(0.0, 1.22, -0.3) if hood else Vector3(0.0, 0.6, -2.2)
+	var local := Vector3(0.0, 1.34, -0.45) if hood else Vector3(0.0, 0.6, -2.2)
 	var pos := xf * local
 	# Keep the horizon calmer than the chassis: follow pitch, damp roll.
 	var fwd := -xf.basis.z
