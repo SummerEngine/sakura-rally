@@ -10,15 +10,18 @@ extends Camera3D
 ## car and looks down along the slope (`slope_descent_gain` times the grade), so the road ahead
 ## shows over the roof. The slope comes from the road profile ahead of the car (`road`, else the
 ## session's track) while the car is on or near that road and heading along it, else from the
-## car's own pitch (held while airborne). Uphill it follows only `slope_uphill_follow` of the
+## car's own pitch (low-passed, easing to level in the air). Uphill it follows only `slope_uphill_follow` of the
 ## grade, capped at `slope_max_up`, so it never stares at the sky.
 ## docs/PHYSICS.md, "Chase camera".
 
 const MODES: Array[String] = ["chase", "chase_far", "hood", "bumper"]
 ## Distances (m) ahead of the car at which the road profile is read for the rig's slope.
 const SLOPE_AHEAD: PackedFloat32Array = [6.0, 12.0, 18.0, 26.0, 36.0]
-## The car's own slope is the road chord from this far behind to this far ahead of it (m).
+## The road's slope at the car is its chord from this far behind to this far ahead of it (m).
 const SLOPE_AT_CAR := 6.0
+## Low-pass rate (1/s) of the car's own pitch grade (used off the road), and its decay to level
+## in the air.
+const OWN_GRADE_RATE := 1.5
 
 ## The car to follow (Car / any RigidBody3D). Falls back to Game.player_car when empty.
 @export var target: RigidBody3D
@@ -204,7 +207,7 @@ func _chase(car: RigidBody3D, xf: Transform3D, vel: Vector3, speed: float, delta
 	if flat_vel.length() > 3.0 and fwd_speed > 0.0:
 		var w := velocity_bias * smoothstep(3.0, 14.0, flat_vel.length())
 		desired = car_fwd.slerp(flat_vel.normalized(), w).normalized()
-	var slope_target := _slope_target(car, xf) * slope_follow if slope_follow > 0.0 else 0.0
+	var slope_target := _slope_target(car, xf, delta) * slope_follow if slope_follow > 0.0 else 0.0
 	if _needs_snap:
 		_yaw_dir = desired
 		_height = xf.origin.y
@@ -237,13 +240,17 @@ func _chase(car: RigidBody3D, xf: Transform3D, vel: Vector3, speed: float, delta
 
 ## Grade the rig should follow (before smoothing): the steeper of the road's slope at the car and
 ## its steepest drop within SLOPE_AHEAD, only partly followed uphill. Off the road (or across it)
-## it blends to the car's own pitch, held while airborne.
-func _slope_target(car: RigidBody3D, xf: Transform3D) -> float:
+## it blends to the car's own pitch, low-passed (OWN_GRADE_RATE) so a kicker or a bump barely
+## registers, and easing back to level while the car is airborne.
+func _slope_target(car: RigidBody3D, xf: Transform3D, delta: float) -> float:
 	var grounded: Variant = car.get(&"grounded_wheels")
 	if grounded == null or int(grounded) >= 3 or _needs_snap:
 		var nose := -xf.basis.z
 		var run := maxf(Vector2(nose.x, nose.z).length(), 0.2)
-		_own_grade = nose.y / run if nose.dot(_yaw_dir) >= 0.0 else -nose.y / run
+		var pitch_grade := nose.y / run if nose.dot(_yaw_dir) >= 0.0 else -nose.y / run
+		_own_grade = pitch_grade if _needs_snap else lerpf(_own_grade, pitch_grade, 1.0 - exp(-OWN_GRADE_RATE * delta))
+	else:
+		_own_grade *= exp(-OWN_GRADE_RATE * delta)
 	var grade := _own_grade
 	var track := _resolve_road()
 	if track != null:
