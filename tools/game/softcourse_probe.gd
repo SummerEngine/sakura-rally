@@ -323,11 +323,7 @@ func _spawn_car() -> void:
 func _find_row(heavy: bool) -> Dictionary:
 	var track := map.track
 	var names: Array[String] = []
-	var smash := ["tape_post", "banner_fence", "flag_pole", "flag_pole_pink", "flag_pole_blue",
-		"traffic_cone", "chevron_left", "chevron_right", "distance_board_100", "distance_board_50",
-		"tire_stack", "hay_bale_round", "hay_bale_square", "marshal_post", "sign_curve_left",
-		"sign_curve_right", "road_mirror", "rice_paddy_marker", "scarecrow", "koinobori",
-		"fence_wood", "fence_bamboo", "bench"]
+	var smash: Array = SoftCourse.SMASHABLE.keys()
 	var found: Array[Dictionary] = []
 	var inst: Dictionary = map.info["instances"]
 	for n in smash:

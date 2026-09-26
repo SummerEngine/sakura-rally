@@ -9,12 +9,12 @@ extends SceneTree
 ## A frame is "blind" when less than half of those points are visible (the car hides the road).
 ##
 ##   S=/Applications/Summer.app/Contents/MacOS/Summer
-##   for m in hanami momiji natsu; do timeout 900 nice -n 5 $S --headless --disable-crash-handler \
+##   for m in hanami momiji liaison; do timeout 900 nice -n 5 $S --headless --disable-crash-handler \
 ##       --fixed-fps 60 --path . -s res://tools/physics/camera_probe.gd -- map=$m [car=sakura]; done
 ##
-## One map per process: a map built after another in the same process measured differently
+## One route per process: a map built after another in the same process measured differently
 ## (road points behind "terrain" that is not there: the first map's world state stays around).
-## The time is the lap time of RaceSession; an open road (natsu) has no finish line to cross at
+## The time is the lap time of RaceSession; the open liaison route has no finish line to cross at
 ## the arrival (the autopilot stops before it), so its lap runs to `limit`.
 ##
 ## Under `--summer-offscreen --audio-driver Dummy` (instead of --headless) it also renders both

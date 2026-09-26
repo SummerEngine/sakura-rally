@@ -215,17 +215,6 @@ never pushes and never touches `main`; the lead merges into `ep2`.
 - `Car.engine_sound: StringName` (Physics exports it, default `&"turbo4"`, Hayate `&"na4"`);
   `car_audio.gd` (Audio) picks its loop set from it.
 
-### Liaison map `natsu` (Map)
-
-- `Game.MAPS` has the entry (`"liaison": true`, no medals); `Game.stage_maps()` skips it.
-- `SPEC["road"]["closed"] = False` builds an open road. `map.json` adds `"closed": false` and
-  `"arrival": {"pos": [x, y, z], "yaw": rad, "radius": m}`; `spawn` / `start_line` sit at
-  s = 0; `checkpoints` may be empty.
-- `Track.closed: bool`. On an open track `point()`, `position_at_abs()`, `nearest()` clamp
-  instead of wrapping, `to_curve()` returns an open curve, `Track.length` runs start → arrival.
-- Atmosphere preset `summer_afternoon`; season `summer` in `MapWorld.SEASONS` and `SkyRig`.
-- Ambience id `natsu`: Audio adds `assets/audio/ambience/natsu.ogg` and the `Sound.AMBIENCE` entry.
-
 ### Road corridor (mapgen, `tools/mapgen/lib/corridor.py`)
 
 Mapgen keeps the road driveable wide: a car that runs wide or leans on the outside of a corner
@@ -237,8 +226,8 @@ meets only walls it can scrape along or props it knocks over.
   `map.checkpoints` entry (room for the runtime's fabric gate uprights).
 - **Rigid** props (every collider not listed below: trees, poles, rocks, lanterns, jizo,
   buildings, spectators …) stay out of the corridor. Low rocks, stumps and logs stay out of
-  the wide corridor everywhere. Natsu's sign boards (`signs`) break like smashables but still
-  step out until their posts clear the corridor.
+  the wide corridor everywhere. The branch road's sign boards (`signs`) break like smashables but
+  still step out until their posts clear the corridor.
 - **Smashable** props (`SMASHABLE`, the mirror of `SoftCourse.SMASHABLE` in
   `scripts/world/soft_course.gd`; keep the two in step) may stand in the corridor but never on
   the tarmac: |lateral| >= half width + 0.3 m.
@@ -253,7 +242,7 @@ meets only walls it can scrape along or props it knocks over.
 - Bridge ends: where the carve fades out towards a deck, the ground is capped under the road
   and ramps down under the deck (`road.bridge_clearance`, default 1.6 m below the deck), so no
   bank shows through the road.
-- Sign boards (`map.json` `signs[i]`, natsu only): each is its own `meshes` entry named by
+- Sign boards (`map.json` `signs[i]`, on the branch road): each is its own `meshes` entry named by
   `signs[i].mesh` (`sign_<i>`, `"local": true`, material `props_vc`), in sign-local
   coordinates: origin at the base centre on the ground, board front +Z, yaw 0. The runtime
   places it at `Transform3D(Basis(Vector3.UP, yaw), base)` and must not add `local` meshes at
@@ -270,7 +259,7 @@ meets only walls it can scrape along or props it knocks over.
   metres) and `Game.notify_arrived()` re-emits it as `Game.arrived`. `RaceSession.progress`
   is start → arrival (0..1) and `RaceSession.distance_left` the road metres to go.
 - Campaign API on `Game`: `const CAMPAIGN` (legs `{"map", "kind": "stage"|"liaison", "code",
-  "title", "title_jp", "kanji"}`: SS1 `hanami`, L1 `natsu`, SS2 `momiji`), `const RIVALS`
+  "title", "title_jp", "kanji"}`: SS1 `hanami`, L1 `liaison`, SS2 `momiji`), `const RIVALS`
   (`{"name", "name_jp", "team", "pace": [factor per stage]}`, stage time = gold × factor),
   `request_campaign(fresh: bool)` (a finished campaign always restarts),
   `request_campaign_continue()`, `campaign_status() -> {"started", "finished", "leg", "legs",
@@ -284,16 +273,12 @@ meets only walls it can scrape along or props it knocks over.
   A campaign stage's `race_finished` result adds `"campaign": true, "leg", "standing",
   "field"`. Progress (`[campaign]` leg, results, finished) lives in the player save
   (`persistent` rules); a quit resumes at the start of the saved leg.
-- `Game.State` adds, in this order after `FREE_ROAM`: `JOURNEY` (the painted journey map,
-  also the campaign's loading screen), `LIAISON` (driving a liaison; within braking distance
-  of the time control Main takes the car over and brakes it in, "Time control ahead"),
-  `ARRIVED` (the arrival beat: the car rolls to rest at the time control under a roadside
-  shot, arrival card), `FINALE` (classification and end card). Pause works in `LIAISON` as in
-  `RACING`.
-- Campaign flow: title → `JOURNEY` → `LOADING` → `INTRO` → stage (`COUNTDOWN`, `RACING`,
-  `FINISHED`, results Continue) or liaison (`LIAISON`, `ARRIVED`) → `JOURNEY` … → after the
-  last leg `JOURNEY` → `FINALE` → `MENU`. Music: `liaison` on the liaison drive, `menu` on the
-  journey map, `results` on the finale; stingers `arrived`, `campaign_complete`.
+- `Game.State` adds, in this order after `FREE_ROAM`: `LIAISON` (driving the liaison; within
+  braking distance of Momiji's grid Main takes the car over and brakes it in), `ARRIVED` (the
+  arrival beat: the car rolls to rest on the grid, arrival card), `FINALE` (classification and
+  end card). Pause works in `LIAISON` as in `RACING`.
+- Campaign flow: see "Campaign in one world" under Episode 3. Music: `liaison` on the liaison
+  drive, `results` on the finale; stingers `arrived`, `campaign_complete`.
 
 ### Soft course (SoftCourse)
 
@@ -432,39 +417,44 @@ rates measured during ep3 work are noisy: report them, the lead re-measures at i
 
 ### One world (WorldGen writes, WorldRuntime reads, Campaign drives)
 
-- One pack, `assets/maps/world/` (`map.json` `"version": 2` + `map.bin`), loaded once at boot and
-  kept for the whole session: menu, both stages, the liaison, free roam. The v1 packs (`hanami`,
-  `momiji`, `natsu`) and every v1 code path are gone by the end of ep3.
-- Layout: the Hanami region sits at the world origin, unrotated, so `maps/hanami.py`
-  coordinates are world coordinates (the garage and the title flyover keep theirs). Momiji is
-  placed (and turned if that helps) so that a branch road of about 2–2.5 km leaves the Hanami
-  loop shortly after its finish line and joins the Momiji loop shortly before its start line.
-  Natsu's content (village, river crossing, time control and service park, road signs, parked
-  cars) moves onto that road. One mountain rim around the whole world and none between regions;
-  no invisible walls; collision wherever a car can get to.
-- Roads and routes. Roads are the physical ribbons: the two loops and the branch, with junction
-  aprons where the branch meets a loop (no z-fighting, no step). Routes are what a session
-  drives, each with its own track raw (the v1 ten columns), `season` and `atmosphere`
-  (`spring_noon`, `summer_afternoon`, `autumn_golden`):
-  - `hanami`, `momiji`: closed stage laps as today (`start`, `spawn`, `checkpoints`), plus
-    `finish_stop` `{pos, yaw}`: where the car comes to rest after the finish line, on the road
-    (on Hanami: before the branch gate, with the gate in view).
-  - `liaison`: open. Its track starts at Hanami's `finish_stop`, follows the loop to the
-    branch, runs the branch and follows the Momiji loop to its grid; `arrival` `{pos, yaw,
-    radius}` is Momiji's spawn pose.
-- Gates: `gates[]` = `{id, route, s, pos, yaw, width}` across the branch just past each junction
-  (`hanami_branch`, `momiji_branch`). The runtime builds them (a closed road: striped barriers,
-  a 通行止め board, a marshal); closed they are rigid, open they are out of the way.
-- Seasons: the raw `season_grid` (u8 × 3 per cell: spring, summer, autumn weights summing to
-  255; `origin`, `cell`, `dims` in `map.json`). The terrain palette is blended into the vertex
-  colours by the same weights, and the scatter runs sakura → summer greens → maples along the
-  branch (sakura around its first stretch, maples well before Momiji).
-- The pack keeps v1's other keys (`water`, `collision_boxes`, `signs`, `parked`, `materials`,
-  `meshes`, `raw`, `instances`) in world coordinates, and `garage` (from Garage). `map.bin`
-  stays under 50 MB (compress it if needed and say how).
-- WorldGen documents the final schema in this section and the layout and build in
-  `docs/WORLD.md`. It ships an early skeleton pack (roads, terrain, routes, gates, season grid,
-  sparse props) as soon as one loads and messages WorldRuntime and Campaign the commit.
+- One pack, `assets/maps/world/` (`map.json` `"version": 2` + `map.bin`), built by
+  `tools/mapgen/mapgen.py` from `tools/mapgen/maps/world.py`, loaded once at boot and kept for
+  the whole session: menu, both stages, the liaison, free roam. There are no v1 packs and no v1
+  code paths. Layout, regions, terrain and build numbers: [WORLD.md](WORLD.md).
+- Layout: the Hanami region sits at the world origin, unrotated (`maps/hanami.py` coordinates are
+  world coordinates); Momiji is turned a quarter left and moved east; the 1.8 km branch road
+  between them carries Natsu's content (terraces, village, stone bridge, time control). One rim
+  around the world, none between regions.
+- `map.json` keys:
+  - `bounds` `[x0, z0, x1, z1]`, `cell` (terrain, 4 m), `road_half_width` 3.5.
+  - `roads{id: {length, closed, verge, junctions?}}`: the physical ribbons `hanami`, `momiji`
+    (loops) and `branch` (open). `junctions[{road, end, s, other_s}]`: the branch end (`start` /
+    `end`) at branch `s` meets `road` at its `other_s`, with an apron (no step, no z-fighting).
+  - `routes{id: {track, closed, season, atmosphere, road{length, start_s, verge, surfaces,
+    bridges, start}, spawn, checkpoints, corners, finish_stop | arrival}}`: what a session
+    drives, `track` naming its raw (the v1 ten columns). `hanami` and `momiji` are closed laps
+    with `finish_stop` `{pos, yaw}` (on Hanami before the branch gate, the gate in view);
+    `liaison` is open (`checkpoints` empty), starts at Hanami's `finish_stop`, runs 34 m of the
+    Hanami loop, the branch and 217 m of the Momiji loop, and ends at `arrival`
+    `{pos, yaw, radius}` = Momiji's spawn pose. `corners` come from RoadSafety's roadside pass.
+  - `gates[{id, route, s, pos, yaw, width}]`: `hanami_branch` and `momiji_branch`, across the
+    branch just past each junction, `s` along the `liaison` route.
+  - `season_grid{raw, origin, cell 8, dims [470, 256], order [spring, summer, autumn]}`: u8 × 3
+    per cell summing to 255. The terrain vertex colours are blended by the same weights and the
+    scatter runs sakura → summer greens → maples along the branch.
+  - `water{lake{level, poly}, rivers[{id, width, points}]}` (`rivers` replaces v1's `river`).
+  - `garage{pos, yaw, workshop, lot, keep_out, road_side}` (Garage).
+  - As in v1, in world coordinates: `collision_boxes`, `signs`, `parked`, `materials`, `meshes`
+    (terrain chunks carry `visibility` ranges: fine near, coarse far, beyond the rim), `raw`,
+    `instances`. `map.bin` is 45 MB uncompressed.
+
+### Open routes (the liaison)
+
+- A route with `"closed": false` gives `Track.closed == false`: `point()`, `position_at_abs()`
+  and `nearest()` clamp instead of wrapping, `to_curve()` returns an open curve, and
+  `Track.length` runs start → arrival.
+- The summer look: atmosphere preset `summer_afternoon`, season `summer`, ambience `natsu`
+  (`assets/audio/ambience/natsu.ogg`), all mixed by the season weights at the camera.
 
 ### MapWorld v2 (WorldRuntime implements; Campaign and tools use it)
 

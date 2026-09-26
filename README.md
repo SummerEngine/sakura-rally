@@ -111,7 +111,7 @@ Shared conventions and the runtime APIs: [docs/CONTRACTS.md](docs/CONTRACTS.md).
 ```sh
 G=/Applications/Godot.app/Contents/MacOS/Godot
 /Applications/Blender.app/Contents/MacOS/Blender --background --factory-startup --python tools/blender/build_car.py
-uv run --with numpy --with pillow python tools/mapgen/mapgen.py all
+uv run --with numpy --with pillow python tools/mapgen/mapgen.py
 timeout 180 $G --headless --disable-crash-handler --path . --import   # after changing raw assets
 ```
 
