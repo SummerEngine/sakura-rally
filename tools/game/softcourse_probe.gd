@@ -338,7 +338,7 @@ func _find_row(heavy: bool) -> Dictionary:
 			var hw := track.half_width(i)
 			if absf(l) < hw - 0.5 or absf(l) > hw + track.verge + 4.5 or absf(p.y - track.point(i).y) > 1.5:
 				continue
-			found.append({"s": track.dist(i), "lat": l, "name": n})
+			found.append({"s": track.dist(i), "lat": l, "name": n, "hw": hw})
 	found.sort_custom(func(x: Dictionary, y: Dictionary) -> bool: return x["s"] < y["s"])
 	var best := {"s0": 600.0, "s1": 640.0, "lat": 6.0, "names": names}
 	var best_n := 0
@@ -353,9 +353,17 @@ func _find_row(heavy: bool) -> Dictionary:
 			if signf(g["lat"]) == signf(f["lat"]) and absf(float(g["lat"]) - float(f["lat"])) < 1.0:
 				sel.append(g["name"])
 				s1 = g["s"]
-		if sel.size() > best_n and float(f["s"]) > 150.0 and _lane_clear(float(f["s"]) - 35.0, s1 + 10.0, float(f["lat"])):
+		# the row's own lane and every lane on the way out to it (a row behind a guardrail is out
+		# of reach)
+		var lat: float = f["lat"]
+		var reach := sel.size() > best_n and float(f["s"]) > 150.0
+		var l_out := float(f["hw"]) + 0.5
+		while reach and l_out < absf(lat) + 0.5:
+			reach = _lane_clear(float(f["s"]) - 35.0, s1 + 10.0, signf(lat) * minf(l_out, absf(lat)))
+			l_out += 1.0
+		if reach:
 			best_n = sel.size()
-			best = {"s0": f["s"], "s1": s1, "lat": f["lat"], "names": sel}
+			best = {"s0": f["s"], "s1": s1, "lat": lat, "names": sel}
 	return best
 
 
