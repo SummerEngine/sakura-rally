@@ -56,7 +56,7 @@ MATERIALS: dict[str, tuple[str, float]] = {
     "Bark_Maple": ("#6f5a52", 0.0),
     "Wood_Cut": ("#d8b184", 0.0),
     "Fruit_Persimmon": ("#f07a22", 0.0),
-    "Cattail": ("#7a5238", 0.0),
+    "Grass_Cattail": ("#7a5238", 0.0),
     "Rock": ("#a29d96", 0.0),
     "Rock_Dark": ("#8a847f", 0.0),
     "Moss": ("#88ae5c", 0.0),
@@ -71,6 +71,8 @@ MATERIALS: dict[str, tuple[str, float]] = {
     "Plaster": ("#f4ede0", 0.0),
     "Roof_Tile": ("#4f5a6d", 0.0),
     "Roof_Tin": ("#b0503f", 0.0),
+    "Roof_Ridge": ("#3b4353", 0.0),
+    "Bamboo_Cane": ("#cdb872", 0.0),
     "Roof_Copper": ("#5e9c8c", 0.0),
     "Thatch": ("#b89a62", 0.0),
     "Thatch_Dark": ("#8c7248", 0.0),
@@ -86,6 +88,7 @@ MATERIALS: dict[str, tuple[str, float]] = {
     "HeadLight": ("#fff7e0", 1.5),
     "TailLight": ("#e0322c", 0.8),
     "Glass": ("#7fa3c4", 0.0),
+    "Water": ("#6fa8c8", 0.0),
     "Glass_Mirror": ("#b9d3e8", 0.0),
     "Metal": ("#9aa0a8", 0.0),
     "Metal_Dark": ("#4d505c", 0.0),
@@ -127,6 +130,9 @@ MATERIALS: dict[str, tuple[str, float]] = {
     "Cloth_Black": ("#35313b", 0.0),
     "Banner_Pink": ("#f6b8cb", 0.0),
     "Banner_Ink": ("#3a2e48", 0.0),
+    "Banner_Rose": ("#e68aa8", 0.0),
+    "Leaves_Ginkgo": ("#f4c64a", 0.0),
+    "Leaves_Fresh": ("#b5d672", 0.0),
     "Tape_Red": ("#e0483c", 0.0),
     "Tape_White": ("#f6f3ec", 0.0),
 }
@@ -182,6 +188,19 @@ def trs(loc: Sequence[float] = (0, 0, 0), r: Sequence[float] = (0, 0, 0),
     return Matrix.Translation(Vector(loc)) @ rot(*r) @ Matrix.Diagonal((*s, 1.0))
 
 
+def facing(center: Sequence[float], side: str = "front") -> Matrix:
+    """Matrix for flat decals/text authored in local XY (reading +X, up +Y, face +Z) so they read
+    correctly from +Y ("front") or -Y ("back") in Blender (front = game forward)."""
+    if side == "front":
+        cols = (Vector((-1, 0, 0)), Vector((0, 0, 1)), Vector((0, 1, 0)))
+    elif side == "back":
+        cols = (Vector((1, 0, 0)), Vector((0, 0, 1)), Vector((0, -1, 0)))
+    else:
+        raise ValueError(side)
+    m = Matrix((cols[0], cols[1], cols[2])).transposed().to_4x4()
+    return Matrix.Translation(Vector(center)) @ m
+
+
 def look_matrix(origin: Vector, direction: Vector) -> Matrix:
     """Matrix whose local +Z points along `direction`, placed at `origin`."""
     d = direction.normalized()
@@ -216,6 +235,11 @@ def canopy_shade(z0: float, z1: float, cool: Sequence[float] = (0.80, 0.80, 0.93
         c = lerp_col(cool, WHITE, t)
         return (c[0] * tint[0], c[1] * tint[1], c[2] * tint[2], 1.0)
     return fn
+
+
+def underside(cool: Sequence[float] = (0.8, 0.79, 0.92)) -> ColorFn:
+    """Darken/cool only downward-facing faces (eaves, soffits)."""
+    return lambda co, n: lerp_col(cool, WHITE, n.z + 1.0)
 
 
 def mul_col(fn: ColorFn | Sequence[float] | None, tint: Sequence[float]) -> ColorFn:
@@ -344,6 +368,38 @@ def bm_tube(points: Sequence[Vector], radii: Sequence[float], sides: int,
         bm.faces.new(rings[-1])
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     return bm
+
+
+def rock_like_points(base: Vector, size: Sequence[float], n: int, r: random.Random | None = None,
+                     rough: float = 0.0) -> list[Vector]:
+    """Fibonacci points on an ellipsoid whose bottom sits flat at `base` (for hull stones)."""
+    pts = []
+    golden = math.pi * (3 - math.sqrt(5))
+    for i in range(n):
+        y = 1 - 2 * (i + 0.5) / n
+        rad = math.sqrt(1 - y * y)
+        a = golden * i
+        k = 1.0 + (r.uniform(-rough, rough) if r else 0.0)
+        z = (max(-0.8, y) + 0.8) / 1.8 * size[2]  # flat bottom at 80% of the lower half
+        pts.append(base + Vector((math.cos(a) * rad * size[0] / 2 * k, math.sin(a) * rad * size[1] / 2 * k, z)))
+    return pts
+
+
+def chamfer_box_points(center: Vector, size: Sequence[float], bevel: float, r: random.Random,
+                       jit: float = 0.0) -> list[Vector]:
+    """24 points of a chamfered box (base at center.z) for hull-built cut stones / pillows."""
+    hx, hy, hz = size[0] / 2, size[1] / 2, size[2] / 2
+    pts = []
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            for sz in (-1, 1):
+                c = Vector((sx * hx, sy * hy, sz * hz + hz))
+                for ax in range(3):
+                    p = c.copy()
+                    p[ax] -= (sx, sy, sz)[ax] * bevel * size[ax]
+                    p += Vector((r.uniform(-jit, jit), r.uniform(-jit, jit), r.uniform(-jit, jit)))
+                    pts.append(center + p)
+    return pts
 
 
 def displace_radial(bm: bmesh.types.BMesh, amount: float, freq: float, seed_off: Vector) -> None:
@@ -494,6 +550,45 @@ class Kit:
         if recalc:
             bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
         self.add(bm, mat, m, color)
+
+    def extrude_x(self, mat: str, profile: Sequence[Sequence[float]], xs: Sequence[float],
+                  zfn: Callable[[float], float] | None = None, color=None, caps: bool = True,
+                  m: Matrix | None = None) -> None:
+        """Extrude a closed CCW profile [(y, z), ...] along X through stations `xs`
+        (optionally bent by zfn(x)). Used for beams, rails, lintels."""
+        bm = bmesh.new()
+        rings = []
+        for x in xs:
+            dz = zfn(x) if zfn else 0.0
+            rings.append([bm.verts.new((x, y, z + dz)) for y, z in profile])
+        n = len(profile)
+        for a, b in zip(rings, rings[1:]):
+            for k in range(n):
+                bm.faces.new((a[k], a[(k + 1) % n], b[(k + 1) % n], b[k]))
+        if caps:
+            bm.faces.new(list(reversed(rings[0])))
+            bm.faces.new(rings[-1])
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        self.add(bm, mat, m, color)
+
+    def flower(self, mat: str, m: Matrix, radius: float, center_mat: str | None = None,
+               color=None) -> None:
+        """Flat five-petal sakura blossom (notched petals) in local XY, facing +Z."""
+        verts = [(0.0, 0.0, 0.0)]
+        faces = []
+        for k in range(5):
+            a = math.pi / 2 + k * 2 * math.pi / 5
+            def pol(ang: float, rr: float) -> tuple[float, float, float]:
+                return (math.cos(ang) * rr, math.sin(ang) * rr, 0.0)
+            i = len(verts)
+            verts += [pol(a - 0.5, radius * 0.55), pol(a - 0.24, radius), pol(a, radius * 0.82),
+                      pol(a + 0.24, radius), pol(a + 0.5, radius * 0.55)]
+            faces += [(0, i, i + 1), (0, i + 1, i + 2), (0, i + 2, i + 3), (0, i + 3, i + 4)]
+        self.poly(mat, verts, faces, m, color)
+        if center_mat:
+            c = [(math.cos(k * 2 * math.pi / 5) * radius * 0.2, math.sin(k * 2 * math.pi / 5) * radius * 0.2,
+                  0.004) for k in range(5)]
+            self.poly(center_mat, c, [(0, 1, 2, 3, 4)], m)
 
     def empty(self, name: str, loc: Sequence[float]) -> None:
         self.empties.append((name, Vector(loc)))

@@ -105,7 +105,7 @@ def _sakura(kit: Kit, trunk_h: float, lean: Vector, branches: list[tuple[float, 
         out = Vector((tip.x, tip.y, 0)).normalized()
         canopy.add(PINKS[(i + 3) % len(PINKS)], tip + out * blob_r * 0.8 + Vector((0, 0, -blob_r * 0.3)),
                    blob_r * 0.42, (1.1, 1.1, 0.9), subdiv=1, jit=0.02)
-    canopy.emit(kit, cool=(0.88, 0.83, 0.95))
+    canopy.emit(kit, cool=(0.94, 0.82, 0.88))
 
 
 @prop("sakura_a", "tree", ["roadside", "forest", "village", "slope"], SPRING, cyl(0.26))
@@ -137,33 +137,34 @@ def sakura_c(kit: Kit) -> None:
 # Maple
 # ----------------------------------------------------------------------------------------
 def _maple(kit: Kit, mats: tuple[str, str, str]) -> None:
-    """Momiji: short trunk, low spreading limbs, layered horizontal leaf pads."""
+    """Momiji: short trunk, spreading limbs, broad domed crown built from overlapping
+    slightly flattened leaf masses (reads as a rounded umbrella, not a savanna tree)."""
     r = kit.r
     canopy = Canopy()
-    trunk = branch_pts(r, Vector((0, 0, 0)), Vector((0.05, 0, 1)), 1.3, 3, wobble=0.07)
+    trunk = branch_pts(r, Vector((0, 0, 0)), Vector((0.05, 0, 1)), 1.4, 3, wobble=0.07)
     kit.tube("Bark_Maple", trunk, taper(len(trunk), 0.19, 0.14, flare=0.4), 6, color=bark_color(5))
     fork = trunk[-1]
     n = 5
     az0 = r.uniform(0, 360)
+    tips: list[Vector] = []
     for i in range(n):
         az = az0 + i * 360 / n + r.uniform(-15, 15)
-        pts = branch_pts(r, fork - Vector((0, 0, 0.1)), dir_of(az, r.uniform(28, 42)), r.uniform(2.2, 2.7), 3,
-                         wobble=0.12, lift=0.12)
+        pts = branch_pts(r, fork - Vector((0, 0, 0.1)), dir_of(az, r.uniform(32, 45)), r.uniform(2.0, 2.4), 3,
+                         wobble=0.12, lift=0.1)
         kit.tube("Bark_Maple", pts, taper(len(pts), 0.1, 0.035), 5, color=bark_color(5))
         tip = pts[-1]
-        # lower tier: wide flat pads at the limb tips
-        canopy.add(mats[i % 3], tip + Vector((0, 0, 0.1)), r.uniform(0.85, 1.0), (1.45, 1.35, 0.55),
-                   lump=0.3, jit=0.07)
-        # middle tier: pads pulled inward and up
+        tips.append(tip)
+        canopy.add(mats[i % 3], tip + Vector((0, 0, 0.25)), r.uniform(1.0, 1.12), (1.3, 1.25, 0.72),
+                   lump=0.28, jit=0.06)
         mid = pts[2]
-        canopy.add(mats[(i + 1) % 3], Vector((mid.x * 0.8, mid.y * 0.8, tip.z + 0.75)), r.uniform(0.75, 0.9),
-                   (1.4, 1.3, 0.55), lump=0.3, jit=0.07)
-    canopy.add(mats[0], (0.1, 0.0, fork.z + 3.2), 1.0, (1.45, 1.35, 0.6), lump=0.28, jit=0.07)
-    canopy.add(mats[2], (-0.2, 0.2, fork.z + 3.8), 0.62, (1.3, 1.2, 0.62), lump=0.28, jit=0.06)
-    for i in range(4):  # ragged accent puffs
-        az = math.radians(az0 + 36 + i * 90)
-        canopy.add(mats[(i + 2) % 3], (math.cos(az) * 2.6, math.sin(az) * 2.6, fork.z + 1.3 + (i % 2) * 0.8),
-                   0.42, (1.2, 1.2, 0.7), subdiv=1, jit=0.03)
+        canopy.add(mats[(i + 1) % 3], Vector((mid.x * 0.75, mid.y * 0.75, tip.z + 1.0)), r.uniform(0.9, 1.0),
+                   (1.3, 1.25, 0.75), lump=0.28, jit=0.06)
+    canopy.add(mats[0], (0.1, 0.0, fork.z + 3.2), 1.15, (1.35, 1.3, 0.8), lump=0.26, jit=0.06)
+    for i, tip in enumerate(tips):  # ragged accent puffs overlapping each outer mass
+        out = Vector((tip.x, tip.y, 0)).normalized()
+        side = Vector((-out.y, out.x, 0)) * (0.5 if i % 2 else -0.5)
+        canopy.add(mats[(i + 2) % 3], tip + out * 1.05 + side + Vector((0, 0, -0.1 + 0.3 * (i % 2))),
+                   0.45, (1.2, 1.2, 0.8), subdiv=1, jit=0.03)
     canopy.emit(kit, cool=(0.8, 0.74, 0.9))
 
 
@@ -486,7 +487,7 @@ def reeds(kit: Kit) -> None:
         dirv = (top - base).normalized()
         head0 = top - dirv * 0.32
         kit.add(bm_tube([head0, head0 + dirv * 0.05, top - dirv * 0.03, top], [0.02, 0.045, 0.04, 0.0], 5),
-                "Cattail", None, (0.95, 0.95, 0.95))
+                "Grass_Cattail", None, (0.95, 0.95, 0.95))
 
 
 # ----------------------------------------------------------------------------------------
@@ -531,3 +532,41 @@ def log(kit: Kit) -> None:
     kit.blob("Moss", (0.3, 0.02, rad * 1.8), 0.3, (2.2, 0.9, 0.35), lump=0.2)
     # broken-off branch stub
     kit.cyl_between("Bark", (0.6, 0.0, rad * 1.5), (0.85, -0.25, rad * 2.3), 0.06, seg=5, r_top=0.035)
+
+
+# ----------------------------------------------------------------------------------------
+# Extra tree variants (P2)
+# ----------------------------------------------------------------------------------------
+@prop("sakura_young", "tree", ["roadside", "village", "field"], SPRING, cyl(0.12))
+def sakura_young(kit: Kit) -> None:
+    """Young roadside cherry (~3.6 m) for planted avenues."""
+    _sakura(kit, 1.4, Vector((0.0, 0.03, 0)), [(20, 55, 1.4), (140, 58, 1.3), (260, 52, 1.4)],
+            sub=False, top=[(0.0, 0.0, 3.1, 0.8)], blob_r=0.68, trunk_r=0.1)
+
+
+@prop("maple_green", "tree", ["roadside", "forest", "village", "slope", "water_edge"], SPRING, cyl(0.22))
+def maple_green(kit: Kit) -> None:
+    """Fresh spring-green maple (same form as the autumn maples) for the Hanami map."""
+    _maple(kit, ("Leaves_Spring", "Leaves_Fresh", "Leaves"))
+
+
+@prop("ginkgo", "tree", ["village", "roadside", "forest"], AUTUMN, cyl(0.24))
+def ginkgo(kit: Kit) -> None:
+    """Golden ginkgo (icho): straight trunk, tall conical-oval crown of stacked lumps."""
+    r = kit.r
+    h = 9.0
+    trunk = branch_pts(r, Vector((0, 0, 0)), Vector((0, 0, 1)), h * 0.85, 4, wobble=0.03)
+    kit.tube("Bark", trunk, taper(len(trunk), 0.24, 0.07, flare=0.35), 6, color=bark_color(h))
+    canopy = Canopy()
+    tiers = [(2.4, 1.55), (3.6, 1.7), (4.9, 1.5), (6.1, 1.2), (7.2, 0.9), (8.2, 0.6)]
+    for i, (z, rad) in enumerate(tiers):
+        canopy.add("Leaves_Ginkgo" if i % 2 == 0 else "Leaves_Maple_Gold", (0, 0, z), rad, (1.15, 1.15, 0.85),
+                   lump=0.24, jit=0.05)
+        if rad > 1.0:
+            a = r.uniform(0, 2 * math.pi)
+            for k in range(2):
+                aa = a + k * math.pi
+                canopy.add("Leaves_Maple_Amber" if k else "Leaves_Ginkgo",
+                           (math.cos(aa) * rad * 0.9, math.sin(aa) * rad * 0.9, z - 0.3), rad * 0.45,
+                           (1.1, 1.1, 0.85), subdiv=1, jit=0.03)
+    canopy.emit(kit, cool=(0.82, 0.76, 0.88))

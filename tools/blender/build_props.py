@@ -134,8 +134,11 @@ def main() -> None:
         "version": 1,
         "units": "metres; size/aabb_center/markers in Godot axes (x right, y up, z back); "
                  "origin = base centre on ground; front faces -Z (Blender +Y)",
-        "collision_notes": "cylinder: centred on origin, from y=0 to height. box: size/center "
-                           "in prop-local Godot coordinates.",
+        "collision_notes": "none: no collider (foliage/ground cover/overhead dressing). cylinder: "
+                           "radius, from y=0 to height, centred on origin or, when 'offsets' is "
+                           "present, one cylinder per offset (e.g. gate posts; the gap stays "
+                           "open). box: size + center in prop-local Godot coordinates. Tree "
+                           "cylinders cover the trunk only.",
         "props": ordered,
     }
     with open(man_path, "w") as f:

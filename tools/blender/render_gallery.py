@@ -5,7 +5,9 @@ Usage (from the repo root):
       --python tools/blender/render_gallery.py -- --names sakura_a,sakura_b \
       --out docs/renders/props_trees.png [--cols 5] [--tile 480] [--scale-ref]
 
---category <cat> picks every manifest entry of that category instead of --names.
+--category <cat>[,<cat>] picks every manifest entry of those categories instead of --names.
+--scene spring|autumn renders a 1600x900 roadside diorama from chase-camera height instead
+(gameplay-distance readability check), e.g. --scene spring --out docs/renders/props_scene_spring.png
 Each tile: orthographic 3/4 front view (front = Blender +Y), sun + cel ramp with violet shadow
 tint (approximates the in-game toon shader), Freestyle ink outlines, label with name / tris /
 height. Tiles are composed with ffmpeg into one PNG.
@@ -52,6 +54,7 @@ def parse() -> argparse.Namespace:
     ap.add_argument("--tile", type=int, default=480)
     ap.add_argument("--elev", type=float, default=16.0)
     ap.add_argument("--azim", type=float, default=32.0)
+    ap.add_argument("--scene", default="", help="spring|autumn: render a diorama instead of tiles")
     return ap.parse_args(argv)
 
 
@@ -265,8 +268,122 @@ def render_tile(name: str, entry: dict | None, out_png: str, args: argparse.Name
     bpy.ops.render.render(write_still=True)
 
 
+def _verge(i: int, length: float, road_half: float = 4.8) -> tuple[float, float, float]:
+    """Deterministic scatter on both road verges (golden-ratio sequence), never on the road."""
+    u = (i * 0.618034) % 1.0
+    w = (i * 0.754878) % 1.0
+    side = -1 if i % 2 else 1
+    return (side * (road_half + w * 9.0), u * length, 0.0)
+
+
+SCENES: dict[str, list[tuple[str, tuple[float, float, float], float]]] = {
+    # (prop, (x, y, rot_z_deg)...) road runs along Blender Y through x=0
+    "spring": [
+        ("sakura_a", (-7, 6, 0), 0), ("sakura_b", (-12, 18, 0), 40), ("sakura_c", (8, 12, 0), 200),
+        ("sakura_a", (11, 30, 0), 90), ("sakura_b", (-9, 34, 0), 10), ("sakura_c", (-16, 4, 0), 120),
+        ("cedar_a", (-22, 30, 0), 0), ("cedar_b", (-26, 20, 0), 60), ("cedar_a", (20, 44, 0), 30),
+        ("cedar_b", (26, 34, 0), 0), ("cedar_a", (-18, 48, 0), 0), ("pine_a", (15, 4, 0), 250),
+        ("bamboo_clump", (18, 20, 0), 0), ("azalea", (-5, 1, 0), 0), ("azalea", (6, 22, 0), 90),
+        ("bush_a", (5, 3, 0), 0), ("bush_b", (-6, 16, 0), 30), ("torii_small", (-6.5, 26, 0), 90),
+        ("stone_lantern", (-5.5, 23.5, 0), 0), ("stone_lantern", (-5.5, 28.5, 0), 0),
+        ("sign_curve_left", (5, 8, 0), 180), ("guardrail", (5.2, 16, 0), 90), ("guardrail", (5.2, 20, 0), 90),
+        ("telephone_pole", (-5, 12, 0), 0), ("rock_e", (9, 1, 0), 30), ("rock_a", (-4.5, 8, 0), 0),
+        ("jizo", (-4.8, 4, 0), -90), ("koinobori", (14, 14, 0), 0), ("farmhouse_a", (-15, 40, 0), 90),
+        ("spectator_b", (4.5, 30, 0), 90), ("spectator_c", (4.8, 31.5, 0), 100), ("spectator_a", (5.2, 33, 0), 80),
+        ("banner_fence", (4, 31.5, 0), 90), ("start_arch", (0, 40, 0), 0),
+    ] + [("grass_tuft", _verge(i, 60), i * 40) for i in range(90)]
+      + [("flowers_patch", _verge(i * 7 + 3, 40), i * 50) for i in range(40)],
+    "autumn": [
+        ("maple_red", (-7, 6, 0), 0), ("maple_orange", (-12, 18, 0), 40), ("maple_yellow", (8, 12, 0), 200),
+        ("maple_red", (11, 30, 0), 90), ("maple_orange", (-9, 34, 0), 10), ("persimmon_tree", (-15, 4, 0), 120),
+        ("cedar_a", (-22, 30, 0), 0), ("cedar_b", (-26, 20, 0), 60), ("cedar_a", (20, 44, 0), 30),
+        ("cedar_b", (26, 34, 0), 0), ("pine_b", (15, 4, 0), 250), ("maple_yellow", (-19, 46, 0), 0),
+        ("bamboo_clump", (18, 20, 0), 0), ("bush_a", (5, 3, 0), 0), ("bush_b", (-6, 16, 0), 30),
+        ("hazagi", (13, 14, 0), 90), ("scarecrow", (10, 20, 0), 200), ("kura", (-15, 40, 0), 90),
+        ("farmhouse_b", (18, 52, 0), 180), ("kei_truck", (-6, 22, 0), 10), ("vending_machine", (-5.2, 27, 0), -90),
+        ("sign_curve_right", (5, 8, 0), 180), ("road_mirror", (-5, 12, 0), -90), ("rock_c", (9, 1, 0), 30),
+        ("stump", (-4.5, 8, 0), 0), ("log", (7, 25, 0), 60), ("tire_stack", (4.5, 30, 0), 0),
+        ("tire_stack", (4.5, 31, 0), 0), ("chevron_left", (6, 36, 0), 180), ("hay_bale_round", (-5, 32, 0), 30),
+        ("spectator_d", (-4.8, 35, 0), -90), ("spectator_e", (-5, 36.5, 0), -80), ("spectator_f", (-4.8, 38, 0), -100),
+        ("tent", (-8, 37, 0), 0), ("finish_arch", (0, 44, 0), 0),
+    ] + [("grass_tuft", _verge(i, 60), i * 40) for i in range(90)]
+      + [("fern", _verge(i * 5 + 1, 40, 5.5), i * 50) for i in range(12)],
+}
+
+
+def render_scene(which: str, out: str, args: argparse.Namespace) -> None:
+    """Chase-cam-height diorama: judges readability at gameplay distance."""
+    clear()
+    cache: dict[str, list[bpy.types.Object]] = {}
+    mats: dict[str, bpy.types.Material] = {}
+    for name, (x, y, _), rz in SCENES[which]:
+        if name not in cache:
+            objs = import_glb(os.path.join(PROPS_DIR, f"{name}.glb"))
+            for o in objs:
+                if o.type == "MESH":
+                    ca = o.data.color_attributes[0].name if o.data.color_attributes else None
+                    for slot in o.material_slots:
+                        if slot.material is not None:
+                            key = slot.material.name
+                            if key not in mats:
+                                mats[key] = cel_material(slot.material, ca)
+                            slot.material = mats[key]
+            meshes = [o for o in objs if o.type == "MESH"]
+            for o in objs:
+                if o.type != "MESH":
+                    bpy.data.objects.remove(o, do_unlink=True)
+            cache[name] = meshes
+            src = meshes[0]
+            src.rotation_mode = "XYZ"
+            src.location = (x, y, 0)
+            src.rotation_euler = (0, 0, math.radians(rz))
+            continue
+        dup = bpy.data.objects.new(name, cache[name][0].data)
+        bpy.context.scene.collection.objects.link(dup)
+        dup.location = (x, y, 0)
+        dup.rotation_euler = (0, 0, math.radians(rz))
+    ground_col = {"spring": (0.64, 0.81, 0.45), "autumn": (0.78, 0.72, 0.42)}[which]
+    for nm, size, loc, col in (("ground", (200, 200), (0, 40, -0.01), ground_col),
+                               ("road", (9, 200), (0, 40, 0.0), (0.31, 0.34, 0.41))):
+        bpy.ops.mesh.primitive_plane_add(size=1, location=loc)
+        g = bpy.context.active_object
+        g.scale = (size[0], size[1], 1)
+        m = bpy.data.materials.new(nm)
+        m.node_tree.nodes.clear()
+        e = m.node_tree.nodes.new("ShaderNodeEmission")
+        e.inputs["Color"].default_value = (*[s2l(c) for c in col], 1.0)
+        o_ = m.node_tree.nodes.new("ShaderNodeOutputMaterial")
+        m.node_tree.links.new(e.outputs[0], o_.inputs["Surface"])
+        g.data.materials.append(m)
+    sc = bpy.context.scene
+    sc.render.resolution_x = 1600
+    sc.render.resolution_y = 900
+    sky = {"spring": (0.72, 0.84, 0.96), "autumn": (0.98, 0.86, 0.72)}[which]
+    sc.world.node_tree.nodes["Background"].inputs[0].default_value = (*[s2l(c) for c in sky], 1.0)
+    cam_data = bpy.data.cameras.new("cam")
+    cam_data.lens = 28
+    cam_data.clip_end = 400
+    cam = bpy.data.objects.new("cam", cam_data)
+    sc.collection.objects.link(cam)
+    cam.location = (0.0, -9.0, 2.6)
+    cam.rotation_euler = (math.radians(84), 0, 0)
+    sc.camera = cam
+    sun_d = bpy.data.lights.new("sun", "SUN")
+    sun_d.energy = 2.2
+    sun = bpy.data.objects.new("sun", sun_d)
+    sun.rotation_euler = Vector((-0.5, -0.6, 0.62)).normalized().to_track_quat("Z", "Y").to_euler()
+    sc.collection.objects.link(sun)
+    sc.render.filepath = os.path.abspath(out)
+    bpy.ops.render.render(write_still=True)
+    print(f"SCENE {out}")
+
+
 def main() -> None:
     args = parse()
+    if args.scene:
+        setup_render(args.tile)
+        render_scene(args.scene, args.out, args)
+        return
     with open(os.path.join(PROPS_DIR, "manifest.json")) as f:
         manifest = {p["name"]: p for p in json.load(f)["props"]}
     if args.category:
