@@ -396,7 +396,7 @@ func _spawn_car(player: bool, mode: String) -> void:
 	add_child(car)
 	var c := Game.car_colors()
 	car.set_livery(c["primary"], c["secondary"])
-	car.reset_to(map.spawn)
+	car.place_at_rest(map.spawn)
 	var lights := CarLook.apply(car)
 	fx = CarFX.new()
 	fx.name = "CarFX"

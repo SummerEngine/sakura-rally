@@ -337,6 +337,49 @@ func reset_to(xform: Transform3D) -> void:
 	reset_physics_interpolation()
 
 
+## Scripted spawns (race start, garage, campaign legs): puts the car on the ground under `xform`
+## as it sits at rest - origin on the plane through the four tyre contacts (the origin is at
+## ground level with the springs at their static load), level with that plane, heading kept,
+## still. Nothing drops and nothing is left to settle. Falls back to `reset_to()` when a wheel
+## finds no ground (layer 1) within 4 m above or 8 m below `xform.origin`.
+func place_at_rest(xform: Transform3D) -> void:
+	var fwd := -xform.basis.z
+	fwd.y = 0.0
+	fwd = fwd.normalized() if fwd.length_squared() > 1e-6 else Vector3.FORWARD
+	var flat := Basis.looking_at(fwd, Vector3.UP)
+	var space := get_world_3d().direct_space_state
+	var contacts: Array[Vector3] = []
+	for w: WheelState in wheels:
+		var p := xform.origin + flat * Vector3(w.rest_position.x, 0.0, w.rest_position.z)
+		var q := PhysicsRayQueryParameters3D.create(p + Vector3.UP * 4.0, p + Vector3.DOWN * 8.0, 1, [get_rid()])
+		var hit := space.intersect_ray(q)
+		if hit.is_empty():
+			reset_to(xform)
+			return
+		contacts.append(hit["position"])
+	# wheels: FL, FR, RL, RR; the plane normal from the diagonals
+	var n := (contacts[1] - contacts[2]).cross(contacts[0] - contacts[3]).normalized()
+	if n.y < 0.0:
+		n = -n
+	if n.y < 0.3:
+		reset_to(xform)
+		return
+	var c := (contacts[0] + contacts[1] + contacts[2] + contacts[3]) * 0.25
+	var o := xform.origin
+	o.y = c.y - (n.x * (o.x - c.x) + n.z * (o.z - c.z)) / n.y
+	var t := Transform3D(Basis.looking_at(fwd - n * fwd.dot(n), n), o + n * 0.005)
+	_pending_transform = t
+	_pending_reset = true
+	global_transform = t
+	linear_velocity = Vector3.ZERO
+	angular_velocity = Vector3.ZERO
+	_reset_state()
+	for i in 4:
+		wheels[i].suspension_length = bump_travel
+		_prev_length[i] = bump_travel
+	reset_physics_interpolation()
+
+
 func set_livery(primary: Color, secondary: Color) -> void:
 	livery_primary = primary
 	livery_secondary = secondary
