@@ -345,6 +345,8 @@ def build_bridge(road: Road, a: int, b: int, style: str, ground_h, mb: MeshBuild
     wood = palette.get("wood", (0.64, 0.44, 0.28))
     wood_dark = palette.get("wood_dark", (0.45, 0.31, 0.21))
     wooden = style.startswith("wood")
+    stony = style.startswith("stone")
+    stone_dark = tuple(float(c) * 0.78 for c in stone)
     rail_col = wood if wooden else red
     post_col = wood_dark if wooden else red
     # underside slab
@@ -373,6 +375,10 @@ def build_bridge(road: Road, a: int, b: int, style: str, ground_h, mb: MeshBuild
             yaw = _yaw_of(road.fwd[idxs[k]])
             if wooden:
                 mb.prism(p - (0, 0.1, 0), p + (0, 1.05, 0), 0.09, 6, post_col)
+            elif stony:
+                if k % (2 * step) == 0:  # squat stone piers in the parapet
+                    mb.box((p[0], p[1] + 0.5, p[2]), (0.62, 1.25, 0.62), yaw, stone_dark)
+                    mb.box((p[0], p[1] + 1.17, p[2]), (0.72, 0.12, 0.72), yaw, stone)
             else:
                 mb.box((p[0], p[1] + 0.55, p[2]), (0.2, 1.1, 0.2), yaw, post_col)
                 mb.prism(p + (0, 1.1, 0), p + (0, 1.32, 0), 0.12, 8, gold)
@@ -388,6 +394,9 @@ def build_bridge(road: Road, a: int, b: int, style: str, ground_h, mb: MeshBuild
             if wooden:
                 mb.box((mid[0], mid[1] + 0.95, mid[2]), (0.14, 0.14, L + 0.04), yaw, rail_col, pitch=pitch)
                 mb.box((mid[0], mid[1] + 0.5, mid[2]), (0.1, 0.1, L + 0.04), yaw, rail_col, pitch=pitch)
+            elif stony:  # solid parapet wall with a lighter coping
+                mb.box((mid[0], mid[1] + 0.38, mid[2]), (0.46, 0.9, L + 0.04), yaw, stone_dark, pitch=pitch)
+                mb.box((mid[0], mid[1] + 0.87, mid[2]), (0.56, 0.1, L + 0.06), yaw, stone, pitch=pitch)
             else:
                 mb.box((mid[0], mid[1] + 1.0, mid[2]), (0.16, 0.12, L + 0.04), yaw, rail_col, pitch=pitch)
                 mb.box((mid[0], mid[1] + 0.45, mid[2]), (0.1, 0.08, L + 0.04), yaw, rail_col, pitch=pitch)
