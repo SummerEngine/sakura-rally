@@ -62,7 +62,7 @@ func _on_menu() -> void:
 | `COUNTDOWN`, `RACING`, `FREE_ROAM` | HUD slides in (time trial: timer + progress; free roam: odometer, no timer). |
 | `checkpoint_passed` | Split popup under the timer (delta green/red vs best, none on a first run), progress tick pulses, timer pops. `play_stinger(&"checkpoint")`. |
 | `notice(text)` | Centre paper pill for ~2 s (only while the HUD is up). |
-| `race_finished(result)` | FINISH 完走 slam, time count-up, results card, medal hanko stamp, NEW RECORD ribbon. `play_stinger(&"finish")`, `&"record"`. Buttons: Retry (`request_restart`), Next map (`request_start(next, time_trial)`, liaison maps skipped), Menu (`request_menu`). A campaign stage (`result.campaign`) adds a "Rally standing" row and swaps the buttons for Continue (`request_campaign_continue`, focused), Retry stage, Quit to title. |
+| `race_finished(result)` | FINISH 完走 slam, time count-up, results card, medal hanko stamp, NEW RECORD ribbon. `play_stinger(&"finish")`, `&"record"`. Buttons: Retry (`request_restart`), Next map (`request_start(next, time_trial)`, the other stage), Menu (`request_menu`). A campaign stage (`result.campaign`) says the stage is complete, adds a "Rally standing" row and the next-stage road sign beside the card, and swaps the buttons for Continue (`request_campaign_continue`, focused), Retry stage, Quit to title (see Campaign screens). |
 | `paused_changed` | Pause menu (blurred backdrop): Resume / Restart / Settings / Main menu. In the campaign: Resume / Retry stage (stages only) / Settings / Quit to title. |
 
 The UI owns the **`pause` action** (Esc / P / gamepad Start): it calls `Game.set_paused(true)`
@@ -88,7 +88,7 @@ the kanji vermilion; the swash is the focus indicator, so the global ring skips 
 
 | Item | Does |
 |---|---|
-| 旅 Campaign | Label from `Game.campaign_status()`: "New journey", "Continue · <next leg title>" (overline "LEG n OF m"), "Replay journey" once finished. A `widgets/journey_strip.gd` under it draws the legs (stage stamps, liaison diamonds, driven / next / ahead, season tints). Press = `Game.request_campaign(fresh)`: continues an unfinished journey, otherwise starts one. |
+| 旅 Campaign | Label from `Game.campaign_status()`, counted in stages (the road between them is part of the drive): "New journey" (overline "2 STAGES"), "Continue · <next leg title>" (overline "STAGE n OF m", or "STAGE n OF m COMPLETE" when the road on is next), "Replay journey" once finished. A `widgets/journey_strip.gd` under it draws the stages as stamps joined by the road (driven / next / ahead, season tints). Press = `Game.request_campaign(fresh)`: continues an unfinished journey, otherwise starts one. |
 | Start a new journey | Only while a journey is in progress. Asks first (`widgets/confirm_dialog.gd`, focus on "Keep going", Esc = keep), then `request_campaign(true)`. |
 | 時 Time Attack | Opens the Time Attack page. |
 | 車 Garage | Opens the garage (overline shows the current car and livery). |
@@ -105,10 +105,10 @@ processing, and the intro would start seconds late (episode 2's first-run title 
 without its wordmark that way). `KineticText` runs on tweens for the same reason: every intro element
 shares one clock, so a long frame moves the wordmark exactly as far as the logo and hanko.
 
-**Time Attack** (`screens/time_attack_panel.gd`): Time Trial / Free Roam picker; Time Trial
-shows cards for the timed stages (`Game.stage_maps()`), Free Roam every map including the
-liaison road `natsu` (cards slide in and out of the row as the mode changes). A card calls
-`Game.request_start(map_id, mode)`.
+**Time Attack** (`screens/time_attack_panel.gd`): Time Trial / Free Roam picker over one card
+per stage of the world (`Game.MAPS`: Hanami, Momiji; the liaison is the road between them, not
+a level). A card calls `Game.request_start(map_id, mode)`: a time trial drives that stage's loop
+with the branch gates closed, free roam starts on the same grid with every gate open.
 
 **Map cards** (`widgets/map_card.gd`): the map's top-down render
 (`assets/ui/maps/<id>_top.png`, rounded top corners, `shaders/ui/map_image.gdshader`) with
@@ -116,41 +116,86 @@ liaison road `natsu` (cards slide in and out of the row as the mode changes). A 
 / dirt), start and finish flags, checkpoint dots, and a legend chip with the length and the
 surfaces. On focus the card lifts, the map zooms, the route redraws itself along its length
 (0.9 s, out-expo) and a small car marker loops along it. Best time and medal sit in the
-footer (liaison roads: "Open road · no clock"). The card draws its own focus outline as a
+footer. The card draws its own focus outline as a
 child of the lifted layer (same transform and corner radius, so no offset or lag during lift
 and parallax) and sets `no_focus_ring`. A card without art shows a flat season-tinted panel.
 
-**Garage** (`screens/garage_panel.gd`): a washi card on the left with
-`widgets/car_selector.gd` (Game.CARS name, kanji, tagline, spec, animated stat bars for speed,
-acceleration, grip, drift; left / right or the arrows switch) and `widgets/livery_picker.gd`
-(paint-chip cards: an ink-edged brush stroke of the body colour over the stripe colour, the
-livery's name and kanji; left / right or click). Only cars whose scene exists in the project are
-listed. Choices save at once (`car_id`, `car_color`). Opening and closing the garage hides the
-camera cut under a short ink wipe.
+**Garage** (`screens/garage_panel.gd`): a washi card on the left with `widgets/car_info.gd`
+(the chosen car's Game.CARS name, kanji, tagline, spec and animated stat bars for speed,
+acceleration, grip, drift), `widgets/livery_picker.gd` (paint-chip cards: an ink-edged brush
+stroke of the body colour over the stripe colour, the livery's name and kanji; left / right or
+click) and Back in the header; across the bottom of the screen the car strip,
+`widgets/car_selector.gd`: a card per car (thumbnail, name, kanji), fixed layout centred on the
+bottom edge, so nothing moves with the length of a name. Left / right (keys, d-pad, stick) or a
+click picks; the chosen card lifts with a hanko tick and, while the strip has focus, carries the
+sakura outline (`no_focus_ring`, like the livery chips). Focus: the strip on entry, Up the
+livery picker, Up again Back. Only cars whose scene exists in the project are listed. Choices
+save at once (`car_id`, `car_color`); a car chosen elsewhere syncs onto the strip. Opening and
+closing the garage hides the camera cut under a short ink wipe.
+
+Strip thumbnails: `tools/build/car_thumbs.gd` renders every car scene offscreen on a transparent
+background (front three-quarter view, CarLook's cel materials, the first livery, 2x and
+downsampled, cropped to a shared ground line) into `assets/ui/cars/<id>.png` (464 x 224). Re-run
+it (then `--import`) when a car model or a new car lands:
+
+```
+timeout 300 nice -n 5 $S --summer-offscreen --audio-driver Dummy --disable-crash-handler --path . -s res://tools/build/car_thumbs.gd
+```
+
+A car without a thumbnail shows its kanji on the card instead.
+
+**The garage place** (`scripts/game/garage_set.gd`): the Sakura Rally service workshop on the
+village side of the Hanami start straight, before the start line. Mapgen carries the map spec's
+`GARAGE` entry (`tools/mapgen/maps/hanami.py`, layout in `tools/mapgen/lib/garage.py`) into
+`map.json` `garage` (`pos`, `yaw`: the display spot on a paved drive-through lay-by joined to the
+road; `workshop`, `lot`, `keep_out`), flattens a pad under the workshop and keeps props out;
+`MapWorld.garage` is the display-spot transform and MapWorld adds a `GarageSet` there. It builds
+the open-front workshop (`garage_workshop`: red tin roof, さくら整備 kanban, tool wall and
+workbench, roll cab, tyre rack, drums, hanging lamps and chochin, props from
+`tools/blender/props/garage.py`), warm OmniLights on the lamp and lantern markers (fading out past
+70 m), service nobori and tyre piles along the lay-by, and colliders for walls, posts and
+furniture. Sakura, stone lanterns, a lantern string, a bench and a vending machine stand around
+it (the entry's `dressing`). It stands in the world for every drive past it too.
 
 **Menu car** (`scripts/game/menu_stage.gd`, created by Main): spawns the selected car and
 livery for the menu. In `"title"` / `"time_attack"` it laps under the autopilot with the cine
-flyover; in `"garage"` it parks on the map's start grid (autopilot off, brakes held) while
-`CineCamera.start_garage()` orbits it low and slow, off-centre to the right of the panel
-(it swings through the widest arc clear of props and terrain, and backs off on narrow screens
-so the car fits). A livery pick in the garage paints the new colour over the body with a brush
-front from nose to tail (`shaders/ui/paint_sweep.gdshader`, 0.8 s, ink line on the front); a car
-pick drops the other car onto the grid. Outside the garage both apply at once, so the flyover
-always shows the chosen car and livery. After a liaison or a Free Roam on an open road
+flyover; in `"garage"` it stands on the garage's display spot, placed with `Car.place_at_rest`
+(nothing drops or settles; autopilot off, brakes held) while `CineCamera.start_garage(car, spot)`
+orbits the spot low and slow on its open (road) side with the workshop behind the car,
+off-centre to the right of the panel. The orbit opens on a wider establishing view that eases
+in, swings through the widest arc of that side clear of props and terrain, and backs off on
+narrow screens so the car fits. A livery pick paints the new colour over the body with a brush
+front from nose to tail (`shaders/ui/paint_sweep.gdshader`, 0.8 s, ink line on the front).
+
+A car pick in the garage is a drive-off / drive-in (`scripts/game/garage_driver.gd`, pure
+pursuit on a polyline with a constant-deceleration stop): the old car leaves Main (MenuStage
+owns it and its CarFX from then on), pulls out of the lay-by's far end into the left lane and
+speeds away down the road under its own engine; the new car starts 52 m back up the road, comes
+along the lane, turns into the lay-by and stops on the display spot (about 7 s; measured within
+5 cm along, 7 cm across, 3° of heading), then the brakes hold. The camera backs off
+(`garage_wide`) and turns its head after the leaving car, then the arriving one
+(`garage_follow`). Fast re-picks stay clean: every pick sends Main's current car off (arriving
+or parked) and brings the new one in; cars on the apron ignore each other's collisions; at most
+3 cars drive off at once (the oldest goes) and each is freed at the end of its road or after
+11 s; leaving the garage or the menu ends a switch at once. Outside the garage both picks apply
+at once, so the flyover always shows the chosen car and livery. A map without a garage parks
+on its start grid and swaps cars in place. After a liaison or a Free Roam on an open road
 (`MapWorld.closed == false`) Main loads the menu map under the ink instead: the flyover
 autopilot needs a closed loop.
 
 ### Top-down card art
 
-`tools/build/capture_topdown.gd` loads each map like the game does, turns off fog, clouds and
-petals, and renders it straight down with an orthographic camera framed on the route bounds
-plus a margin at the card's aspect, in the game's toon + ink look, at 3x and downsampled. It
-writes `assets/ui/maps/<id>_top.png` (904 x 520) and `<id>_route.json` (format in
-`docs/CONTRACTS.md`, route points every 8 m). Windowed only (headless has no pixels); re-run it
-whenever a map's layout changes:
+`tools/build/capture_topdown.gd` builds the world once, then per stage route selects it, turns
+off fog, clouds and petals, and renders it straight down with an orthographic camera framed on
+the route bounds plus a margin at the card's aspect, in the game's toon + ink look and that
+stage's season (the world's look follows the camera), at 3x and downsampled. It writes
+`assets/ui/maps/<id>_top.png` (904 x 520) and `<id>_route.json` (format in
+`docs/CONTRACTS.md`, route points every 8 m). It needs pixels (offscreen or a window; headless
+has none); re-run it whenever the world's layout changes:
 
 ```
-timeout 300 $S --disable-crash-handler --path . -s res://tools/build/capture_topdown.gd -- hanami momiji natsu
+timeout 300 $S --summer-offscreen --audio-driver Dummy --disable-crash-handler --path . \
+    -s res://tools/build/capture_topdown.gd -- hanami momiji
 timeout 400 $S --headless --disable-crash-handler --path . --import
 ```
 
@@ -171,20 +216,26 @@ done
 
 ## Campaign screens
 
-The campaign (`Game.CAMPAIGN`, docs/CONTRACTS.md "Session and campaign") adds four screens,
-switched by the UI root from `Game.state` like the rest:
+The campaign (`Game.CAMPAIGN`: SS1 Hanami, L1 the road on, SS2 Momiji; docs/CONTRACTS.md
+"Campaign in one world") is one continuous drive through the world with no cover or loading
+between legs. The UI root switches its screens from `Game.state` like the rest:
 
 | State / event | Screen |
 |---|---|
-| `JOURNEY` | **Journey map** (`screens/journey_map.gd`, `shaders/ui/journey_map.gdshader`): a painted washi map of the rally, spring greens through a summer bay to autumn maples, with the legs as hanko seals (春 夏 秋) on a dotted road from the start flag to the goal. It is the campaign's loading screen: the map washes in, the road is inked on at 12 fps, a leg just finished gets its seal slammed down (medal colour, time under it; ARRIVED on a liaison) with a petal burst, and the player's car (in its livery) drives to the next leg while that leg's map loads behind it. The right-hand card names the next leg (kicker, brush title, gold / best, "untimed" for a liaison) with a spinner and a loading line. Main awaits `ui.journey.travel_done` before covering the screen again. |
-| `INTRO` (campaign) | The race intro card gets a kicker line: "SS1 · SPECIAL STAGE 1 OF 2", "L1 · LIAISON → MOMIJI VALLEY"; a liaison shows the distance to go instead of the best time. |
-| `LIAISON` | **Liaison HUD** (`screens/liaison_hud.gd`): no timer. Top-left a blue Japanese road-direction sign to the next stage (brush name, distance left, a strip map of the road with the car dot and the time-control flag); bottom-right a small paper speed / gear card. Notices use the same centre pill as the race HUD. |
-| `ARRIVED` | **Arrival card** (`screens/arrival_card.gd`): ARRIVED over an indigo brush swash with 到着 painted beneath, the destination and the next stage slide in and a time-control seal is stamped (`play_stinger(&"arrived")`). Main has already taken the car over within braking distance of the time control (notice "Time control ahead"); it rolls to rest there under a roadside shot, then the journey map follows. |
-| `campaign_finished(summary)`, `FINALE` | **Finale** (`screens/campaign_finale.gd`), over a flyover of the last map: the rally classification (you and the rivals of `Game.RIVALS`, per-stage times with medal seals, total and gap) lands row by row from last place up on 12 fps steps, your row washed in sakura, then your position seal is stamped (`play_stinger(&"campaign_complete")`). Continue (or Esc) sinks the scene into ink for the end card: 完 painted large, SAKURA RALLY, the legs, the rivals, "Thanks for driving.", and Back to title (`request_menu`); the title then shows the campaign as finished (Replay). |
+| `race_finished` (campaign stage) | **Results** say the stage is complete (kicker "SS1 · STAGE COMPLETE": time, medal, rally standing) while the car rolls to rest at the stage's finish stop behind them. A blue road sign swings in beside the card with what comes next: "NEXT · SS2", 紅葉谷 Momiji Valley, "Drive on: the road is open." and the road distance to it; after the last stage "NEXT · THE FINALE". Continue (focused) hides the card at once: the branch gate opens in view over the resting car, then the drive goes on from where the car stopped. |
+| `INTRO` (campaign) | The race intro is the stage's **start card**: kicker "SS1 · SPECIAL STAGE 1 OF 2", the stage name, gold / best. SS2's plays on the spot at Momiji's grid right after the arrival, then the countdown. A liaison resumed from the title gets "DRIVE ON → SS2 START" and the destination's name with the distance to go. |
+| `LIAISON` | **Liaison HUD** (`screens/liaison_hud.gd`): no timer, no leg code. Top-left a blue Japanese road-direction sign to the next stage's place (紅葉谷 Momiji Valley, "SS2 START", distance left, a strip map of the road with the car dot and the start flag); bottom-right a small paper speed / gear card. Notices use the same centre pill as the race HUD. |
+| `ARRIVED` | **Arrival card** (`screens/arrival_card.gd`): ARRIVED over an indigo brush swash with 到着 painted beneath, the destination and "SS2 GRID · THE STAGE STARTS HERE" slide in and a seal with the stage code is stamped (`play_stinger(&"arrived")`). Main has already taken the car over within braking distance of the grid (notice "SS2 start ahead"); it rolls to rest there under a roadside shot, then the stage's start card follows. |
+| `campaign_finished(summary)`, `FINALE` | **Finale** (`screens/campaign_finale.gd`), over a flyover of the Momiji loop: the rally classification (you and the rivals of `Game.RIVALS`, per-stage times with medal seals, total and gap) lands row by row from last place up on 12 fps steps, your row washed in sakura, then your position seal is stamped (`play_stinger(&"campaign_complete")`). Continue (or Esc) sinks the scene into ink for the end card: 完 painted large, SAKURA RALLY, the stages, the rivals, "Thanks for driving.", and Back to title (`request_menu`); the title then shows the campaign as finished (Replay). |
 
-Tools: `tools/game/flows.gd -- flow=campaign` drives the whole campaign with checks
-(headless or windowed; windowed saves a frame of every campaign screen to `out`), and
-`tools/game/playthrough.gd -- mode=campaign` is the screenshot / FPS / audio-recording tour.
+The title's Campaign item shows the progress as stages (`widgets/journey_strip.gd`: a stamp per
+stage joined by the road, driven / next / ahead) and resumes at the saved leg: SS1 on Hanami's
+grid, the road on from Hanami's finish stop with the gate open, SS2 on Momiji's grid.
+
+Tools: `tools/game/flows.gd -- flow=campaign` drives the whole campaign with checks (no LOADING
+between the stages, the car's pose across Continue, the gate, the arrival at rest, resume at
+every leg; headless or offscreen, offscreen saves a frame of every campaign screen to `out`),
+and `tools/game/playthrough.gd -- mode=campaign` is the screenshot / FPS / audio-recording tour.
 
 ## Input
 
@@ -229,8 +280,9 @@ sheets `docs/renders/ui_anim_<name>_<aspect>.png` (frames left-to-right, top-to-
 - `scripts/ui/ui_motion.gd` - easing curves (expo, back, spring, 12-fps stepping) and tween helpers; all UI motion ignores `Engine.time_scale` and runs while paused.
 - `scripts/ui/ui_api.gd` - `Game` / `Sound` access by node path (also works from `-s` tool scripts).
 - `scripts/ui/screens/` - `title_screen` (hub), `time_attack_panel`, `garage_panel`, `settings_panel`, `transition_layer`, `race_intro`, `hud`, `results_screen`, `pause_menu`.
-- `scripts/ui/widgets/` - `paper_card` (frosted washi card), `brush_kanji` (+ `kanji_strokes` stroke-order data), `kinetic_text`, `hanko`, `petal_field`, `hub_item`, `journey_strip`, `confirm_dialog`, `map_card`, `route_overlay`, `car_selector`, `livery_picker`, `segmented`, `paper_slider`, `ink_button`, `focus_ring`, `key_hints`, `tachometer`, `stage_progress`, `sakura_spinner`, `shader_rect`.
-- `scripts/game/menu_stage.gd` - the menu car (flyover / garage parking, livery sweep, car switch).
+- `scripts/ui/widgets/` - `paper_card` (frosted washi card), `brush_kanji` (+ `kanji_strokes` stroke-order data), `kinetic_text`, `hanko`, `petal_field`, `hub_item`, `journey_strip`, `confirm_dialog`, `map_card`, `route_overlay`, `car_selector` (the garage car strip), `car_info`, `livery_picker`, `segmented`, `paper_slider`, `ink_button`, `focus_ring`, `key_hints`, `tachometer`, `stage_progress`, `sakura_spinner`, `shader_rect`.
+- `scripts/game/menu_stage.gd` - the menu car (flyover / garage parking, livery sweep, drive-off / drive-in car switch); `garage_set.gd` - the workshop by the Hanami start straight (built from `map.json` `garage`); `garage_driver.gd` - the switch cars' scripted drive.
+- `assets/ui/cars/` - car strip thumbnails (`tools/build/car_thumbs.gd`).
 - `shaders/ui/` - `paper_card`, `brush_reveal` (stroke-order kanji), `brush_band` (paint swash), `ink_wipe` (transitions), `ink_splash` (GO!), `hanko`, `map_image` (card art), `paint_sweep` (garage livery change, 3D), `painted_scene` (preview backdrop), `backdrop_blur`, shared `ui_common.gdshaderinc`.
 - `assets/ui/maps/` - top-down card art and route data per map (`tools/build/capture_topdown.gd`).
 - `tools/ui/menu_tour.gd` - real-game title hub / garage tour (above).
@@ -239,7 +291,7 @@ sheets `docs/renders/ui_anim_<name>_<aspect>.png` (frames left-to-right, top-to-
 - `tools/ui/subset_fonts.py` - re-subsets the fonts; run after adding new Japanese text
   (it scans `scripts/` and `scenes/` for kana/kanji): `tools/ui/.venv/bin/python tools/ui/subset_fonts.py`
   (venv: `uv venv tools/ui/.venv && uv pip install --python tools/ui/.venv/bin/python fonttools brotli`).
-- Campaign: `scripts/ui/screens/journey_map.gd`, `liaison_hud.gd`, `arrival_card.gd`, `campaign_finale.gd`; `shaders/ui/journey_map.gdshader`.
+- Campaign: `scripts/ui/screens/liaison_hud.gd`, `arrival_card.gd`, `campaign_finale.gd`; the results' next-stage sign lives in `results_screen.gd`.
 
 ## Fonts and rendering notes
 

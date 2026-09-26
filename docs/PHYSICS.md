@@ -16,13 +16,14 @@ A custom rally car on a plain `RigidBody3D` (Jolt, 120 Hz, physics interpolation
 | `scripts/vehicle/car_visuals.gd` | `CarVisuals`: wheel spin/steer/travel, calipers, body lean, livery |
 | `scripts/vehicle/car_placeholder.gd` | `CarPlaceholder`: code-built low-poly hatchback used when the GLB is missing |
 | `scripts/vehicle/autopilot.gd` | `Autopilot`: AI driver along a Curve3D racing line |
-| `scripts/camera/chase_camera.gd` | `ChaseCamera`: chase / chase_far / hood / bumper camera with shake |
+| `scripts/camera/chase_camera.gd` | `ChaseCamera`: chase / chase_far / hood / bumper camera with shake; the chase rigs pitch with the road |
 | `scenes/test/physics_test.tscn` + `tools/physics/test_ground.gd` | Proving ground |
 | `tools/physics/run_tests.gd` | Headless telemetry suite (below) |
 | `tools/physics/keyboard_bot.gd` + `key_taps.gd` | Keyboard proxy driver: the autopilot's line and speed profile played on digital keys through the InputMap |
-| `tools/physics/map_lap_runner.gd` / `map_drive.gd` | Timed laps of the real maps (tests; windowed camera check) |
+| `tools/physics/map_lap_runner.gd` / `map_drive.gd` | Timed runs of the world's routes (tests; offscreen camera check, frames along a route, frame rates per quality preset) |
 | `tools/physics/before_after.gd` | Self-contained keyboard scenario that runs on ep1 and ep2 (numbers below) |
 | `tools/physics/capture.gd` | Windowed screenshot / frame-strip capture into `docs/renders/` |
+| `tools/physics/camera_probe.gd` | Road-ahead visibility of the level vs the slope-following chase camera on descents and flats of a map, before/after contact sheets (camera section) |
 
 
 ## Model
@@ -316,10 +317,65 @@ terrain/walls. Trauma shake (`shake(amount)`, decays) from impacts and landings,
 roughness × speed. Modes `chase`, `chase_far`, `hood`, `bumper`: cycled with `camera_next` and
 saved via `Game.set_setting("camera", mode)` when `player_camera` is true. `snap()` after teleports.
 
-The chase camera itself is unchanged in episode 2. Checked with windowed keyboard-bot laps of both
-maps (`tools/physics/map_drive.gd`, Hanami 114.4 s, Momiji 100.8 s, max slip 8-10°) and the
-gravel handbrake slide capture (`docs/renders/physics_slide_gravel.png`, `tools/physics/capture.gd -- only=slide`): the view swings out
-with the slide and keeps the car framed.
+**Slope follow (episode 3).** Vel: "when you drive downhill you can't see anything with the default
+camera: the car blocks the whole road." The level rig sat 1.75 m above the car's origin (its
+ground), 5.4 m + speed behind, with the Sakura's roof at 1.57 m: on a flat road the roof line is
+only ~2° below the horizon, so the road from ~10 m to ~40 m ahead already hides behind the car.
+Downhill the road drops under that line and disappears. Now the `chase` and `chase_far` rigs turn
+about the heading's right axis by the followed grade: the offset (`-fwd * dist + up * height`) and
+the look target (`up * look_height + fwd * look_ahead`) use the pitched axes, the up vector stays
+world up (no roll). A steady grade then frames like a flat road; `slope_descent_gain` 1.5 follows
+descents 1.5× over so the road ahead shows above the roof with margin. The followed grade is
+the steeper of the road's slope at the car (chord ±6 m) and its steepest drop to 6, 12, 18, 26
+and 36 m ahead, so a crest lifts the camera before the car tips over it. Grades within
+`slope_deadband` (1.5 %) of level count as level (flats keep the ep2 framing); uphill follows
+`slope_uphill_follow` 0.5 of the grade capped at `slope_max_up` 8 % (≤ 4.6°, the rising road
+is visible anyway, so it never looks at the sky); downhill is capped at `slope_max_down` 0.4. A
+critically damped follow (`slope_smooth_time` 0.45 s) gives ramps without steps. Terrain
+avoidance (sphere cast, 0.5 m ground clearance) runs on the pitched position as before;
+`slope_follow` 0 restores the level rig exactly (`camera_probe`'s "before" camera).
+
+Source of the slope: **road look-ahead**, not the velocity. The car's velocity or pitch only
+knows the slope under the car: it cannot anticipate a crest (the moment the road vanishes) and it
+moves with every bump, jump and landing (the view would nod in the air). The road profile is
+static, sampled every 2 m and smooth, reaches ahead, and ignores what the car does. `Track` has
+no slope API, so the camera reads heights with `position_at_abs(s ± d)` around
+`nearest(car, hint)` (windowed like RaceSession). The road is `ChaseCamera.road` if set, else
+`Game.session.track`. It is weighted by how close the car is to it (full within 1 m beyond the
+edge, none beyond 8 m), how well the heading lines up with it (|cos| 0.35 → 0.7; driving the wrong
+way reads the road backwards) and the height difference (3-6 m, e.g. under a bridge); the rest
+comes from the car's own pitch along the heading, low-passed at 1.5/s while three or more wheels
+touch and easing back to level at the same rate in the air (a kicker's pitch is not the slope it
+lands on). Off the road, in the garage or on the proving ground (no session) the camera follows
+that low-passed pitch.
+
+**Measured** with `tools/physics/camera_probe.gd` (autopilot lap, Sakura unless noted; a level
+and a slope camera on the same car; the road centreline 10-60 m ahead, every 5 m, projected into
+each camera; visible = inside the frame and not inside the 2D hull of the car's projected mesh
+hulls; blind frame = less than half of those points visible). Descents: the road 40 m ahead
+more than 4 % below; flats: within 1.5 % at the car and ahead.
+
+| Map | descent visible, level → slope | blind frames | flat visible, level → slope | Hayate descent visible |
+|---|---|---|---|---|
+| Hanami (42 s of descents) | 56.7 % → 95.5 % | 38.4 % → 1.0 % | 65.5 % → 67.6 % | 84.3 % → 99.5 % |
+| Momiji (23 s) | 55.1 % → 97.3 % | 33.4 % → 1.6 % | 76.2 % → 79.6 % | 86.3 % → 99.8 % |
+| Natsu (34 s) | 61.8 % → 91.7 % | 23.5 % → 2.0 % | 47.3 % → 50.3 % | 91.3 % → 99.8 % |
+
+Every point stays inside the frame (100 %). The remaining blind frames on Hanami are one crest
+taken at 154 km/h where the car leaves the ground (0.4 s). The flats barely move (the deadband);
+Momiji's flat blind frames drop 16.6 → 4.0 % because the crest after a flat already counts. The
+Natsu run stops at the 300 s limit (the open road has no finish line for the lap runner). Camera
+pitch rate p95 goes from 1.5 to 2.4-3.5 °/s, peaks 8-10 °/s on the steepest crests (level rig
+4.3 °/s, from the launch); the pitch acceleration RMS (shake and rumble included) is unchanged
+(36 / 49 / 10 °/s²). Contact sheets of the steepest descents (level left, slope right, points
+green / red behind the car / yellow behind terrain): `/tmp/ep3/camera/<map>_descents.png` from an
+offscreen run.
+
+The other proofs were re-rendered after the change (`capture.gd -- only=corner,slide,jump,modes`:
+`docs/renders/physics_corner_0`, `physics_slide_gravel*`, `physics_jump_*`, `physics_cam_*`) and
+compared with the same shots rendered with `slope_follow = 0`: on the flat proving ground the
+corner, slide and camera-mode frames are identical; in the chase frame of the kicker jump the car
+sits a few pixels higher (the car's pitch off the ramp, low-passed, then easing to level in the air).
 
 ## Proving ground (`scenes/test/physics_test.tscn`)
 Flat 2.4 km grass plane (meta `surface = grass`, group `track`) with: 900 m tarmac and gravel
@@ -476,7 +532,7 @@ is the chase view 0.25 s into a 25° guardrail hit at 110 km/h: the car runs alo
 ```
 S=/Applications/Summer.app/Contents/MacOS/Summer
 timeout 2400 $S --headless --disable-crash-handler --fixed-fps 120 --path . -s res://tools/physics/run_tests.gd
-# -- car=sakura|hayate|all  only=<groups in _run_car()>,maps  maps=hanami,momiji  soak=300
+# -- car=sakura|hayate|all  only=<groups in _run_car()>,maps  maps=hanami,momiji,liaison  soak=300
 ```
 
 Every test except the straight-line braking tests and the skidpads drives through the real
@@ -486,8 +542,11 @@ under "Crashes and walls". The skidpad measures lateral g
 from the turn rate of the velocity itself, not the body's yaw rate (which also counts changes of
 body slip while the car slides in or out of the circle). "panic steer" reports max body slip /
 time until the slip is below 3° after the key is released, for throttle held, lifted and full brake.
-The `maps` group runs one lap per car and map with the analog autopilot and with the keyboard bot,
-and prints the medal times the analog laps imply.
+The `maps` group builds the world once (and records its build time), runs each route per car with
+the analog autopilot and with the keyboard bot (the stage laps, and the liaison from Hanami's
+finish stop through the opened gates to Momiji's grid), prints the medal times the analog stage
+laps imply, and checks the closed-road gates: a car driven at a closed gate at 60 km/h is stopped
+by it, and drives through once it is open.
 
 Latest results (2026-09-26, Apple M1 Max, headless, both cars): **120/120 PASS**.
 

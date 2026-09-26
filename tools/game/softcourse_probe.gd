@@ -13,6 +13,8 @@ extends SceneTree
 ## and 10th smash, the first upright hit and the first gate pass (FRAMES lines), and fails on
 ## a compilation, node or resource created at hit time or a frame over 25 ms there.
 ##
+## `map` is a route of the world (hanami, momiji, liaison); the passes run along that route.
+##
 ##   timeout 300 $S --headless --disable-crash-handler --path . -s res://tools/game/softcourse_probe.gd \
 ##       -- map=hanami car=sakura
 ##   timeout 300 $S --audio-driver Dummy --disable-crash-handler --path . -s res://tools/game/softcourse_probe.gd
@@ -262,9 +264,9 @@ func _run() -> void:
 		var gate: Node = null
 		if soft != null:
 			for c in map.checkpoints:
-				if soft.gate_for_checkpoint(int(c["index"])) != null:
+				if soft.gate_near(c["position"]) != null:
 					cp = c
-					gate = soft.gate_for_checkpoint(int(c["index"]))
+					gate = soft.gate_near(c["position"])
 					break
 		var cs := map.track.dist(map.track.nearest(cp["position"]))
 		var billowed := [false]
@@ -497,7 +499,7 @@ func _pass(label: String, s_from: float, s_to: float, lat: float, each_tick: Cal
 	return result
 
 
-## Mapgen direction boards (natsu): straight into the first one, from 30 m in front of it.
+## Mapgen direction boards (along the liaison road): straight into the first one, from 30 m in front of it.
 func _sign_pass() -> void:
 	var sign_id := -1
 	for id in soft.smashable_count():

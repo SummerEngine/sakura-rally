@@ -1,6 +1,7 @@
 extends Control
-## Calm HUD of a campaign liaison (Game.State.LIAISON): no timer. Top-left, a blue Japanese
-## road direction sign to the next stage with the distance left and a strip map of the road;
+## Calm HUD of the campaign's liaison drive (Game.State.LIAISON): no timer, no leg code. Top-left,
+## a blue Japanese road direction sign to the next stage's place (紅葉谷 Momiji Valley) with the
+## distance left to its grid and a strip map of the road;
 ## bottom-right, a small paper speed readout; centre, the same notice pill as the race HUD.
 ## Reads Game.player_car / Game.session (distance_left, progress) every frame.
 
@@ -124,7 +125,7 @@ func _build_sign() -> void:
 	_dist_unit = UITheme.make_label("km", UITheme.FONT_UI_BLACK, 18, Color(1, 1, 1, 0.85))
 	_dist_unit.size_flags_vertical = Control.SIZE_SHRINK_END
 	drow.add_child(_dist_unit)
-	# Strip map: the road from start to arrival with the car on it.
+	# Strip map: the road from the last finish to the next grid with the car on it.
 	_strip.custom_minimum_size = Vector2(0, 26)
 	_strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_strip.draw.connect(_draw_strip)
@@ -188,14 +189,13 @@ func _build_notice() -> void:
 
 # ---------------------------------------------------------------- lifecycle
 
-## Configure for the liaison leg (Game.campaign_current_leg()) heading to the leg after it.
+## Configure for the liaison (Game.campaign_leg) heading to the stage after it.
 func setup() -> void:
 	var game := UIApi.game()
 	var legs: Array = game.CAMPAIGN
 	var i: int = game.campaign_leg
-	var leg: Dictionary = legs[clampi(i, 0, legs.size() - 1)]
-	var dest: Dictionary = legs[mini(i + 1, legs.size() - 1)]
-	_code.text = "%s  ·  %s  ·  NEXT %s" % [leg["code"], str(leg["title"]).to_upper(), dest["code"]]
+	var dest: Dictionary = legs[clampi(i + 1, 0, legs.size() - 1)]
+	_code.text = "%s START" % dest["code"]
 	_dest_jp.text = str(dest["title_jp"])
 	_dest.text = str(dest["title"])
 	_last_dist_text = ""
@@ -307,7 +307,7 @@ func _draw_strip() -> void:
 	_strip.draw_line(Vector2(x0, y), Vector2(x1, y), Color(1, 1, 1, 0.35), 3.0, true)
 	_strip.draw_line(Vector2(x0, y), Vector2(x, y), white, 4.0, true)
 	_strip.draw_circle(Vector2(x0, y), 4.0, white)
-	# Time-control flag at the end.
+	# The next stage's start flag at the end.
 	_strip.draw_line(Vector2(x1, y), Vector2(x1, y - 16.0), white, 2.0, true)
 	_strip.draw_colored_polygon(PackedVector2Array([Vector2(x1, y - 16.0), Vector2(x1 + 11.0, y - 12.0), Vector2(x1, y - 8.0)]), UITheme.GOLD)
 	_strip.draw_circle(Vector2(x, y), 7.0, UITheme.GOLD)

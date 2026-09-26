@@ -1,8 +1,8 @@
 extends CanvasLayer
 ## The whole UI layer (scenes/ui/ui_root.tscn). The Main scene instantiates it once; it
 ## follows the Game autoload (state_changed, session_started, countdown_tick,
-## checkpoint_passed, race_finished, paused_changed, notice, campaign_finished) and switches
-## screens itself.
+## checkpoint_passed, race_finished, paused_changed, notice, campaign_continue_requested,
+## campaign_finished) and switches screens itself.
 ##
 ## API for Main (see docs/UI.md):
 ##   await ui.transition_out(map_id)  # ink covers the screen; load / unload behind it
@@ -21,7 +21,6 @@ const Hud := preload("res://scripts/ui/screens/hud.gd")
 const ResultsScreen := preload("res://scripts/ui/screens/results_screen.gd")
 const PauseMenu := preload("res://scripts/ui/screens/pause_menu.gd")
 const TransitionLayer := preload("res://scripts/ui/screens/transition_layer.gd")
-const JourneyMap := preload("res://scripts/ui/screens/journey_map.gd")
 const LiaisonHud := preload("res://scripts/ui/screens/liaison_hud.gd")
 const ArrivalCard := preload("res://scripts/ui/screens/arrival_card.gd")
 const CampaignFinale := preload("res://scripts/ui/screens/campaign_finale.gd")
@@ -36,7 +35,6 @@ var hud: Hud
 var results: ResultsScreen
 var pause_menu: PauseMenu
 var transition: TransitionLayer
-var journey: JourneyMap
 var liaison_hud: LiaisonHud
 var arrival: ArrivalCard
 var finale: CampaignFinale
@@ -64,10 +62,9 @@ func _ready() -> void:
 	results = ResultsScreen.new()
 	finale = CampaignFinale.new()
 	title = TitleScreen.new()
-	journey = JourneyMap.new()
 	pause_menu = PauseMenu.new()
 	settings = SettingsPanel.new()
-	for c: Control in [hud, liaison_hud, race_intro, arrival, results, finale, title, journey, pause_menu, settings]:
+	for c: Control in [hud, liaison_hud, race_intro, arrival, results, finale, title, pause_menu, settings]:
 		_root.add_child(c)
 	_root.add_child(FocusRing.new())
 	transition = TransitionLayer.new()
@@ -77,7 +74,6 @@ func _ready() -> void:
 	title.settings_requested.connect(settings.open)
 	title.shake_requested.connect(shake)
 	results.shake_requested.connect(shake)
-	journey.shake_requested.connect(shake)
 	arrival.shake_requested.connect(shake)
 	finale.shake_requested.connect(shake)
 	pause_menu.settings_requested.connect(settings.open)
@@ -92,6 +88,8 @@ func _ready() -> void:
 	game.paused_changed.connect(_on_paused_changed)
 	game.notice.connect(_on_notice)
 	game.campaign_finished.connect(finale.open)
+	# Results Continue: the card goes while the car drives on (no cover between legs).
+	game.campaign_continue_requested.connect(func() -> void: results.hide_result())
 	_on_state_changed(int(game.state), int(game.state))
 
 
@@ -135,7 +133,7 @@ func shake(strength: float) -> void:
 
 # ---------------------------------------------------------------- Game events
 
-func _on_state_changed(new_state: int, old_state: int) -> void:
+func _on_state_changed(new_state: int, _old_state: int) -> void:
 	var game := UIApi.game()
 	var states: Dictionary = game.State
 	var state_name := str(states.find_key(new_state))
@@ -150,23 +148,14 @@ func _on_state_changed(new_state: int, old_state: int) -> void:
 		"LOADING":
 			title.leave()
 			pause_menu.close()
-			journey.close()
 			finale.close()
-		"JOURNEY":
-			# Entered behind the ink: everything else goes at once, the map plays as it lifts.
-			title.leave(true)
-			pause_menu.close()
-			hud.hide_hud(true)
-			results.hide_result(true)
-			race_intro.reset()
-			_hide_campaign()
-			var from: String = str(states.find_key(old_state))
-			journey.open(game.campaign_status(), from == "FINISHED" or from == "ARRIVED")
 		"INTRO":
+			# Also the start card of a stage that follows the liaison on the spot.
 			title.leave(true)
 			results.hide_result(true)
 			hud.hide_hud(true)
 			liaison_hud.hide_hud(true)
+			arrival.hide_card()
 			race_intro.setup(str(game.map_id), str(game.mode))
 			race_intro.show_card()
 		"COUNTDOWN":
@@ -180,6 +169,7 @@ func _on_state_changed(new_state: int, old_state: int) -> void:
 			_show_hud()
 		"LIAISON":
 			race_intro.hide_card()
+			results.hide_result(true)
 			liaison_hud.show_hud()
 			liaison_hud.modulate.a = 1.0 if _hud_wanted else 0.0
 		"ARRIVED":
@@ -190,11 +180,10 @@ func _on_state_changed(new_state: int, old_state: int) -> void:
 		"FINALE":
 			title.leave(true)
 			results.hide_result(true)
-			journey.close()
+			hud.hide_hud(true)
 
 
 func _hide_campaign() -> void:
-	journey.close()
 	finale.close()
 	arrival.hide_card(true)
 	liaison_hud.hide_hud(true)
