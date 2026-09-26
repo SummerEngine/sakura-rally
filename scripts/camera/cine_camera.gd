@@ -2,16 +2,29 @@ class_name CineCamera
 extends Camera3D
 ## Cinematic camera for everything that is not driving: the title-screen flyover
 ## (a cycle of shots around the autopilot car), the race intro swoop that lands
-## in the chase pose, and the slow orbit behind the results card.
-##
+## in the chase pose, the slow orbit behind the results card and the garage's low
+## showroom orbit around the parked car.
 ## Follows the car's interpolated transform in _process, in real time (ignores
 ## Engine.time_scale), and keeps running while the tree is paused.
 
 signal intro_finished
 
-enum Mode { IDLE, MENU, INTRO, FINISH }
+enum Mode { IDLE, MENU, INTRO, FINISH, GARAGE }
 
 const MENU_SHOTS: Array[String] = ["tracking", "roadside", "drone", "front", "scenic", "wheel"]
+## Garage orbit: closest distance, lens height and look height above the car's origin, angular
+## speed, lens.
+const GARAGE_RADIUS := 6.4
+const GARAGE_HEIGHT := 1.15
+const GARAGE_LOOK := 0.55
+const GARAGE_SPEED := 0.11
+const GARAGE_FOV := 36.0
+## Horizontal screen position of the parked car (NDC, 0 = centre): right of the garage panel.
+const GARAGE_SCREEN_X := 0.3
+## Half the car's length plus some air: the orbit backs off until this fits between the car's
+## screen position and the right edge, so a long car seen side-on stays in frame on narrow screens.
+const GARAGE_HALF_SPAN := 2.7
+
 
 var car: Car
 var track: Track
@@ -36,6 +49,11 @@ var _smooth_fwd: Vector3 = Vector3.FORWARD
 var _lift: float = 0.0
 var _smooth_pos: Vector3 = Vector3.ZERO
 var _fresh: bool = true
+## Garage orbit: angle (car space, 0 = straight ahead of the car) and the clear arc it swings
+## through ([centre, half width]; half width >= PI = free to circle).
+var _garage_a: float = 0.0
+var _garage_arc: Vector2 = Vector2(0.0, PI)
+var _garage_t: float = 0.0
 
 
 func _ready() -> void:
@@ -88,11 +106,29 @@ func cut_to(new_car: Car, new_track: Track, shot: String, side: float, anchor_s:
 	make_current()
 
 
+## Low showroom orbit around a parked car. Circles from the front three-quarter view when the
+## ground around the car is clear, otherwise swings through the widest clear arc (props,
+## terrain, line of sight). Call again with the respawned car after a car switch; the orbit
+## carries on.
+func start_garage(new_car: Car) -> void:
+	var fresh := mode != Mode.GARAGE
+	car = new_car
+	mode = Mode.GARAGE
+	if fresh:
+		_garage_arc = _clear_arc()
+		_garage_t = 0.0
+		_fresh = true
+	make_current()
+
+
 func stop() -> void:
 	mode = Mode.IDLE
 
 
 func _process(delta: float) -> void:
+	# Only the garage frames off-centre.
+	if mode != Mode.GARAGE:
+		h_offset = 0.0
 	if car == null or not is_instance_valid(car):
 		return
 	var real_delta := delta / maxf(Engine.time_scale, 0.001)
@@ -103,6 +139,8 @@ func _process(delta: float) -> void:
 			_intro(real_delta)
 		Mode.FINISH:
 			_finish(real_delta)
+		Mode.GARAGE:
+			_garage(real_delta)
 
 
 # ------------------------------------------------------------------ intro
@@ -140,6 +178,87 @@ func _finish(delta: float) -> void:
 	global_position = _smooth_pos
 	look_at(xf.origin + Vector3.UP * 0.8, Vector3.UP)
 	fov = lerpf(fov, 48.0, 1.0 - exp(-delta * 1.5))
+
+
+# ------------------------------------------------------------------ garage orbit
+
+## Orbit angle `a` (radians, car space: 0 = ahead of the car, positive = towards its left) to a
+## world position around the parked car at `xf`.
+func _garage_pos(xf: Transform3D, a: float, radius: float) -> Vector3:
+	var b := Basis(Vector3.UP, xf.basis.get_euler().y)
+	return xf.origin + b * Vector3(-sin(a) * radius, GARAGE_HEIGHT, -cos(a) * radius)
+
+
+## Widest run of orbit angles (10° steps) whose camera spot is clear of props with a clear line
+## to the car and above the ground. Returns (centre, half width); PI when every angle is clear.
+func _clear_arc() -> Vector2:
+	var xf := car.global_transform
+	var space := get_world_3d().direct_space_state
+	var room := PhysicsShapeQueryParameters3D.new()
+	var ball := SphereShape3D.new()
+	ball.radius = 1.1
+	room.shape = ball
+	room.collision_mask = MapWorld.LAYER_PROPS
+	var steps := 36
+	var clear: Array[bool] = []
+	var target := xf.origin + Vector3.UP * GARAGE_LOOK
+	for i in steps:
+		var p := _garage_pos(xf, TAU * i / steps, _garage_radius())
+		room.transform = Transform3D(Basis.IDENTITY, p)
+		var ok := space.intersect_shape(room, 1).is_empty() and _ground(p) < p.y - 0.45
+		if ok:
+			var q := PhysicsRayQueryParameters3D.create(p, target, MapWorld.LAYER_WORLD | MapWorld.LAYER_PROPS)
+			q.exclude = [car.get_rid()]
+			ok = space.intersect_ray(q).is_empty()
+		clear.append(ok)
+	if not clear.has(false):
+		return Vector2(deg_to_rad(35.0), PI)
+	# Longest circular run of clear steps.
+	var best_start := 0
+	var best_len := 0
+	for s in steps:
+		if clear[s] and not clear[(s - 1 + steps) % steps]:
+			var n := 0
+			while n < steps and clear[(s + n) % steps]:
+				n += 1
+			if n > best_len:
+				best_len = n
+				best_start = s
+	if best_len == 0:
+		return Vector2(deg_to_rad(35.0), 0.0)
+	var step := TAU / steps
+	return Vector2((best_start + (best_len - 1) * 0.5) * step, maxf(best_len - 1, 0) * 0.5 * step)
+
+
+func _garage(delta: float) -> void:
+	_garage_t += delta
+	var xf := car.get_global_transform_interpolated()
+	var half := _garage_arc.y
+	if half >= PI:
+		_garage_a = _garage_arc.x + _garage_t * GARAGE_SPEED
+	elif half > 0.01:
+		# Swing through the clear arc, easing at its ends (peak speed GARAGE_SPEED).
+		_garage_a = _garage_arc.x + half * sin(_garage_t * GARAGE_SPEED / half)
+	else:
+		_garage_a = _garage_arc.x
+	var radius := _garage_radius()
+	var pos := _garage_pos(xf, _garage_a, radius)
+	pos.y = maxf(pos.y, _ground(pos) + 0.5)
+	global_position = pos
+	look_at(xf.origin + Vector3.UP * GARAGE_LOOK, Vector3.UP)
+	fov = GARAGE_FOV
+	# Shift the frame so the car sits right of centre, clear of the garage panel on the left.
+	h_offset = -GARAGE_SCREEN_X * _garage_half_width() * radius
+	_fresh = false
+
+
+## Half the view width per metre of distance at the garage lens.
+func _garage_half_width() -> float:
+	return tan(deg_to_rad(GARAGE_FOV) * 0.5) * get_viewport().get_visible_rect().size.aspect()
+
+
+func _garage_radius() -> float:
+	return maxf(GARAGE_RADIUS, GARAGE_HALF_SPAN / ((1.0 - GARAGE_SCREEN_X) * _garage_half_width()))
 
 
 # ------------------------------------------------------------------ menu flyover
