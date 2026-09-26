@@ -20,6 +20,9 @@ var t0 := 0
 var reached: Dictionary = {}
 var marked: Dictionary = {}
 var failures: Array[String] = []
+## A step the rest depends on failed (a state never came, the pause menu never showed): waits
+## end at once and the remaining sections are skipped, so a broken flow ends with a summary.
+var stuck := false
 
 
 func _initialize() -> void:
@@ -37,12 +40,11 @@ func _initialize() -> void:
 func _run() -> void:
 	ui = main.ui
 	await _until_state(&"MENU", 60.0)
-	await _hub()
-	await _settings_from_hub()
-	await _garage()
-	await _time_attack()
-	await _time_trial_run()
-	await _campaign()
+	for section: Callable in [_hub, _settings_from_hub, _garage, _time_attack, _time_trial_run, _campaign]:
+		if stuck:
+			_log("ABORT before %s: a step the rest depends on failed" % section.get_method())
+			break
+		await section.call()
 	_log("SUMMARY: %d failures" % failures.size())
 	for f in failures:
 		_log("  FAIL %s" % f)
@@ -213,8 +215,8 @@ func _time_trial_run() -> void:
 	# Pause menu: Restart.
 	await _seconds(0.5)
 	await _key(KEY_ESCAPE)
-	await _until(func() -> bool: return pause.is_open and _focus() == pause._resume, 2.0)
-	_check(game.paused and pause.is_open and _focus() == pause._resume, "Esc pauses, focus on Resume (%s)" % _focus_name())
+	if not await _pause_menu_up("Esc pauses"):
+		return
 	await _key(KEY_DOWN)
 	await _check_focus(pause._restart, "Down: Restart")
 	_mark()
@@ -247,8 +249,8 @@ func _time_trial_run() -> void:
 	# Pause on the gamepad: settings, main menu.
 	await _seconds(0.5)
 	await _pad(JOY_BUTTON_START)
-	await _until(func() -> bool: return pause.is_open and _focus() == pause._resume, 2.0)
-	_check(game.paused and pause.is_open, "Start pauses")
+	if not await _pause_menu_up("Start pauses"):
+		return
 	await _pad(JOY_BUTTON_DPAD_DOWN)
 	await _pad(JOY_BUTTON_DPAD_DOWN)
 	await _check_focus(pause._buttons[2], "D-pad down x2: Settings")
@@ -314,8 +316,8 @@ func _campaign() -> void:
 
 	# Quit to the title mid-liaison through the pause menu (keys).
 	await _key(KEY_ESCAPE)
-	await _until(func() -> bool: return pause.is_open and _focus() == pause._resume, 2.0)
-	_check(game.paused and pause.is_open and _focus() == pause._resume, "Esc pauses the liaison, focus on Resume (%s)" % _focus_name())
+	if not await _pause_menu_up("Esc pauses the liaison"):
+		return
 	_check(not pause._restart.visible, "liaison pause menu has no Restart")
 	await _key(KEY_DOWN)
 	await _check_focus(pause._buttons[2], "Down: Settings (Restart skipped)")
@@ -363,6 +365,8 @@ func _campaign() -> void:
 
 ## The autopilot takes the player car for the rest of the run.
 func _drive() -> void:
+	if stuck:
+		return
 	var car: Car = game.player_car
 	car.controlled_by_player = false
 	var ap := Autopilot.new()
@@ -457,8 +461,21 @@ func _seconds(s: float) -> void:
 
 func _until(cond: Callable, timeout: float) -> void:
 	var start := Time.get_ticks_msec()
-	while not cond.call() and (Time.get_ticks_msec() - start) / 1000.0 < timeout:
+	while not stuck and not cond.call() and (Time.get_ticks_msec() - start) / 1000.0 < timeout:
 		await process_frame
+
+
+## The pause menu shows (paused, visible, focus on Resume); otherwise the run is stuck.
+func _pause_menu_up(what: String) -> bool:
+	var pause: Node = ui.pause_menu
+	var up := func() -> bool: return game.paused and pause.is_open and pause.is_visible_in_tree() and _focus() == pause._resume
+	await _until(up, 2.0)
+	var ok: bool = up.call()
+	_check(ok, "%s: menu shows, focus on Resume (paused %s, open %s, visible %s, %s)"
+			% [what, game.paused, pause.is_open, pause.is_visible_in_tree(), _focus_name()])
+	if not ok:
+		stuck = true
+	return ok
 
 
 func _mark() -> void:
@@ -469,7 +486,10 @@ func _until_state(state_name: StringName, timeout: float) -> void:
 	var s: int = game.State[state_name]
 	var start := Time.get_ticks_msec()
 	while int(reached.get(s, 0)) <= int(marked.get(s, 0)):
+		if stuck:
+			return
 		if (Time.get_ticks_msec() - start) / 1000.0 > timeout:
-			_log("TIMEOUT waiting for %s (state=%s)" % [state_name, (game.State as Dictionary).find_key(game.state)])
+			_check(false, "timed out waiting for %s (state %s)" % [state_name, (game.State as Dictionary).find_key(game.state)])
+			stuck = true
 			return
 		await process_frame
