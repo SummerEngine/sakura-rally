@@ -6,8 +6,8 @@ extends SceneTree
 ## probe reports where it ends up: kept on the road by a rail (`rail`), held by the ground
 ## (`ground`: it left the road but stopped at most DROP m below it, inside the play area), or
 ## `FLYOFF` (ended more than DROP m below the road - the corner's own stretch, or the stretch it
-## came to rest beside -, fell more than DROP m in one jump, ended outside the play area, or on
-## its roof).
+## came to rest beside -, fell more than DROP m below the road's level in one jump, ended outside
+## the play area, or on its roof).
 ##
 ##   S=/Applications/Summer.app/Contents/MacOS/Summer
 ##   timeout 1800 nice -n 5 $S --headless --disable-crash-handler --fixed-fps 60 --path . \
@@ -186,14 +186,15 @@ func _miss(c: Dictionary, pose: Dictionary, kmh: float) -> Dictionary:
 				res["loss"] = maxf(res["loss"], 1.0 - car.speed_kmh / maxf(hit_kmh, 1.0))
 		air = air + DT if car.airborne_time > 0.0 else 0.0
 		res["air"] = maxf(res["air"], air)
-		# a fall: height lost between leaving the ground and landing again
+		var ref := _nearest_path(path, pos)
+		res["off"] = maxf(res["off"], ref[1])
+		# a fall: height lost below the road between leaving the ground and landing again (a car
+		# that ran up a bank and jumps off its crest back down to the road's level has not fallen)
 		if car.airborne_time > 0.0 and is_nan(take_off_y):
-			take_off_y = pos.y
+			take_off_y = minf(pos.y, ref[0])
 		elif car.airborne_time <= 0.0 and not is_nan(take_off_y):
 			res["fall"] = maxf(res["fall"], take_off_y - pos.y)
 			take_off_y = NAN
-		var ref := _nearest_path(path, pos)
-		res["off"] = maxf(res["off"], ref[1])
 		if opts["trace"] != "" and int(t / DT) % 15 == 0:
 			var ti := track.nearest(pos)
 			print("  TRACE t=%.2f s=%.0f lat=%.1f pos=(%.0f, %.1f, %.0f) kmh=%.0f drop=%.1f rail=%s air=%.2f" % [
