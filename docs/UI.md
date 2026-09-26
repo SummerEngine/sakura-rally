@@ -120,23 +120,66 @@ footer (liaison roads: "Open road · no clock"). The card draws its own focus ou
 child of the lifted layer (same transform and corner radius, so no offset or lag during lift
 and parallax) and sets `no_focus_ring`. A card without art shows a flat season-tinted panel.
 
-**Garage** (`screens/garage_panel.gd`): a washi card on the left with
-`widgets/car_selector.gd` (Game.CARS name, kanji, tagline, spec, animated stat bars for speed,
-acceleration, grip, drift; left / right or the arrows switch) and `widgets/livery_picker.gd`
-(paint-chip cards: an ink-edged brush stroke of the body colour over the stripe colour, the
-livery's name and kanji; left / right or click). Only cars whose scene exists in the project are
-listed. Choices save at once (`car_id`, `car_color`). Opening and closing the garage hides the
-camera cut under a short ink wipe.
+**Garage** (`screens/garage_panel.gd`): a washi card on the left with `widgets/car_info.gd`
+(the chosen car's Game.CARS name, kanji, tagline, spec and animated stat bars for speed,
+acceleration, grip, drift), `widgets/livery_picker.gd` (paint-chip cards: an ink-edged brush
+stroke of the body colour over the stripe colour, the livery's name and kanji; left / right or
+click) and Back in the header; across the bottom of the screen the car strip,
+`widgets/car_selector.gd`: a card per car (thumbnail, name, kanji), fixed layout centred on the
+bottom edge, so nothing moves with the length of a name. Left / right (keys, d-pad, stick) or a
+click picks; the chosen card lifts with a hanko tick and, while the strip has focus, carries the
+sakura outline (`no_focus_ring`, like the livery chips). Focus: the strip on entry, Up the
+livery picker, Up again Back. Only cars whose scene exists in the project are listed. Choices
+save at once (`car_id`, `car_color`); a car chosen elsewhere syncs onto the strip. Opening and
+closing the garage hides the camera cut under a short ink wipe.
+
+Strip thumbnails: `tools/build/car_thumbs.gd` renders every car scene offscreen on a transparent
+background (front three-quarter view, CarLook's cel materials, the first livery, 2x and
+downsampled, cropped to a shared ground line) into `assets/ui/cars/<id>.png` (464 x 224). Re-run
+it (then `--import`) when a car model or a new car lands:
+
+```
+timeout 300 nice -n 5 $S --summer-offscreen --audio-driver Dummy --disable-crash-handler --path . -s res://tools/build/car_thumbs.gd
+```
+
+A car without a thumbnail shows its kanji on the card instead.
+
+**The garage place** (`scripts/game/garage_set.gd`): the Sakura Rally service workshop on the
+village side of the Hanami start straight, before the start line. Mapgen carries the map spec's
+`GARAGE` entry (`tools/mapgen/maps/hanami.py`, layout in `tools/mapgen/lib/garage.py`) into
+`map.json` `garage` (`pos`, `yaw`: the display spot on a paved drive-through lay-by joined to the
+road; `workshop`, `lot`, `keep_out`), flattens a pad under the workshop and keeps props out;
+`MapWorld.garage` is the display-spot transform and MapWorld adds a `GarageSet` there. It builds
+the open-front workshop (`garage_workshop`: red tin roof, さくら整備 kanban, tool wall and
+workbench, roll cab, tyre rack, drums, hanging lamps and chochin, props from
+`tools/blender/props/garage.py`), warm OmniLights on the lamp and lantern markers (fading out past
+70 m), service nobori and tyre piles along the lay-by, and colliders for walls, posts and
+furniture. Sakura, stone lanterns, a lantern string, a bench and a vending machine stand around
+it (the entry's `dressing`). It stands in the world for every drive past it too.
 
 **Menu car** (`scripts/game/menu_stage.gd`, created by Main): spawns the selected car and
 livery for the menu. In `"title"` / `"time_attack"` it laps under the autopilot with the cine
-flyover; in `"garage"` it parks on the map's start grid (autopilot off, brakes held) while
-`CineCamera.start_garage()` orbits it low and slow, off-centre to the right of the panel
-(it swings through the widest arc clear of props and terrain, and backs off on narrow screens
-so the car fits). A livery pick in the garage paints the new colour over the body with a brush
-front from nose to tail (`shaders/ui/paint_sweep.gdshader`, 0.8 s, ink line on the front); a car
-pick drops the other car onto the grid. Outside the garage both apply at once, so the flyover
-always shows the chosen car and livery. After a liaison or a Free Roam on an open road
+flyover; in `"garage"` it stands on the garage's display spot, placed with `Car.place_at_rest`
+(nothing drops or settles; autopilot off, brakes held) while `CineCamera.start_garage(car, spot)`
+orbits the spot low and slow on its open (road) side with the workshop behind the car,
+off-centre to the right of the panel. The orbit opens on a wider establishing view that eases
+in, swings through the widest arc of that side clear of props and terrain, and backs off on
+narrow screens so the car fits. A livery pick paints the new colour over the body with a brush
+front from nose to tail (`shaders/ui/paint_sweep.gdshader`, 0.8 s, ink line on the front).
+
+A car pick in the garage is a drive-off / drive-in (`scripts/game/garage_driver.gd`, pure
+pursuit on a polyline with a constant-deceleration stop): the old car leaves Main (MenuStage
+owns it and its CarFX from then on), pulls out of the lay-by's far end into the left lane and
+speeds away down the road under its own engine; the new car starts 52 m back up the road, comes
+along the lane, turns into the lay-by and stops on the display spot (about 7 s; measured within
+5 cm along, 7 cm across, 3° of heading), then the brakes hold. The camera backs off
+(`garage_wide`) and turns its head after the leaving car, then the arriving one
+(`garage_follow`). Fast re-picks stay clean: every pick sends Main's current car off (arriving
+or parked) and brings the new one in; cars on the apron ignore each other's collisions; at most
+3 cars drive off at once (the oldest goes) and each is freed at the end of its road or after
+11 s; leaving the garage or the menu ends a switch at once. Outside the garage both picks apply
+at once, so the flyover always shows the chosen car and livery. A map without a garage parks
+on its start grid and swaps cars in place. After a liaison or a Free Roam on an open road
 (`MapWorld.closed == false`) Main loads the menu map under the ink instead: the flyover
 autopilot needs a closed loop.
 
@@ -229,8 +272,9 @@ sheets `docs/renders/ui_anim_<name>_<aspect>.png` (frames left-to-right, top-to-
 - `scripts/ui/ui_motion.gd` - easing curves (expo, back, spring, 12-fps stepping) and tween helpers; all UI motion ignores `Engine.time_scale` and runs while paused.
 - `scripts/ui/ui_api.gd` - `Game` / `Sound` access by node path (also works from `-s` tool scripts).
 - `scripts/ui/screens/` - `title_screen` (hub), `time_attack_panel`, `garage_panel`, `settings_panel`, `transition_layer`, `race_intro`, `hud`, `results_screen`, `pause_menu`.
-- `scripts/ui/widgets/` - `paper_card` (frosted washi card), `brush_kanji` (+ `kanji_strokes` stroke-order data), `kinetic_text`, `hanko`, `petal_field`, `hub_item`, `journey_strip`, `confirm_dialog`, `map_card`, `route_overlay`, `car_selector`, `livery_picker`, `segmented`, `paper_slider`, `ink_button`, `focus_ring`, `key_hints`, `tachometer`, `stage_progress`, `sakura_spinner`, `shader_rect`.
-- `scripts/game/menu_stage.gd` - the menu car (flyover / garage parking, livery sweep, car switch).
+- `scripts/ui/widgets/` - `paper_card` (frosted washi card), `brush_kanji` (+ `kanji_strokes` stroke-order data), `kinetic_text`, `hanko`, `petal_field`, `hub_item`, `journey_strip`, `confirm_dialog`, `map_card`, `route_overlay`, `car_selector` (the garage car strip), `car_info`, `livery_picker`, `segmented`, `paper_slider`, `ink_button`, `focus_ring`, `key_hints`, `tachometer`, `stage_progress`, `sakura_spinner`, `shader_rect`.
+- `scripts/game/menu_stage.gd` - the menu car (flyover / garage parking, livery sweep, drive-off / drive-in car switch); `garage_set.gd` - the workshop by the Hanami start straight (built from `map.json` `garage`); `garage_driver.gd` - the switch cars' scripted drive.
+- `assets/ui/cars/` - car strip thumbnails (`tools/build/car_thumbs.gd`).
 - `shaders/ui/` - `paper_card`, `brush_reveal` (stroke-order kanji), `brush_band` (paint swash), `ink_wipe` (transitions), `ink_splash` (GO!), `hanko`, `map_image` (card art), `paint_sweep` (garage livery change, 3D), `painted_scene` (preview backdrop), `backdrop_blur`, shared `ui_common.gdshaderinc`.
 - `assets/ui/maps/` - top-down card art and route data per map (`tools/build/capture_topdown.gd`).
 - `tools/ui/menu_tour.gd` - real-game title hub / garage tour (above).

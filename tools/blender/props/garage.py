@@ -123,13 +123,14 @@ def garage_workshop(kit: Kit) -> None:
     for x in (-3.0, 3.0):
         kit.box_between("Wood_Dark", (x, yb - 0.1, zc - 0.7), (x, yb - 1.2, SLAB + H - 0.1), 0.1, 0.1, (1, 0, 0))
     yt = yb + 0.11
-    # seen from the road the board's -X end is on the viewer's left: flower, then さくら整備
-    kit.flower("Vermilion", facing((-2.75, yt, zc + 0.03), "front"), 0.5, "Gold")
-    x = -1.95
+    # facing "front" reads along -X, so from the road the board's +X end is on the viewer's
+    # left: flower, then さくら整備
+    kit.flower("Vermilion", facing((2.75, yt, zc + 0.03), "front"), 0.5, "Gold")
+    x = 1.95
     for ch in ("さ", "く", "ら", "整", "備"):
         _jp_char(kit, "Ink", ch, 0.78, facing((x, yt, zc + 0.12), "front"))
-        x += 0.9 if ch not in ("ら",) else 1.1
-    kit.text("Vermilion", "SAKURA RALLY WORKS", 0.2, 0.02, facing((-0.55, yt, zc - 0.44), "front"), FONT,
+        x -= 0.9 if ch not in ("ら",) else 1.1
+    kit.text("Vermilion", "SAKURA RALLY WORKS", 0.2, 0.02, facing((0.55, yt, zc - 0.44), "front"), FONT,
              resolution=1)
     # hanging lamps inside (markers for the OmniLights)
     for i, lx in enumerate((-W / 3, 0.0, W / 3)):
