@@ -265,3 +265,28 @@ never pushes and never touches `main`; the lead merges into `ep2`.
   `assets/ui/maps/<id>_route.json` = `{"image_size": [w, h], "world_rect": [x0, z0, width,
   height], "closed": bool, "points": [[u, v] …], "surface": [ … ], "start": [u, v],
   "finish": [u, v], "checkpoints": [[u, v] …]}` with u, v in 0..1 image space.
+
+### Autopilot styles (Showoff)
+
+- `Autopilot.style`: `&"tidy"` (default; physics tests, liaison roll-out, finish cruise, tool
+  flows, keyboard bot) or `&"showoff"` (title flyover via `MenuStage.FLYOVER_STYLE`, demo reel).
+  `Main._attach_autopilot(scale, max_kmh, style = &"tidy")`.
+- `Autopilot.next_slide_point(min_ahead, max_ahead) -> Vector3`: middle of the next slid
+  corner (`Vector3.INF` if none); the flyover's roadside shot stands there.
+- Measured by `tools/showoff/drift_probe.gd` (headless, one flying lap per row; tidy = the
+  flyover before, scale 0.82 / 150 km/h; showoff = the flyover now, scale 1.0 / 150 km/h):
+
+| map | car | style | lap s | mean km/h | slide>12° % | in corners % | slides>20° | max slip° | brake s | brake apps | lat/hw | rigid | resets |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| hanami | sakura | tidy | 132.07 | 80.6 | 0.0 | 0.0 | 0 | 4.5 | 30.8 | 176 | 0.31 | 0 | 0 |
+| hanami | sakura | showoff | 113.63 | 93.8 | 8.4 | 18.1 | 7 | 35.7 | 14.7 | 30 | 0.99 | 0 | 0 |
+| hanami | hayate | tidy | 135.20 | 78.7 | 0.0 | 0.0 | 0 | 4.1 | 24.2 | 260 | 0.31 | 0 | 0 |
+| hanami | hayate | showoff | 118.43 | 89.8 | 11.1 | 23.5 | 10 | 33.0 | 12.1 | 25 | 1.04 | 0 | 0 |
+| momiji | sakura | tidy | 114.25 | 83.4 | 0.0 | 0.0 | 0 | 3.5 | 26.8 | 190 | 0.35 | 0 | 0 |
+| momiji | sakura | showoff | 98.33 | 97.5 | 4.4 | 9.4 | 4 | 31.6 | 13.0 | 20 | 1.52 | 0 | 0 |
+| momiji | hayate | tidy | 117.68 | 81.0 | 0.0 | 0.0 | 0 | 4.3 | 20.6 | 231 | 0.27 | 0 | 0 |
+| momiji | hayate | showoff | 102.02 | 93.8 | 4.6 | 10.0 | 4 | 32.0 | 9.4 | 15 | 1.19 | 0 | 0 |
+
+  lat/hw > 1.0 means the car's centre crossed the road edge: in showoff that happens on the way
+  out of the momiji gravel hairpins (up to 1.8 m onto the verge) and by 0.14 m once on hanami
+  with Hayate. Open: hanami Sakura is at 18.1 % of corner time sliding (target 20 %).

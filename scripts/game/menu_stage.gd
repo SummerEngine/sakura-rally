@@ -13,8 +13,10 @@ extends Node
 
 const SWEEP_SHADER := preload("res://shaders/ui/paint_sweep.gdshader")
 const TOON_SHADER := preload("res://shaders/toon.gdshader")
-## Autopilot pace of the flyover car (speed scale, top speed km/h).
-const FLYOVER_SCALE := 0.82
+## Autopilot of the flyover car: style, speed scale, top speed (km/h). The showoff style drives
+## every real corner sideways (tools/showoff/drift_probe.gd measures it).
+const FLYOVER_STYLE := &"showoff"
+const FLYOVER_SCALE := 1.0
 const FLYOVER_KMH := 150.0
 ## Livery sweep: duration and the stretch it runs along the car (metres from the origin).
 const SWEEP_TIME := 0.8
@@ -115,7 +117,7 @@ func _fly() -> void:
 	var car: Car = main.car
 	car.launch_hold = false
 	if main.autopilot == null or not is_instance_valid(main.autopilot):
-		main._attach_autopilot(FLYOVER_SCALE, FLYOVER_KMH)
+		main._attach_autopilot(FLYOVER_SCALE, FLYOVER_KMH, FLYOVER_STYLE)
 	main.cine.start_menu(car, main.map.track)
 
 

@@ -277,6 +277,11 @@ func _begin_shot(i: int, side: float, anchor_s: float) -> void:
 	match _shot:
 		"roadside":
 			_anchor_s = s + 70.0 if is_nan(anchor_s) else anchor_s
+			# A showoff autopilot slides the corners: stand at the next slid one when it is near.
+			if is_nan(anchor_s):
+				var apex := _next_slide_point()
+				if apex.is_finite():
+					_anchor_s = track.abs_s(track.nearest(apex), apex)
 			# Map generation bakes marker posts and chevron boards (no colliders, so _clear_anchor
 			# cannot see them) along the outside of every bend: on a bend the camera takes the inside.
 			var turn := _turn_at(_anchor_s)
@@ -287,6 +292,14 @@ func _begin_shot(i: int, side: float, anchor_s: float) -> void:
 			_anchor_s = s + 110.0 if is_nan(anchor_s) else anchor_s
 			_anchor = _clear_anchor(_anchor_s, _side * 38.0, 14.0, 12.0, [-60.0, -35.0, -10.0, 15.0, 40.0])
 	fov = 55.0 if _shot in ["roadside", "scenic"] else 60.0
+
+
+## World point of the next corner the car's autopilot slides, 40-120 m ahead (Vector3.INF if none).
+func _next_slide_point() -> Vector3:
+	for n in car.get_children():
+		if n is Autopilot:
+			return (n as Autopilot).next_slide_point(40.0, 120.0)
+	return Vector3.INF
 
 
 func _car_s() -> float:
