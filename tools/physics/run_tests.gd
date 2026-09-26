@@ -139,6 +139,12 @@ func _run_car() -> void:
 		await test_drift()
 	if _want("handbrake"):
 		await test_handbrake()
+	if _want("crash"):
+		await test_walls()
+		await test_pole(0.16, "pole (r 0.16)")
+		await test_pole(0.3, "tree trunk (r 0.3)")
+		await test_rock()
+		await test_hairpin_wall()
 	if _want("jump"):
 		await test_jump()
 	if _want("slope"):
@@ -643,6 +649,237 @@ func test_handbrake() -> void:
 			"> 60 deg/s, > 70 deg", rad_to_deg(peak) > 60.0 and heading_at_1s > 70.0)
 	var final_speed := car.speed_kmh
 	_record("handbrake turn drive-out", "%.0f deg total, %.0f km/h @2s" % [turned, final_speed], "> 15 km/h forward", final_speed > 15.0)
+
+
+# ---------------------------------------------------------------- crashes and walls
+
+const LAYER_PROPS := 4 ## the layer MapWorld puts barriers and prop colliders on
+const WALL_LOSS := {10: [5.0, 10.0], 25: [15.0, 25.0], 45: [30.0, 45.0]}
+
+var _obstacles: Array[Node] = []
+
+
+func _obstacle_body() -> StaticBody3D:
+	var body := StaticBody3D.new()
+	body.collision_layer = LAYER_PROPS
+	body.collision_mask = 0
+	root.add_child(body)
+	_obstacles.append(body)
+	return body
+
+
+func _add_box(body: StaticBody3D, size: Vector3, xf: Transform3D) -> void:
+	var shape := BoxShape3D.new()
+	shape.size = size
+	var owner_id := body.create_shape_owner(body)
+	body.shape_owner_add_shape(owner_id, shape)
+	body.shape_owner_set_transform(owner_id, xf)
+
+
+func _add_cylinder(body: StaticBody3D, radius: float, height: float, base: Vector3) -> void:
+	var shape := CylinderShape3D.new()
+	shape.radius = radius
+	shape.height = height
+	var owner_id := body.create_shape_owner(body)
+	body.shape_owner_add_shape(owner_id, shape)
+	body.shape_owner_set_transform(owner_id, Transform3D(Basis(), base + Vector3.UP * height * 0.5))
+
+
+func _clear_obstacles() -> void:
+	for o in _obstacles:
+		o.queue_free()
+	_obstacles.clear()
+
+
+func _touching(body: Node) -> bool:
+	return car.get_colliding_bodies().has(body)
+
+
+func _flat_fwd() -> Vector3:
+	var f := -car.global_transform.basis.z
+	f.y = 0.0
+	return f.normalized()
+
+
+## Metrics of a crash from the moment of first contact: speed, rotation, airtime, spins.
+class CrashLog:
+	var v0 := 0.0
+	var v_min := 999.0
+	var yaw_max := 0.0
+	var turned := 0.0
+	var air := 0.0
+	var max_slip := 0.0
+	var min_up := 1.0
+	var _headings: Array[float] = []
+
+	## yaw_max is the rate the heading actually turns, over 0.1 s windows (a one-tick solver spike
+	## at the moment of contact is not what the driver sees).
+	func sample(c: Car, t: float, dt: float, h0: float, heading: float) -> void:
+		if t <= 0.5:
+			v_min = minf(v_min, c.linear_velocity.length())
+		_headings.append(heading)
+		var window := int(round(0.1 / dt))
+		if _headings.size() > window:
+			yaw_max = maxf(yaw_max, absf(rad_to_deg(angle_difference(_headings[-1 - window], heading))) / (window * dt))
+		turned = maxf(turned, absf(rad_to_deg(angle_difference(h0, heading))))
+		if c.grounded_wheels == 0:
+			air += dt
+		var lv := c.local_velocity
+		if Vector2(lv.x, lv.z).length() > 4.0:
+			max_slip = maxf(max_slip, absf(rad_to_deg(atan2(lv.x, -lv.z))))
+		min_up = minf(min_up, c.global_transform.basis.y.y)
+
+
+## Runs straight at `kmh` on the tarmac plaza into an obstacle built by `build(origin, fwd)`,
+## lane-kept until the first contact, then throttle held with the wheel centred for `after` s.
+func _crash_run(kmh: float, build: Callable, after: float, sampler: Callable = Callable()) -> CrashLog:
+	var lane := await _kb_run_up("plaza_tarmac", kmh, 0.3)
+	var body: StaticBody3D = build.call(car.global_position * Vector3(1, 0, 1), _flat_fwd())
+	var log := CrashLog.new()
+	var t := 0.0
+	var prev_speed := car.linear_velocity.length()
+	while t < 8.0 and not _touching(body):
+		_kb_lane(lane)
+		_kb_hold_speed(kmh)
+		prev_speed = car.linear_velocity.length()
+		await _tick()
+		t += DT
+	log.v0 = prev_speed
+	var h0 := _heading()
+	keys.steer_key(0)
+	t = 0.0
+	while t < after:
+		keys.pedals(true, false)
+		await _tick()
+		t += DT
+		log.sample(car, t, DT, h0, _heading())
+		if sampler.is_valid():
+			sampler.call(t)
+	keys.pedals(false, false)
+	_clear_obstacles()
+	return log
+
+
+func test_walls() -> void:
+	for kmh in [90.0, 130.0]:
+		for angle in [10, 25, 45]:
+			var wall_dir: Array[Vector3] = [Vector3.ZERO]
+			var build := func(origin: Vector3, fwd: Vector3) -> StaticBody3D:
+				var body := _obstacle_body()
+				# Guardrail: 0.25 m thick, 1.0 m tall, 150 m long, crossing the car's path 25 m
+				# ahead at `angle`, running off to the right.
+				wall_dir[0] = fwd.rotated(Vector3.UP, -deg_to_rad(angle))
+				var a := origin + fwd * 25.0
+				var centre := a + wall_dir[0] * 65.0
+				_add_box(body, Vector3(0.25, 1.0, 150.0),
+						Transform3D(Basis.looking_at(wall_dir[0], Vector3.UP), centre + Vector3.UP * 0.5))
+				return body
+			var head_err := [0.0, 0.0]
+			var sampler := func(t: float) -> void:
+				if t >= 1.0 and head_err[1] == 0.0:
+					head_err[1] = 1.0
+					head_err[0] = rad_to_deg(_flat_fwd().angle_to(wall_dir[0]))
+			var log := await _crash_run(kmh, build, 1.5, sampler)
+			var loss := 100.0 * (1.0 - log.v_min / maxf(log.v0, 0.1))
+			var r: Array = WALL_LOSS[angle]
+			var spins := 1 if log.max_slip > 75.0 else 0
+			var he: float = head_err[0]
+			var ok: bool = loss >= float(r[0]) and loss <= float(r[1]) and log.yaw_max < 90.0 and he < 10.0 \
+					and log.air < 0.05 and spins == 0
+			_record("wall %d° at %.0f km/h" % [angle, kmh],
+					"loss %.0f %%, yaw %.0f°/s, head %.0f° @1s, air %.2f s, spins %d" % [loss, log.yaw_max, he, log.air, spins],
+					"loss %.0f-%.0f %%, yaw < 90°/s, head < 10°, air < 0.05 s, 0 spins" % [r[0], r[1]], ok)
+
+
+## Quarter-overlap hit on a thin pole (or a tree trunk) at 80 km/h.
+func test_pole(radius: float, label: String) -> void:
+	var build := func(origin: Vector3, fwd: Vector3) -> StaticBody3D:
+		var body := _obstacle_body()
+		var right := fwd.cross(Vector3.UP)
+		# A quarter of the car's width (1.74 m) overlaps the pole, on the right.
+		_add_cylinder(body, radius, 6.0, origin + fwd * 25.0 + right * (0.87 - 0.435 + radius))
+		return body
+	var log := await _crash_run(80.0, build, 3.0)
+	var ok := log.turned < 90.0 and log.air < 0.2 and log.min_up > 0.5
+	_record("%s hit 80 km/h (quarter overlap)" % label,
+			"rotation %.0f°, yaw %.0f°/s, air %.2f s, %.0f km/h after" % [log.turned, log.yaw_max, log.air, car.speed_kmh],
+			"rotation < 90°, air < 0.2 s, upright", ok)
+
+
+## A 0.4 m rock in the car's path at 70 km/h.
+func test_rock() -> void:
+	var build := func(origin: Vector3, fwd: Vector3) -> StaticBody3D:
+		var body := _obstacle_body()
+		_add_cylinder(body, 0.5, 0.4, origin + fwd * 25.0)
+		return body
+	var log := await _crash_run(70.0, build, 3.0)
+	var ok := log.air < 0.3 and log.min_up > 0.5
+	_record("0.4 m rock at 70 km/h", "air %.2f s, min up %.2f, rotation %.0f°, %.0f km/h after" % [log.air, log.min_up, log.turned, car.speed_kmh],
+			"air < 0.3 s, no roll-over", ok)
+
+
+## 90° right-hander (road radius 20 m, 8 m wide) taken too fast at 100 km/h with a guardrail on
+## the outside: full lock and throttle held from the turn-in point. The car should scrape round
+## and leave along the exit road.
+func test_hairpin_wall() -> void:
+	var lane := await _kb_run_up("plaza_tarmac", 100.0, 0.3)
+	var origin := car.global_position * Vector3(1, 0, 1)
+	var fwd := _flat_fwd()
+	var right := fwd.cross(Vector3.UP)
+	var turn_in := origin + fwd * 30.0
+	var centre := turn_in + right * 20.0
+	var body := _obstacle_body()
+	var r_out := 24.0
+	# Outside rail: 40 m straight before the corner, the 90° arc, 60 m along the exit.
+	_add_box(body, Vector3(0.25, 1.0, 40.0), Transform3D(Basis.looking_at(fwd, Vector3.UP), turn_in - right * 4.0 - fwd * 20.0 + Vector3.UP * 0.5))
+	var seg := 5.0
+	var a := 0.0
+	while a < 90.0:
+		var mid := deg_to_rad(a + seg * 0.5)
+		var radial := (-right).rotated(Vector3.UP, -mid)
+		var tangent := radial.cross(Vector3.UP) * -1.0
+		var p := centre + radial * r_out
+		_add_box(body, Vector3(0.25, 1.0, 2.0 * r_out * tan(deg_to_rad(seg * 0.5)) + 0.15),
+				Transform3D(Basis.looking_at(tangent, Vector3.UP), p + Vector3.UP * 0.5))
+		a += seg
+	var exit_dir := right
+	var exit_start := centre + fwd * r_out
+	_add_box(body, Vector3(0.25, 1.0, 60.0), Transform3D(Basis.looking_at(exit_dir, Vector3.UP), exit_start + exit_dir * 30.0 + Vector3.UP * 0.5))
+	var t := 0.0
+	while t < 6.0 and (car.global_position - origin).dot(fwd) < 30.0:
+		_kb_lane(lane)
+		_kb_hold_speed(100.0)
+		await _tick()
+		t += DT
+	var contact_at := -1.0
+	var exit_at := -1.0
+	var log := CrashLog.new()
+	var h0 := _heading()
+	t = 0.0
+	while t < 8.0:
+		keys.steer_key(1)
+		keys.pedals(true, false)
+		await _tick()
+		t += DT
+		if contact_at < 0.0 and _touching(body):
+			contact_at = t
+			log.v0 = car.linear_velocity.length()
+		if contact_at >= 0.0:
+			log.sample(car, t - contact_at, DT, h0, _heading())
+			var v := car.linear_velocity * Vector3(1, 0, 1)
+			if _flat_fwd().angle_to(exit_dir) < deg_to_rad(15.0) and v.length() > 5.0 and v.normalized().dot(exit_dir) > 0.9:
+				exit_at = t - contact_at
+				break
+	keys.steer_key(0)
+	keys.pedals(false, false)
+	var exit_kmh := car.speed_kmh
+	_clear_obstacles()
+	var spins := 1 if log.max_slip > 75.0 else 0
+	var ok := contact_at >= 0.0 and exit_at >= 0.0 and exit_at <= 2.0 and spins == 0 and log.air < 0.05
+	_record("hairpin with outside rail, 100 km/h",
+			("contact %s, out along the road %.2f s later at %.0f km/h, yaw %.0f°/s, spins %d" % [
+				"yes" if contact_at >= 0.0 else "no", exit_at, exit_kmh, log.yaw_max, spins]),
+			"exit <= 2.0 s after contact, 0 spins", ok)
 
 
 # ---------------------------------------------------------------- chassis
