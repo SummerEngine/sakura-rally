@@ -43,17 +43,18 @@ func _initialize() -> void:
 
 func _run() -> void:
 	game = root.get_node("Game")
+	# One world; each "map" is a stage route of it.
+	var map := MapWorld.new()
+	map.name = "Map"
+	root.add_child(map)
+	await map.build()
 	for map_id in str(opts["maps"]).split(","):
-		var map := MapWorld.new()
-		map.name = "Map"
-		map.map_id = map_id
-		root.add_child(map)
-		await map.build()
+		map.select_route(map_id)
 		for car_id in str(opts["cars"]).split(","):
 			for style in str(opts["styles"]).split(","):
 				await _probe(map, car_id, style)
-		map.queue_free()
-		await physics_frame
+	map.queue_free()
+	await physics_frame
 	print("")
 	print("| map | car | style | lap | time s | mean km/h | max km/h | slide>12° % | in corners % | slides>20° | max slip° | brake s | brake apps | lat/hw | rigid | soft | resets |")
 	print("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")

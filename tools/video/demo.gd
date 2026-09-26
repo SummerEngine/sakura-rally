@@ -10,7 +10,7 @@ extends SceneTree
 ##   hairpin where the car runs wide through the hay bales, slow motion through the gravel
 ##   esses -> chase camera + HUD over the last bridge to the finish -> results card -> Right,
 ##   A: Next map -> Momiji at golden hour, slow motion through the gravel hairpin -> pause ->
-##   Main menu (lands on the Time Attack page) -> Esc: the title over Momiji.
+##   Main menu (lands on the Time Attack page) -> Esc: the title over the Hanami flyover.
 ## Music is muted here: cut_demo.py lays one continuous track under the edit. Cues (video
 ## seconds + lap progress) go to <footage>/cues.json: every state entry, every cut and pass, every
 ## menu step, each fabric gate the car passes (<map>_gate_<i>) and the first smash of soft
@@ -229,7 +229,7 @@ func _race_start() -> Car:
 	# On show: committed braking and every real corner sideways (see Autopilot `style`).
 	ap.style = &"showoff"
 	car.add_child(ap)
-	var map_id := str(main.map.map_id)
+	var map_id := str(main.map.route_id)
 	for s: Array in SWERVES.get(map_id, []):
 		_swerve(car, ap, map_id, s)
 	_watch_gates(car, map_id)
@@ -274,7 +274,7 @@ func _watch_gates(car: Car, map_id: String) -> void:
 		if marks[i] < 1.0 or marks[i] > track.length - 1.0:
 			continue # the start / finish line
 		await _until_progress(car, marks[i])
-		if not is_instance_valid(car) or main.map == null or str(main.map.map_id) != map_id:
+		if not is_instance_valid(car) or main.map == null or str(main.map.route_id) != map_id:
 			return
 		_cue("%s_gate_%d" % [map_id, i], car)
 

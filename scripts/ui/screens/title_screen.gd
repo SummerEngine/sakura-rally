@@ -56,6 +56,9 @@ var _garage: GaragePanel
 var _wipe: ShaderRect
 var _confirm: ConfirmDialog
 var _hint: Control
+## The key hints' fade (intro, garage, back to the hub): one at a time, so a late intro fade-in
+## never brings them back over the garage.
+var _hint_tween: Tween
 var _time := 0.0
 ## Full-rect layers that carry only the parallax offset, so the anchored layout inside
 ## them is never overwritten.
@@ -260,20 +263,43 @@ func _refresh_hub() -> void:
 	var st: Dictionary = game.campaign_status()
 	var legs := int(st["legs"])
 	var leg := int(st["leg"])
+	var stages := _stages_before(legs)
 	if bool(st["finished"]):
 		_campaign_item.set_overline("CAMPAIGN · JOURNEY COMPLETE")
 		_campaign_item.set_title("Replay journey")
 	elif bool(st["started"]):
 		var next: Dictionary = st["next"]
-		_campaign_item.set_overline("CAMPAIGN · LEG %d OF %d" % [mini(leg + 1, legs), legs])
-		_campaign_item.set_title("Continue · %s" % str(next.get("title", "")))
+		# Progress counts stages; the road between them is part of the drive, not a level.
+		if str(next.get("kind", "")) == "stage":
+			_campaign_item.set_overline("CAMPAIGN · STAGE %d OF %d" % [_stages_before(leg) + 1, stages])
+		elif next.is_empty():
+			_campaign_item.set_overline("CAMPAIGN · ALL %d STAGES DRIVEN" % stages)
+		else:
+			_campaign_item.set_overline("CAMPAIGN · STAGE %d OF %d COMPLETE" % [_stages_before(leg), stages])
+		_campaign_item.set_title("Continue · %s" % str(next.get("title", "the finale")))
 	else:
-		_campaign_item.set_overline("CAMPAIGN · %d LEGS" % legs)
+		_campaign_item.set_overline("CAMPAIGN · %d STAGES" % stages)
 		_campaign_item.set_title("New journey")
 	_journey.setup(game.CAMPAIGN, legs if bool(st["finished"]) else leg)
 	_new_journey_item.visible = _in_progress()
 	_refresh_garage_item()
 	_link_hub_focus()
+
+
+## Number of stages among the first `n` campaign legs.
+func _stages_before(n: int) -> int:
+	var k := 0
+	var legs: Array = UIApi.game().CAMPAIGN
+	for i in mini(n, legs.size()):
+		if str(legs[i]["kind"]) == "stage":
+			k += 1
+	return k
+
+
+func _fade_hint(alpha: float, time: float, delay := 0.0) -> void:
+	UIMotion.kill(_hint_tween)
+	_hint_tween = UIMotion.tween(_hint)
+	_hint_tween.tween_property(_hint, "modulate:a", alpha, time).set_delay(delay)
 
 
 func _in_progress() -> bool:
@@ -354,6 +380,7 @@ func leave(instant: bool = false) -> void:
 	tw.tween_callback(hide)
 	UIMotion.slide_out(_logo, Vector2(0, -36))
 	_wordmark.play_out()
+	UIMotion.kill(_hint_tween)
 	UIMotion.slide_out(_hint, Vector2(0, 20))
 	match view:
 		"time_attack":
@@ -380,7 +407,7 @@ func _play_intro() -> void:
 	if view == "title":
 		_rise_hub(0.95)
 	_hint.position.y = _hint_rest_y()
-	UIMotion.tween(_hint).tween_property(_hint, "modulate:a", 1.0, 0.6).set_delay(1.6)
+	_fade_hint(1.0, 0.6, 1.6)
 
 
 func _rise_hub(delay: float) -> void:
@@ -430,7 +457,7 @@ func _open_garage() -> void:
 	UIMotion.slide_out(_logo, Vector2(0, -36))
 	_wordmark.play_out()
 	UIMotion.kill(_intro_tween)
-	UIMotion.tween(_hint).tween_property(_hint, "modulate:a", 0.0, 0.2)
+	_fade_hint(0.0, 0.2)
 	await _cover()
 	if not active or view != "garage":
 		return
@@ -473,7 +500,7 @@ func _back_to_hub() -> void:
 			lt.tween_property(_logo, "modulate:a", 1.0, 0.4).set_delay(0.15)
 			lt.tween_property(_logo, "position", LOGO_POS, 0.6).set_delay(0.15).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 			_wordmark.play(0.2)
-			UIMotion.tween(_hint).tween_property(_hint, "modulate:a", 1.0, 0.4).set_delay(0.5)
+			_fade_hint(1.0, 0.4, 0.5)
 			_show_hub(0.3)
 			_switching = false
 
@@ -537,10 +564,15 @@ func _on_new_journey_pressed() -> void:
 	var st: Dictionary = UIApi.game().campaign_status()
 	var next: Dictionary = st["next"]
 	var first: Dictionary = UIApi.game().CAMPAIGN[0]
+	var where := "the finale is next"
+	if str(next.get("kind", "")) == "stage":
+		where = "%s %s is next" % [next["code"], next["title"]]
+	elif not next.is_empty():
+		where = "you are on the road, %s" % str(next["title"]).to_lower()
 	var yes := await _confirm.ask(
 		"Start a new journey?",
-		"You are on leg %d of %d, %s. Starting over clears this journey and sets off again from %s."
-				% [int(st["leg"]) + 1, int(st["legs"]), str(next.get("title", "")), str(first.get("title", ""))],
+		"%s. Starting over clears this journey and sets off again from %s."
+				% [where[0].to_upper() + where.substr(1), str(first.get("title", ""))],
 		"Keep going", "Start over")
 	if yes and active and view == "title":
 		UIApi.game().request_campaign(true)

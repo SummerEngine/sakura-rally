@@ -1,8 +1,8 @@
 extends Control
-## Time Attack page of the title hub: Time Trial / Free Roam picker and a map card per road
-## (Time Trial: the timed stages, Game.stage_maps(); Free Roam: every map, the liaison road
-## too). A card starts the drive with Game.request_start(map_id, mode); Back / Esc returns
-## to the hub (the title screen handles Esc).
+## Time Attack page of the title hub: Time Trial / Free Roam picker and a card per stage
+## (Game.MAPS). A card starts the drive with Game.request_start(map_id, mode): a time trial on
+## that stage with the branch gates closed, or free roam from its grid with every gate open
+## (the whole world). Back / Esc returns to the hub (the title screen handles Esc).
 
 signal back_requested
 
@@ -16,7 +16,7 @@ const InkButton := preload("res://scripts/ui/widgets/ink_button.gd")
 const MODES := ["time_trial", "free_roam"]
 const MODE_NOTES := [
 	"One lap against the clock. Checkpoint splits, medals, records.",
-	"No clock, no checkpoints. Every road is open, the summer road too.",
+	"No clock, no checkpoints. The gates are open: drive on through the seasons.",
 ]
 const MARGIN := Vector2(96, 64)
 
@@ -106,7 +106,7 @@ func _ready() -> void:
 	back_button.press_sound = &"back"
 	back_button.pressed.connect(func() -> void: back_requested.emit())
 	_back_row.add_child(back_button)
-	_apply_mode(false)
+	_apply_mode()
 	visible = false
 
 
@@ -122,25 +122,9 @@ func _visible_cards() -> Array[MapCard]:
 	return out
 
 
-func _allowed(card: MapCard) -> bool:
-	return mode_picker.selected == 1 or not bool(card.map.get("liaison", false))
-
-
-## Shows the cards of the current mode; `animate` slides roads in and out of the row.
-func _apply_mode(animate: bool) -> void:
+## The note of the current mode (both modes show every stage card).
+func _apply_mode() -> void:
 	_note.text = MODE_NOTES[mode_picker.selected]
-	for c in cards:
-		var want := _allowed(c)
-		if want == c.visible:
-			continue
-		if want:
-			c.visible = true
-			if animate:
-				c.modulate.a = 0.0
-				# Wait for the row to place it, then rise in from where it landed.
-				(func() -> void: UIMotion.rise_in(c, 0.05, 50.0, 0.6)).call_deferred()
-		else:
-			c.visible = false
 	_link_focus()
 
 
@@ -166,7 +150,7 @@ func enter(delay: float = 0.0) -> void:
 	if str(game.map_id) != "":
 		mode_picker.selected = maxi(MODES.find(str(game.mode)), 0)
 	mode_picker.queue_redraw()
-	_apply_mode(false)
+	_apply_mode()
 	for c in cards:
 		c.refresh()
 		c.scale = Vector2.ONE
@@ -221,7 +205,7 @@ func leave_for_race() -> void:
 # ---------------------------------------------------------------- events
 
 func _on_mode_changed(_index: int) -> void:
-	_apply_mode(true)
+	_apply_mode()
 
 
 func _on_card_pressed(card: MapCard) -> void:
