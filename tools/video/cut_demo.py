@@ -34,10 +34,13 @@ TARGET_LUFS = -14.0
 EDIT = [
 	("hanami_00_tracking", 0.5, 4),  # cold open: tracking through the blossom
 	("hanami_01_wheel", 0.5, 4),  # the wheel turning, suspension working
-	("menu_1", 1.0, 8),  # title card brushing in over the flyover
+	("menu_1", 1.0, 8),  # title card brushing in over the drifting flyover
+	("garage_livery", -2, 6),  # garage: the next livery brushes onto the parked car
+	("time_attack_start", -4, 5),  # Time Attack cards, Hanami picked
 	("intro_1", 0.0, 4),  # intro swoop, HANAMI PASS card
 	("racing_1", -5, 8, {"duck": (-15.0, 5)}),  # countdown revs under a quiet bed, GO! hits
-	("hanami_03_pass", -3, 4),  # tarmac left-hander from the roadside
+	("hanami_gate_0", -3, 5),  # through the first fabric checkpoint gate
+	("hanami_smash", -4, 6),  # tarmac hairpin: sideways and wide through the hay bales
 	("hanami_04_drone", 0.5, 4),  # the valley from above
 	("hanami_05_pass", -3, 4),  # the tightest corner
 	("hanami_10_pass", -3, 4),  # over the river bridge
@@ -51,7 +54,7 @@ EDIT = [
 	("momiji_04_tracking", 0.5, 4),  # gravel through the maples
 	("momiji_05_pass", -5, 10),  # slow motion through the hairpin
 	("momiji_08_wheel", 0.5, 4),
-	("menu_2", 1.0, 8),  # end card: the title over Momiji
+	("title_end", 1.0, 8),  # end card: the title over Momiji
 ]
 FADE_IN = 0.35
 FADE_OUT = 1.4

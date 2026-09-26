@@ -19,7 +19,9 @@ extends SceneTree
 ## brake applications (input_brake > 0.05, rising edges); lat = the largest |distance from the
 ## road centreline| / road half width (> 1.0 = the car's centre left the tarmac); rigid = chassis
 ## contacts with a static body on the props layer (trees, poles, walls, barriers) or a wall-like
-## (|normal.y| < 0.5) contact with the world; resets = ticks where the car jumped > 5 m.
+## (|normal.y| < 0.5) contact with the world; soft = soft dressing smashed and soft uprights (gate
+## posts, arch legs) brushed, listed with their lap progress on a SOFT line; resets = ticks where
+## the car jumped > 5 m.
 
 const DT := 1.0 / 120.0
 const SLIDE_ON := 20.0
@@ -53,8 +55,8 @@ func _run() -> void:
 		map.queue_free()
 		await physics_frame
 	print("")
-	print("| map | car | style | lap | time s | mean km/h | max km/h | slide>12° % | in corners % | slides>20° | max slip° | brake s | brake apps | lat/hw | rigid | resets |")
-	print("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+	print("| map | car | style | lap | time s | mean km/h | max km/h | slide>12° % | in corners % | slides>20° | max slip° | brake s | brake apps | lat/hw | rigid | soft | resets |")
+	print("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
 	for r in rows:
 		print(r)
 	game.request_quit()
@@ -94,6 +96,14 @@ func _probe(map: MapWorld, car_id: String, style: String) -> void:
 	car.impact.connect(func(s: float, _p: Vector3) -> void:
 		if s > 0.25:
 			hard[0] += 1)
+	# Soft dressing hits (no physics contact: SoftCourse tests the car's box itself).
+	var soft: Array[String] = []
+	var on_smash := func(prop: String, point: Vector3, _v: float, _loss: float) -> void:
+		soft.append("%s@%.0f" % [prop, track.progress_of(track.nearest(point), point)])
+	var on_upright := func(point: Vector3, _v: float, _loss: float) -> void:
+		soft.append("upright@%.0f" % track.progress_of(track.nearest(point), point))
+	map.soft_course.smashed.connect(on_smash)
+	map.soft_course.upright_hit.connect(on_upright)
 
 	var want := int(opts["laps"])
 	var trace: FileAccess = null
@@ -123,10 +133,12 @@ func _probe(map: MapWorld, car_id: String, style: String) -> void:
 			if laps_done >= 0:
 				m["time"] = ap.last_lap_time
 				m["hard"] = hard[0]
+				m["soft"] = soft.duplicate()
 				rows.append(_row(map.map_id, car_id, style, laps_done + 1, m))
 			laps_done += 1
 			m = _fresh()
 			hard[0] = 0
+			soft.clear()
 		if pos.distance_to(prev_pos) > 5.0:
 			m["resets"] += 1
 		prev_pos = pos
@@ -168,7 +180,9 @@ func _probe(map: MapWorld, car_id: String, style: String) -> void:
 					1 if car.input_handbrake else 0, car.drift_intent, track.lateral(hint, pos), hw, ap._phase,
 					ap.target_speed * 3.6, track.surface(hint), pos.x, pos.z])
 	if laps_done < want:
-		rows.append("| %s | %s | %s | - | DNF after %.0f s | | | | | | | | | | | %d |" % [map.map_id, car_id, style, t, m["resets"]])
+		rows.append("| %s | %s | %s | - | DNF after %.0f s | | | | | | | | | | | | %d |" % [map.map_id, car_id, style, t, m["resets"]])
+	map.soft_course.smashed.disconnect(on_smash)
+	map.soft_course.upright_hit.disconnect(on_upright)
 	if trace != null:
 		trace.close()
 	car.queue_free()
@@ -178,7 +192,7 @@ func _probe(map: MapWorld, car_id: String, style: String) -> void:
 func _fresh() -> Dictionary:
 	return {"time": 0.0, "n": 0, "kmh_sum": 0.0, "kmh_max": 0.0, "slide_n": 0, "corner_n": 0,
 			"corner_slide_n": 0, "slides": 0, "slip_max": 0.0, "brake_n": 0, "brake_apps": 0,
-			"lat": 0.0, "rigid": 0, "resets": 0, "hard": 0, "rigid_at": []}
+			"lat": 0.0, "rigid": 0, "resets": 0, "hard": 0, "rigid_at": [], "soft": []}
 
 
 ## Counts new chassis contacts with rigid things (each body/shape pair once per touch).
@@ -207,13 +221,15 @@ func _contacts(car: Car, m: Dictionary, touching: Dictionary) -> void:
 func _row(map_id: String, car_id: String, style: String, lap: int, m: Dictionary) -> String:
 	var n := maxf(m["n"], 1)
 	var cn := maxf(m["corner_n"], 1)
-	var r := "| %s | %s | %s | %d | %.2f | %.1f | %.1f | %.1f | %.1f | %d | %.1f | %.1f | %d | %.2f | %d | %d |" % [
+	var r := "| %s | %s | %s | %d | %.2f | %.1f | %.1f | %.1f | %.1f | %d | %.1f | %.1f | %d | %.2f | %d | %d | %d |" % [
 			map_id, car_id, style, lap, m["time"], m["kmh_sum"] / n, m["kmh_max"],
 			100.0 * m["slide_n"] / n, 100.0 * m["corner_slide_n"] / cn, m["slides"], m["slip_max"],
-			m["brake_n"] * DT, m["brake_apps"], m["lat"], m["rigid"], m["resets"]]
+			m["brake_n"] * DT, m["brake_apps"], m["lat"], m["rigid"], (m["soft"] as Array).size(), m["resets"]]
 	var at: Array = m["rigid_at"]
 	if not at.is_empty() or m["hard"] > 0:
 		print("CONTACTS %s/%s/%s lap %d: hard impacts %d, %s" % [map_id, car_id, style, lap, m["hard"], ", ".join(at)])
+	if not (m["soft"] as Array).is_empty():
+		print("SOFT %s/%s/%s lap %d: %s" % [map_id, car_id, style, lap, ", ".join(m["soft"])])
 	print("LAP " + r)
 	return r
 
