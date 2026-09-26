@@ -409,7 +409,6 @@ func _show_end() -> void:
 		["You finished P%d of %d  ·  total %s" % [pos, field, game.format_time(total)], UITheme.FONT_UI_BOLD, 26, UITheme.PAPER],
 		["", UITheme.FONT_UI_BOLD, 10, UITheme.PAPER],
 		["STAGES   %s" % _leg_titles("stage"), UITheme.tracked(UITheme.FONT_UI_BOLD, 1), 18, Color(UITheme.PAPER, 0.75)],
-		["LIAISON   %s" % _leg_titles("liaison"), UITheme.tracked(UITheme.FONT_UI_BOLD, 1), 18, Color(UITheme.PAPER, 0.75)],
 		["RIVALS   %s" % _rival_names(), UITheme.tracked(UITheme.FONT_UI_BOLD, 1), 18, Color(UITheme.PAPER, 0.75)],
 		["", UITheme.FONT_UI_BOLD, 10, UITheme.PAPER],
 		["Thanks for driving.", UITheme.FONT_BRUSH, 30, UITheme.SAKURA_PALE],

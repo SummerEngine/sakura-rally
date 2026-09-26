@@ -5,7 +5,10 @@ extends Control
 ##  2. the banner lifts away and the results card slides in from the right with staggered rows
 ##     (time, best, delta, top speed, splits), a hanko medal STAMP (screen shake + petal burst)
 ##     and a "NEW RECORD 新記録" ribbon; buttons Retry / Next map / Menu. A campaign stage
-##     adds the rally standing and swaps the buttons for Continue / Retry stage / Quit to title.
+##     says the stage is complete, adds the rally standing, swaps the buttons for Continue /
+##     Retry stage / Quit to title, and swings in a blue road sign beside the card saying what
+##     comes next (the next stage: drive on, the road is open, and how far; after the last
+##     stage: the rally classification).
 
 signal shake_requested(strength: float)
 
@@ -23,6 +26,9 @@ const BRUSH_BAND := preload("res://shaders/ui/brush_band.gdshader")
 
 const CARD_W := 640.0
 const COUNT_UP := 1.1
+const SIGN_BLUE := Color("1f5ea6")
+## Gap between the road sign and the results card.
+const SIGN_GAP := 40.0
 
 var shown := false
 var result: Dictionary = {}
@@ -58,6 +64,13 @@ var _next: Button
 var _menu: Button
 var _petals: PetalField
 
+var _next_sign := PanelContainer.new()
+var _next_kicker: Label
+var _next_jp: Label
+var _next_name: Label
+var _next_line: Label
+var _next_dist: Label
+
 var _tween: Tween
 var _count_t := -1.0
 
@@ -67,6 +80,7 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_build_banner()
 	_build_card()
+	_build_next_sign()
 	_petals = PetalField.new()
 	_petals.ambient_count = 0
 	add_child(_petals)
@@ -241,6 +255,112 @@ func _build_card() -> void:
 	_card.sort_children.connect(_place_hanko)
 
 
+## The campaign's "what comes next" board: a blue Japanese direction sign (as on the liaison HUD)
+## beside the results card.
+func _build_next_sign() -> void:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = SIGN_BLUE
+	sb.set_corner_radius_all(16)
+	sb.corner_detail = 8
+	sb.border_color = Color(1, 1, 1, 0.95)
+	sb.set_border_width_all(4)
+	sb.expand_margin_left = 6
+	sb.expand_margin_right = 6
+	sb.expand_margin_top = 6
+	sb.expand_margin_bottom = 6
+	sb.content_margin_left = 28
+	sb.content_margin_right = 32
+	sb.content_margin_top = 18
+	sb.content_margin_bottom = 20
+	sb.shadow_color = Color(UITheme.INK, 0.22)
+	sb.shadow_size = 18
+	sb.shadow_offset = Vector2(0, 8)
+	sb.anti_aliasing_size = 1.2
+	_next_sign.add_theme_stylebox_override("panel", sb)
+	_next_sign.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_card_holder.add_child(_next_sign)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 6)
+	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_next_sign.add_child(col)
+	_next_kicker = UITheme.make_label("", UITheme.tracked(UITheme.FONT_UI_BLACK, 3), 14, Color(1, 1, 1, 0.78))
+	col.add_child(_next_kicker)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 16)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(row)
+	var arrow := Control.new()
+	arrow.custom_minimum_size = Vector2(34, 56)
+	arrow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	arrow.draw.connect(func() -> void:
+		var c := arrow.size * 0.5
+		arrow.draw_colored_polygon(PackedVector2Array([c + Vector2(0, -26), c + Vector2(17, -7), c + Vector2(5, -7),
+				c + Vector2(5, 26), c + Vector2(-5, 26), c + Vector2(-5, -7), c + Vector2(-17, -7)]), UITheme.WHITE))
+	row.add_child(arrow)
+	var names := VBoxContainer.new()
+	names.add_theme_constant_override("separation", -6)
+	names.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	names.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(names)
+	_next_jp = UITheme.make_label("", UITheme.FONT_UI_BLACK, 38, UITheme.WHITE)
+	names.add_child(_next_jp)
+	_next_name = UITheme.make_label("", UITheme.tracked(UITheme.FONT_UI_BOLD, 1), 20, Color(1, 1, 1, 0.92))
+	names.add_child(_next_name)
+	_next_dist = UITheme.make_label("", UITheme.FONT_TITLE, 34, UITheme.WHITE)
+	_next_dist.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(22, 0)
+	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(gap)
+	row.add_child(_next_dist)
+	var rule := ColorRect.new()
+	rule.color = Color(1, 1, 1, 0.35)
+	rule.custom_minimum_size = Vector2(0, 2)
+	rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(rule)
+	_next_line = UITheme.make_label("", UITheme.FONT_UI_BOLD, 19, UITheme.WHITE)
+	col.add_child(_next_line)
+	_next_sign.visible = false
+
+
+## Fills the next-leg sign for a campaign result; false outside the campaign.
+func _fill_next_sign(res: Dictionary) -> bool:
+	if not bool(res.get("campaign", false)):
+		return false
+	var game := UIApi.game()
+	var legs: Array = game.CAMPAIGN
+	var i := int(res.get("leg", 0)) + 1
+	while i < legs.size() and legs[i]["kind"] != "stage":
+		i += 1
+	if i >= legs.size():
+		_next_kicker.text = "NEXT  ·  THE FINALE"
+		_next_jp.text = "完"
+		_next_name.text = "Rally classification"
+		_next_line.text = "Every stage driven. See where you finished."
+		_next_dist.text = ""
+		return true
+	var next: Dictionary = legs[i]
+	_next_kicker.text = "NEXT  ·  %s" % next["code"]
+	_next_jp.text = str(next["title_jp"])
+	_next_name.text = str(next["title"])
+	_next_line.text = "Drive on: the road is open."
+	var km := _road_km(str(legs[int(res.get("leg", 0)) + 1]["map"]))
+	var mph := str(UIApi.setting("units")) == "mph"
+	_next_dist.text = "" if is_nan(km) else "%.1f %s" % [km / 1.609344 if mph else km, "mi" if mph else "km"]
+	return true
+
+
+## Road length (km) of a world route (MapWorld.routes), NAN when the session has no world or
+## the world no such route (the UI preview's mock session).
+func _road_km(route_id: String) -> float:
+	var session: Object = UIApi.game().session
+	var world: Object = session.get(&"map") if session != null else null
+	var routes: Variant = world.get(&"routes") if world != null else null
+	if not routes is Dictionary or not (routes as Dictionary).has(route_id):
+		return NAN
+	return float(((routes as Dictionary)[route_id]["track"] as Track).length) / 1000.0
+
+
 func _add_row(col: VBoxContainer, c: Control) -> void:
 	col.add_child(c)
 	_rows.append(c)
@@ -389,7 +509,7 @@ func _fill_card(res: Dictionary, m: Dictionary, accent: Color) -> void:
 	_standing_value.get_parent().visible = campaign
 	if campaign:
 		var leg: Dictionary = game.CAMPAIGN[int(res.get("leg", 0))]
-		_kind_label.text = "%s  ·  CAMPAIGN RESULT" % leg["code"]
+		_kind_label.text = "%s  ·  STAGE COMPLETE" % leg["code"]
 		_standing_value.text = "P%d of %d" % [int(res.get("standing", 0)), int(res.get("field", 0))]
 	else:
 		_kind_label.text = "TIME TRIAL  ·  RESULT"
@@ -397,7 +517,7 @@ func _fill_card(res: Dictionary, m: Dictionary, accent: Color) -> void:
 	_retry.text = "Retry stage" if campaign else "Retry"
 	_retry.theme_type_variation = &"" if campaign else &"PrimaryButton"
 	_menu.text = "Quit to title" if campaign else "Menu"
-	_next.visible = not campaign and game.stage_maps().size() > 1
+	_next.visible = not campaign and game.MAPS.size() > 1
 
 
 func _enter_card(t: float) -> void:
@@ -411,6 +531,19 @@ func _enter_card(t: float) -> void:
 	_card.reveal = 0.0
 	var tw := UIMotion.tween(_card)
 	tw.set_parallel(true)
+	_next_sign.visible = _fill_next_sign(result)
+	if _next_sign.visible:
+		# Beside the card, level with its lower part; swings in like a board on a post.
+		_next_sign.reset_size()
+		var ss := _next_sign.get_combined_minimum_size()
+		_next_sign.position = base + Vector2(-ss.x - SIGN_GAP, h - ss.y - 40.0)
+		_next_sign.pivot_offset = Vector2(ss.x * 0.5, 0.0)
+		_next_sign.rotation = -0.2
+		_next_sign.modulate.a = 0.0
+		var st := UIMotion.tween(_next_sign)
+		st.set_parallel(true)
+		st.tween_property(_next_sign, "modulate:a", 1.0, 0.3).set_delay(0.7)
+		st.tween_property(_next_sign, "rotation", 0.0, 0.9).set_delay(0.7).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
 	tw.tween_property(_card, "position", base, 0.75).set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT)
 	tw.tween_property(_card, "modulate:a", 1.0, 0.3)
 	tw.tween_property(_card, "reveal", 1.0, 0.6).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
@@ -497,10 +630,10 @@ func _on_menu() -> void:
 	UIApi.game().request_menu()
 
 
-## Next stage map of the Time Attack list (liaison roads are not stages).
+## Next stage of the Time Attack list.
 func _on_next() -> void:
 	var game := UIApi.game()
-	var maps: Array = game.stage_maps()
+	var maps: Array = game.MAPS
 	var cur := str(result.get("map_id", game.map_id))
 	var idx := 0
 	for i in maps.size():

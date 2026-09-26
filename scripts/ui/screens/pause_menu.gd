@@ -126,7 +126,11 @@ func open() -> void:
 	var m: Dictionary = game.get_map(str(game.map_id))
 	var leg: Dictionary = game.campaign_current_leg()
 	var liaison: bool = str(game.mode) == str(game.MODE_LIAISON)
-	if not leg.is_empty():
+	if liaison and not leg.is_empty():
+		var dest: Dictionary = game.CAMPAIGN[mini(int(game.campaign_leg) + 1, game.CAMPAIGN.size() - 1)]
+		m = game.get_map(str(dest["map"]))
+		_sub.text = "ON TO %s  ·  CAMPAIGN" % str(dest["title"]).to_upper()
+	elif not leg.is_empty():
 		_sub.text = "%s  ·  %s  ·  CAMPAIGN" % [leg["code"], str(m.get("name", "")).to_upper()]
 	else:
 		var free: bool = str(game.mode) == str(game.MODE_FREE_ROAM)

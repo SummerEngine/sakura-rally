@@ -1,7 +1,8 @@
 extends Control
-## Arrival beat at the end of a liaison (Game.State.ARRIVED): "ARRIVED" pops over an indigo
-## brush swash with 到着 painted beneath, then the destination and the next stage slide in, and
-## a small time-control seal is stamped beside them.
+## Arrival beat at the end of the liaison (Game.State.ARRIVED), as the car rolls to rest on the
+## next stage's grid: "ARRIVED" pops over an indigo brush swash with 到着 painted beneath, then
+## the destination and the stage slide in, and a small seal with the stage code is stamped
+## beside them. The stage's start card (race_intro) follows on the spot.
 
 signal shake_requested(strength: float)
 
@@ -79,14 +80,15 @@ func _ready() -> void:
 	visible = false
 
 
-## Plays the card for the liaison leg that just ended (Game.campaign_current_leg()).
+## Plays the card for the liaison that just ended (Game.campaign_leg), naming the stage after it.
 func show_card() -> void:
 	var game := UIApi.game()
 	var legs: Array = game.CAMPAIGN
 	var i: int = game.campaign_leg
 	var dest: Dictionary = legs[mini(i + 1, legs.size() - 1)]
 	_dest_name.text = "%s  %s" % [dest["title_jp"], str(dest["title"]).to_upper()]
-	_dest_sub.text = "TIME CONTROL  ·  %s STARTS HERE" % dest["code"]
+	_dest_sub.text = "%s GRID  ·  THE STAGE STARTS HERE" % dest["code"]
+	_seal.caption = str(dest["code"])
 	shown = true
 	visible = true
 	modulate.a = 1.0
