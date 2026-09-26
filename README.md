@@ -1,14 +1,16 @@
 # Sakura Rally 桜ラリー
 
-A cel-shaded low-poly rally game for Summer Engine and Godot 4.7. Two small maps drawn like an
-anime background: flat cel bands, shadows tinted violet instead of darkened, thin ink lines,
-painted clouds and aerial haze. The look follows yamazakura, an earlier three.js sakura bike
-ride by the same author.
+A cel-shaded low-poly rally game for Summer Engine and Godot 4.7. Two stages and a liaison road
+drawn like an anime background: flat cel bands, shadows tinted violet instead of darkened, thin
+ink lines, painted clouds and aerial haze. The look follows yamazakura, an earlier three.js
+sakura bike ride by the same author.
 
 Claude Opus 5.5 built it from one prompt in about five hours: the code, the car and prop models
 (Blender scripts), both maps, the synthesised engine audio, the UI and the trailer edit. It split
 the work across parallel sub-agents for the car, props, physics, audio and UI, which coordinated
-through [docs/CONTRACTS.md](docs/CONTRACTS.md).
+through [docs/CONTRACTS.md](docs/CONTRACTS.md). A second round, from the author's playtest
+notes, added the campaign with a drivable liaison road, a second car, the garage and a physics
+rework aimed at fun rather than realism.
 
 ![Hanami Pass from above](docs/renders/hanami_aerial.jpg)
 ![Momiji Valley from above](docs/renders/momiji_aerial.jpg)
@@ -39,25 +41,38 @@ engine at 4600 rpm, and at GO the clutch drops into first.
 
 ## Modes and maps
 
-- **Time Trial**: one lap through checkpoints, with splits against your best, a medal and a saved record.
-- **Free Roam**: no timer. Drive anywhere; R puts you back on the route.
+- **Campaign, The Seasons Rally**: SS1 Hanami Pass in spring, then L1 Natsu Road, an untimed
+  summer liaison you drive yourself to the next time control, then SS2 Momiji Valley in autumn.
+  A journey map opens each leg; the finale is a rally classification against six rivals. Quit
+  at any point and the title offers "Continue" at the start of that leg.
+- **Time Attack**, a page of cards that show each road from above with its route:
+  - **Time Trial**: one lap through checkpoints, with splits against your best, a medal and a
+    saved record.
+  - **Free Roam**: no timer, on any of the three roads. R puts you back on the route.
 
 | Map | Setting | Gold / Silver / Bronze |
 |---|---|---|
-| Hanami Pass 花見峠 | spring noon, tarmac and gravel under the blossom | 2:15 / 2:30 / 2:55 |
-| Momiji Valley 紅葉谷 | autumn golden hour, loose dirt through the maples | 1:58 / 2:12 / 2:34 |
+| Hanami Pass 花見峠 | spring noon, tarmac and gravel under the blossom | 2:04.5 / 2:18.0 / 2:41.0 |
+| Momiji Valley 紅葉谷 | autumn golden hour, loose dirt through the maples | 1:49.5 / 2:01.5 / 2:21.5 |
 
-Natsu Road 夏道 is the untimed liaison between the two stages, a summer-afternoon road rather
-than a lap. It is 2.2 km of open tarmac from a car park on Hanami Pass, down past terraced
-rice paddies, over a stone bridge into a village holding its summer festival, along the forest
-edge to the Momiji Valley time control, a service park where the car stops in the arrival zone.
+Natsu Road 夏道 is the liaison between the two stages, a summer-afternoon road rather than a
+lap. It is 2.2 km of open tarmac from a car park on Hanami Pass, down past terraced rice
+paddies, over a stone bridge into a village holding its summer festival, along the forest edge
+to the Momiji Valley time control, a service park where the car stops in the arrival zone.
 
 ![Natsu Road from above](docs/renders/natsu_aerial.jpg)
 
-The title screen has five liveries. Settings cover quality (low / medium / high), automatic or
-manual gearbox, camera, km/h or mph, three volume sliders and fullscreen. The 3D view renders
-at most 1920×1080 pixels before the quality scale, and FSR upscales bigger windows. A Retina
-fullscreen frame therefore costs about as much as a 1080p window.
+The garage has two cars and five liveries, painted onto the parked car as you pick them:
+
+| Car | Drivetrain | Character |
+|---|---|---|
+| Sakura 桜 | 2.0 turbo, AWD, 0–100 km/h 3.5 s | grips, forgives, flies |
+| Hayate 疾風 | 1.6 twin-cam, RWD, 0–100 km/h 5.0 s, pop-up headlights | rev-happy coupe that slides when you ask it to |
+
+Settings cover quality (low / medium / high), automatic or manual gearbox, camera, km/h or
+mph, three volume sliders and fullscreen. The 3D view renders at most 1920×1080 pixels before
+the quality scale, and FSR upscales bigger windows. A Retina fullscreen frame therefore costs
+about as much as a 1080p window.
 
 With Godot on macOS, settings and records live in
 `~/Library/Application Support/Godot/app_userdata/Sakura Rally/sakura_rally.cfg`.
@@ -73,12 +88,12 @@ writes `/tmp/sakura_demo/sakura_rally_demo.mp4`.
 
 | Part | Source | What it is |
 |---|---|---|
-| Car | `tools/blender/build_car.py` → `assets/models/car/` | Low-poly rally car built by a script. Tyre and rim are one object per wheel, spinning and steering; calipers steer without spinning |
-| Physics | `scripts/vehicle/`, [docs/PHYSICS.md](docs/PHYSICS.md) | Custom raycast car on a `RigidBody3D` (Jolt, 120 Hz): suspension, a combined-slip tyre model per surface, 6-speed gearbox, turbo, AWD with limited-slip couplings |
+| Cars | `tools/blender/build_car.py`, `build_car_hayate.py` → `assets/models/car/` | Low-poly rally car and coupe built by scripts. Tyre and rim are one object per wheel, spinning and steering; calipers steer without spinning |
+| Physics | `scripts/vehicle/`, [docs/PHYSICS.md](docs/PHYSICS.md) | Custom raycast car on a `RigidBody3D` (Jolt, 120 Hz): suspension, a combined-slip tyre model per surface, 6-speed gearbox, turbo, AWD with limited-slip couplings or RWD, and assists tuned for fun: stability that lets deliberate drifts through, strong brakes, sharp turn-in |
 | Look | `shaders/`, `scripts/fx/` | Toon ramps with violet shade bands, depth-based ink lines, anime colour grade, painted sky, petals, low-poly dust |
 | Maps | `tools/mapgen/` → `assets/maps/` | Python map compiler: terrain, closed (stage) or open (liaison) road spline, surfaces, checkpoints, instances from an 86-prop kit (`tools/blender/build_props.py`) |
 | Audio | `tools/audio/`, [docs/AUDIO.md](docs/AUDIO.md) | Synthesised engine loops (8 on load, 8 off load), turbo whistle and blow-off, dog-box gearbox whine, tyre sounds per surface, UI and stingers. Music is ElevenLabs Music via fal; ambience is fal sound-effect beds with synthesised birds and crickets |
-| UI | `scripts/ui/`, [docs/UI.md](docs/UI.md) | Title, settings, ink transitions, intro card, countdown, HUD, finish, results and pause, all built in code |
+| UI | `scripts/ui/`, [docs/UI.md](docs/UI.md) | Title hub, Time Attack cards with top-down maps, garage, journey map, liaison HUD, settings, ink transitions, countdown, HUD, results, rally classification and pause, all built in code |
 
 Shared conventions and the runtime APIs: [docs/CONTRACTS.md](docs/CONTRACTS.md). Rebuild commands:
 
