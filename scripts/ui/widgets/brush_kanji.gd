@@ -155,6 +155,8 @@ func _draw() -> void:
 	if is_stroke_mode():
 		var b := _box()
 		var fs := int(b.size.x * 0.84)
+		if fs < 1:
+			return # not laid out yet
 		var asc := font.get_ascent(fs)
 		var desc := font.get_descent(fs)
 		var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x

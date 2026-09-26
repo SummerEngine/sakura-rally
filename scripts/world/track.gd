@@ -143,6 +143,18 @@ func transform_at_abs(s: float, lat: float = 0.0, lift: float = 0.0) -> Transfor
 	return Transform3D(Basis.looking_at(forward_at_abs(s), Vector3.UP), p)
 
 
+## Closed Curve3D along the road (world space) for the autopilot, a point every
+## `step` metres, `lat` metres right of the centreline, `lift` above the road.
+func to_curve(step: float = 6.0, lat: float = 0.0, lift: float = 0.3) -> Curve3D:
+	var c := Curve3D.new()
+	c.bake_interval = 1.0
+	var n := int(length / step)
+	for k in n:
+		c.add_point(position_at_abs(start_s + k * length / n, lat) + Vector3.UP * lift)
+	c.add_point(position_at_abs(start_s, lat) + Vector3.UP * lift)
+	return c
+
+
 ## Surface under pos if it is on the carriageway or shoulder, else &"".
 func road_surface_at(pos: Vector3, hint: int = -1) -> StringName:
 	var i := nearest(pos, hint, 8 if hint >= 0 else 40)

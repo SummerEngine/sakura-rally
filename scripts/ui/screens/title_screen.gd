@@ -19,6 +19,7 @@ const PetalField := preload("res://scripts/ui/widgets/petal_field.gd")
 const KeyHints := preload("res://scripts/ui/widgets/key_hints.gd")
 
 const MARGIN := Vector2(96, 64)
+const LOGO_POS := MARGIN - Vector2(26, 28)
 const MODES := ["time_trial", "free_roam"]
 
 var active := false
@@ -42,8 +43,10 @@ var _settings_btn: Button
 var _quit_btn: Button
 var _hint: Control
 var _time := 0.0
-var _logo_base := Vector2.ZERO
-var _menu_base := Vector2.ZERO
+## Full-rect layers that carry only the parallax offset, so the anchored layout inside
+## them is never overwritten.
+var _logo_layer := Control.new()
+var _menu_layer := Control.new()
 var _parallax := Vector2.ZERO
 var _last_card := 0
 var _intro_tween: Tween
@@ -75,7 +78,6 @@ func _ready() -> void:
 	_hint.offset_top = -MARGIN.y * 0.9
 	_hint.offset_bottom = -MARGIN.y * 0.9
 	add_child(_hint)
-	resized.connect(_capture_bases.call_deferred)
 	visible = false
 
 
@@ -99,9 +101,13 @@ func _build_scrim() -> void:
 
 
 func _build_logo() -> void:
-	_logo.position = MARGIN - Vector2(26, 28)
+	for layer: Control in [_logo_layer, _menu_layer]:
+		layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(layer)
+	_logo.position = LOGO_POS
 	_logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_logo)
+	_logo_layer.add_child(_logo)
 	_kanji = BrushKanji.new()
 	_kanji.text = "桜"
 	_kanji.size = Vector2(250, 250)
@@ -182,7 +188,7 @@ func _build_menu() -> void:
 	_menu.offset_bottom = -MARGIN.y
 	_menu.add_theme_constant_override("separation", 14)
 	_menu.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_menu)
+	_menu_layer.add_child(_menu)
 
 	_mode = Segmented.new()
 	_mode.options = PackedStringArray(["Time Trial", "Free Roam"])
@@ -250,11 +256,6 @@ func _quiet_button(text: String) -> Button:
 	return b
 
 
-func _capture_bases() -> void:
-	_logo_base = _logo.position - _parallax * 1.0
-	_menu_base = _menu.position - _parallax * 0.4
-
-
 # ---------------------------------------------------------------- show / hide
 
 func enter() -> void:
@@ -267,7 +268,6 @@ func enter() -> void:
 	await get_tree().process_frame
 	if not active:
 		return
-	_capture_bases()
 	_play_intro()
 	var idx := 0
 	for i in _cards.size():
@@ -305,7 +305,7 @@ func leave(instant: bool = false) -> void:
 func _play_intro() -> void:
 	UIMotion.kill(_intro_tween)
 	_logo.modulate.a = 1.0
-	_logo.position = _logo_base
+	_logo.position = LOGO_POS
 	_scrim.modulate.a = 0.0
 	_intro_tween = UIMotion.tween(self)
 	_intro_tween.tween_property(_scrim, "modulate:a", 1.0, 0.8)
@@ -354,9 +354,8 @@ func _process(delta: float) -> void:
 	var d := UIMotion.real_delta(delta)
 	_time += d
 	var vp := get_viewport_rect().size
-	var m := get_viewport().get_mouse_position() / vp - Vector2(0.5, 0.5)
+	var m := (get_viewport().get_mouse_position() / vp - Vector2(0.5, 0.5)).clamp(Vector2(-0.5, -0.5), Vector2(0.5, 0.5))
 	var target := Vector2(-m.x * 14.0, -m.y * 8.0) + Vector2(sin(_time * 0.21) * 4.0, sin(_time * 0.17) * 3.0)
 	_parallax = _parallax.lerp(target, UIMotion.damp(3.0, d))
-	if active:
-		_logo.position = _logo_base + _parallax
-		_menu.position = _menu_base + _parallax * 0.4
+	_logo_layer.position = _parallax
+	_menu_layer.position = _parallax * 0.4

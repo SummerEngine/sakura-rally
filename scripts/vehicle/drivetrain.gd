@@ -49,6 +49,8 @@ var downshift_time: float = 0.1
 var clutch_max_torque: float = 720.0
 var launch_rpm: float = 4000.0
 var clutch_engage_time: float = 0.07
+## Launch control: engine speed held in neutral during the countdown.
+var launch_hold_rpm: float = 4600.0
 ## Centre diff torque split to the front axle (0.4 = 40:60).
 var front_split: float = 0.4
 ## Limited-slip axles: locking torque = min(stiffness * dOmega, preload + bias * |axle torque|).
@@ -86,6 +88,7 @@ var _shift_cooldown: float = 0.0
 var _engage: float = 1.0
 var _cut_timer: float = 0.0
 var _reverse_hold: float = 0.0
+var _launch_hold: bool = false
 var _prev_thr_in: float = 0.0
 var _overrun_timer: float = 0.0
 var _backfire_cooldown: float = 0.0
@@ -93,6 +96,7 @@ var _split: PackedFloat32Array = [0.2, 0.2, 0.3, 0.3]
 
 
 func reset() -> void:
+	_launch_hold = false
 	var old := gear
 	rpm = idle_rpm
 	_omega_e = idle_rpm * RPM_TO_RADS
@@ -156,6 +160,22 @@ func request_shift(direction: int, v_fwd: float, wheel_radius: float) -> void:
 	if target > 0 and direction < 0 and rpm_for_speed(v_fwd, target, wheel_radius) > max_rpm + 200.0:
 		return
 	_start_shift(target)
+
+
+## Countdown hold: neutral with the clutch open and launch control holding the revs at
+## launch_hold_rpm. Releasing puts first gear in with the clutch slipping, and the launch
+## bite follows the held rpm.
+func set_launch_hold(on: bool) -> void:
+	var old := gear
+	_launch_hold = on
+	gear = 0 if on else 1
+	is_shifting = false
+	clutch_locked = false
+	_engage = 0.0
+	_shift_timer = 0.0
+	_reverse_hold = 0.0
+	if old != gear:
+		gear_changed.emit(gear, old)
 
 
 func update_transmission(dt: float, v_fwd: float, thr_in: float, brk_in: float, can_auto_shift: bool,
@@ -239,6 +259,8 @@ func pre_wheels(dt: float, thr_request: float, omegas: PackedFloat32Array, wheel
 	# Top gear: a soft governor instead of bouncing off the limiter at top speed.
 	if gear == top_gear():
 		thr *= clampf((max_rpm - 60.0 - rpm) / 300.0, 0.0, 1.0)
+	elif _launch_hold:
+		thr *= clampf((launch_hold_rpm - rpm) / 350.0, 0.0, 1.0)
 	throttle = thr
 	_update_turbo(dt, thr)
 	_update_backfire(dt, thr_request)

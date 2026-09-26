@@ -92,6 +92,8 @@ func _draw() -> void:
 	if caption != "":
 		cap_h = s * 0.22
 	var fs := int(s * (0.62 if text.length() == 1 else 0.36) - cap_h * 0.75)
+	if fs < 1:
+		return # not laid out yet
 	if text.length() == 1:
 		# Centre the glyph's ink box (not the font's line box) in the space above the caption.
 		var gsz := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)

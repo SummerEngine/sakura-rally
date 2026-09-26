@@ -48,6 +48,13 @@ var input_brake: float = 0.0
 var input_steer: float = 0.0
 var input_handbrake: bool = false
 @export var controlled_by_player: bool = false
+## Start-line hold during the countdown (set by Main): gearbox in neutral, brakes on, the
+## throttle still revs the engine. Releasing drops the clutch in first at the held rpm.
+var launch_hold: bool = false:
+	set(value):
+		if value != launch_hold:
+			launch_hold = value
+			drivetrain.set_launch_hold(value)
 
 # ---------------------------------------------------------------- livery (read by the toon converter)
 var livery_primary: Color = Color("f6f1e8")
@@ -261,7 +268,7 @@ func reset_to_track() -> void:
 # ---------------------------------------------------------------- simulation
 
 func _physics_process(_delta: float) -> void:
-	if controlled_by_player and Input.is_action_just_pressed(&"reset_car"):
+	if controlled_by_player and not launch_hold and Input.is_action_just_pressed(&"reset_car"):
 		reset_to_track()
 
 
@@ -285,9 +292,9 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 
 	if controlled_by_player:
 		_read_player(dt)
-		if Input.is_action_just_pressed(&"shift_up"):
+		if not launch_hold and Input.is_action_just_pressed(&"shift_up"):
 			shift_up()
-		if Input.is_action_just_pressed(&"shift_down"):
+		if not launch_hold and Input.is_action_just_pressed(&"shift_down"):
 			shift_down()
 
 	_update_suspension(state, xf, dt)
@@ -296,16 +303,17 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	var thr_in := clampf(input_brake if reversing else input_throttle, 0.0, 1.0)
 	var brk_in := clampf(input_throttle if reversing else input_brake, 0.0, 1.0)
 	handbrake = move_toward(handbrake, 1.0 if input_handbrake else 0.0, dt * 16.0)
-	drivetrain.update_transmission(dt, v_fwd, input_throttle, input_brake,
-			grounded_wheels >= 2 and handbrake < 0.1, automatic, WHEEL_RADIUS)
+	if not launch_hold:
+		drivetrain.update_transmission(dt, v_fwd, input_throttle, input_brake,
+				grounded_wheels >= 2 and handbrake < 0.1, automatic, WHEEL_RADIUS)
 	reversing = drivetrain.gear == -1
 	thr_in = clampf(input_brake if reversing else input_throttle, 0.0, 1.0)
-	brk_in = clampf(input_throttle if reversing else input_brake, 0.0, 1.0)
+	brk_in = 1.0 if launch_hold else clampf(input_throttle if reversing else input_brake, 0.0, 1.0)
 	brake = brk_in
 	_update_steering(v_fwd)
 
 	var speed := lin.length()
-	var hold := grounded_wheels >= 3 and speed < 0.3 and thr_in < 0.02
+	var hold := grounded_wheels >= 3 and speed < 0.3 and (thr_in < 0.02 or launch_hold)
 	if hold and not _hold_active:
 		for i in 4:
 			var w: WheelState = wheels[i]
@@ -700,6 +708,8 @@ func _reset_state() -> void:
 	_hold_active = false
 	player_input.reset()
 	drivetrain.reset()
+	if launch_hold:
+		drivetrain.set_launch_hold(true)
 	for i in 4:
 		var w: WheelState = wheels[i]
 		w.spin_speed = 0.0

@@ -69,7 +69,7 @@ static func opts_for_name(mat_name: String, has_vertex_color: bool) -> Dictionar
 		o.merge({"ramp": "hero", "gloss": 0.55, "spec": 1.2, "spec_size": 0.985, "grain": 0.0})
 	elif n.contains("light") or n.contains("emit") or n.contains("lamp") or n.contains("lantern"):
 		o.merge({"ramp": "soft", "emission_energy": 0.6, "grain": 0.0})
-	elif n.contains("paint"):
+	elif n.contains("paint") or n.contains("accent"):
 		o.merge({"ramp": "hero", "spec": 0.8, "spec_size": 0.975, "rim": 0.5, "grain": 0.0})
 	elif n.contains("chrome") or n.contains("metal"):
 		o.merge({"ramp": "hero", "spec": 1.4, "spec_size": 0.94, "grain": 0.0})

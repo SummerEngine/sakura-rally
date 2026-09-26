@@ -64,6 +64,8 @@ const SFX_3D := {
 const SILENT_DB := -80.0
 const POOL_3D := 16
 const POOL_UI := 4
+## Title-screen mix: the flyover car's engine and world sounds sit this far under the music.
+const BACKDROP_DB := -11.0
 
 ## Current slow-motion factor (1.0 = real time). Car audio multiplies its pitches by this.
 var slowmo: float = 1.0
@@ -91,6 +93,8 @@ var _cache: Dictionary = {}
 var _warned: Dictionary = {}
 var _music_lowpass: AudioEffectLowPassFilter
 var _sfx_lowpass: AudioEffectLowPassFilter
+var _backdrop_db: float = 0.0
+var _backdrop_tween: Tween
 
 
 func _enter_tree() -> void:
@@ -197,8 +201,21 @@ func _apply_volumes() -> void:
 	_set_bus_db("Ambience", _linear_db(sfx_v) + BUS_TRIM_DB["Ambience"] - _duck_db * 0.5)
 	_set_bus_db("UI", _linear_db(sfx_v) + BUS_TRIM_DB["UI"])
 	_set_bus_db("SFX", _linear_db(sfx_v) + BUS_TRIM_DB["SFX"])
-	_set_bus_db("Engine", BUS_TRIM_DB["Engine"])
-	_set_bus_db("World", BUS_TRIM_DB["World"])
+	_set_bus_db("Engine", BUS_TRIM_DB["Engine"] + _backdrop_db)
+	_set_bus_db("World", BUS_TRIM_DB["World"] + _backdrop_db)
+
+
+## On while the title screen shows the flyover car; off for driving.
+func set_backdrop_mix(on: bool, fade: float = 1.2) -> void:
+	if _backdrop_tween != null and _backdrop_tween.is_valid():
+		_backdrop_tween.kill()
+	_backdrop_tween = create_tween()
+	_backdrop_tween.tween_method(_set_backdrop, _backdrop_db, BACKDROP_DB if on else 0.0, maxf(fade, 0.01))
+
+
+func _set_backdrop(value_db: float) -> void:
+	_backdrop_db = value_db
+	_apply_volumes()
 
 
 func _setting_volume(key: String, fallback: float) -> float:
