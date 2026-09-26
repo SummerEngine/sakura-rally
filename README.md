@@ -47,6 +47,13 @@ engine at 4600 rpm, and at GO the clutch drops into first.
 | Hanami Pass 花見峠 | spring noon, tarmac and gravel under the blossom | 2:15 / 2:30 / 2:55 |
 | Momiji Valley 紅葉谷 | autumn golden hour, loose dirt through the maples | 1:58 / 2:12 / 2:34 |
 
+Natsu Road 夏道 is the untimed liaison between the two stages, a summer-afternoon road rather
+than a lap. It is 2.2 km of open tarmac from a car park on Hanami Pass, down past terraced
+rice paddies, over a stone bridge into a village holding its summer festival, along the forest
+edge to the Momiji Valley time control, a service park where the car stops in the arrival zone.
+
+![Natsu Road from above](docs/renders/natsu_aerial.jpg)
+
 The title screen has five liveries. Settings cover quality (low / medium / high), automatic or
 manual gearbox, camera, km/h or mph, three volume sliders and fullscreen. The 3D view renders
 at most 1920×1080 pixels before the quality scale, and FSR upscales bigger windows. A Retina
@@ -69,7 +76,7 @@ writes `/tmp/sakura_demo/sakura_rally_demo.mp4`.
 | Car | `tools/blender/build_car.py` → `assets/models/car/` | Low-poly rally car built by a script. Tyre and rim are one object per wheel, spinning and steering; calipers steer without spinning |
 | Physics | `scripts/vehicle/`, [docs/PHYSICS.md](docs/PHYSICS.md) | Custom raycast car on a `RigidBody3D` (Jolt, 120 Hz): suspension, a combined-slip tyre model per surface, 6-speed gearbox, turbo, AWD with limited-slip couplings |
 | Look | `shaders/`, `scripts/fx/` | Toon ramps with violet shade bands, depth-based ink lines, anime colour grade, painted sky, petals, low-poly dust |
-| Maps | `tools/mapgen/` → `assets/maps/` | Python map compiler: terrain, road spline, surfaces, checkpoints, instances from an 86-prop kit (`tools/blender/build_props.py`) |
+| Maps | `tools/mapgen/` → `assets/maps/` | Python map compiler: terrain, closed (stage) or open (liaison) road spline, surfaces, checkpoints, instances from an 86-prop kit (`tools/blender/build_props.py`) |
 | Audio | `tools/audio/`, [docs/AUDIO.md](docs/AUDIO.md) | Synthesised engine loops (8 on load, 8 off load), turbo whistle and blow-off, dog-box gearbox whine, tyre sounds per surface, UI and stingers. Music is ElevenLabs Music via fal; ambience is fal sound-effect beds with synthesised birds and crickets |
 | UI | `scripts/ui/`, [docs/UI.md](docs/UI.md) | Title, settings, ink transitions, intro card, countdown, HUD, finish, results and pause, all built in code |
 

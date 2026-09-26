@@ -4,7 +4,9 @@ extends Node3D
 ## assets/maps/<id>/map.json (descriptors, track, instances) + map.bin (arrays).
 ##
 ## After `build()` finishes: `track`, `spawn`, `checkpoints`, `atmosphere` and
-## `sun_dir` are ready for the race session, the car and the camera.
+## `sun_dir` are ready for the race session, the car and the camera. Open roads
+## (liaisons, `closed == false`) also have an arrival zone: `arrival` (on the road,
+## facing along it) and `arrival_radius`, reached at progress `arrival_progress`.
 
 signal build_progress(fraction: float, label: String)
 signal built
@@ -17,6 +19,16 @@ const WATER_SHADER := preload("res://shaders/water.gdshader")
 const BACKDROP_SHADER := preload("res://shaders/backdrop.gdshader")
 const SkyRigScript := preload("res://scripts/world/sky_rig.gd")
 const TerrainBodyScript := preload("res://scripts/world/terrain_body.gd")
+const GameScript := preload("res://scripts/autoload/game.gd")
+const FONT_LATIN := preload("res://assets/fonts/DelaGothicOne-Regular.ttf")
+const FONT_JP := preload("res://assets/fonts/YujiSyuku-Regular.ttf")
+const INK := Color("2a2235")
+
+## Parked-car models by car id (the Game.CARS ids).
+const PARKED_MODELS := {
+	"sakura": "res://assets/models/car/rally_car.glb",
+	"hayate": "res://assets/models/car/hayate.glb",
+}
 
 const LAYER_WORLD := 1
 const LAYER_PROPS := 4 # bit 3
@@ -26,6 +38,11 @@ const SEASONS := {
 	"spring": {
 		"litter": [Color("f7c3d3"), Color("fde4ec"), Color("f09bb8")],
 		"terrain_litter": 0.55, "road_litter": 0.32,
+	},
+	"summer": {
+		# a few green leaves and clover heads under the trees, nothing on the move
+		"litter": [Color("7fae55"), Color("a4c86a"), Color("eef0dc")],
+		"terrain_litter": 0.22, "road_litter": 0.1,
 	},
 	"autumn": {
 		"litter": [Color("dc4a2c"), Color("ef8a36"), Color("f1bf45")],
@@ -58,6 +75,10 @@ var atmosphere: Atmosphere
 var sky_rig: Node3D
 var spawn: Transform3D
 var start_line: Transform3D
+var closed: bool = true
+var arrival: Transform3D
+var arrival_radius: float = 0.0
+var arrival_progress: float = 0.0
 var checkpoints: Array[Dictionary] = []
 var terrain_body: StaticBody3D
 var sun_dir: Vector3 = Vector3.UP
@@ -99,6 +120,8 @@ func build(yield_frames: bool = false) -> void:
 	build_progress.emit(0.85, "details")
 	_build_barriers()
 	_build_checkpoints()
+	_build_signs()
+	_build_parked()
 	sky_rig = Node3D.new()
 	sky_rig.set_script(SkyRigScript)
 	sky_rig.name = "SkyRig"
@@ -200,6 +223,10 @@ func _make_materials() -> void:
 	road.set_shader_parameter("litter_c", litter[2])
 	road.set_shader_parameter("litter_density", season["road_litter"])
 	materials["road"] = road
+	# paved lots (turn-arounds, service parks): the same surface without lane markings
+	var lot := road.duplicate() as ShaderMaterial
+	lot.set_shader_parameter("lot_mode", true)
+	materials["lot"] = lot
 
 	var wm: Dictionary = mats.get("water", {})
 	for kind in ["water", "water_river"]:
@@ -236,13 +263,19 @@ func _make_materials() -> void:
 
 func _build_track() -> void:
 	var r := _raw("track")
+	closed = info.get("closed", true)
 	track = Track.new()
-	track.setup(bin.slice(r["offset"], r["offset"] + r["bytes"]).to_float32_array(), info["road"])
+	track.setup(bin.slice(r["offset"], r["offset"] + r["bytes"]).to_float32_array(), info["road"], closed)
 	var sp: Dictionary = info["spawn"]
 	var sp_pos := Vector3(sp["pos"][0], sp["pos"][1], sp["pos"][2])
 	spawn = Transform3D(Basis(Vector3.UP, sp["yaw"]), sp_pos)
 	var st: Dictionary = info["road"]["start"]
 	start_line = Transform3D(Basis(Vector3.UP, st["yaw"]), Vector3(st["pos"][0], st["pos"][1], st["pos"][2]))
+	var ar: Dictionary = info.get("arrival", {})
+	if not closed and not ar.is_empty():
+		arrival = Transform3D(Basis(Vector3.UP, ar["yaw"]), Vector3(ar["pos"][0], ar["pos"][1], ar["pos"][2]))
+		arrival_radius = ar["radius"]
+		arrival_progress = track.length
 
 
 # ------------------------------------------------------------------ meshes and colliders
@@ -286,7 +319,7 @@ func _build_meshes() -> void:
 			"terrain":
 				parent = terrain_root
 				mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-			"road":
+			"road", "lot":
 				parent = road_root
 				mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			"water", "water_river":
@@ -503,6 +536,89 @@ func _build_checkpoints() -> void:
 			"yaw": float(c["yaw"]),
 			"half_width": float(c["half_width"]),
 		})
+
+
+# ------------------------------------------------------------------ signs and parked cars
+
+## Painted text on the sign boards the compiler built into the dressing mesh: one
+## Label3D per line, fixed to the board face (no billboard), depth-tested, ink outline.
+func _build_signs() -> void:
+	var signs: Array = info.get("signs", [])
+	if signs.is_empty():
+		return
+	var root := Node3D.new()
+	root.name = "Signs"
+	add_child(root)
+	for s in signs:
+		var face := Transform3D(Basis(Vector3.UP, s["yaw"]), Vector3(s["pos"][0], s["pos"][1], s["pos"][2]))
+		for ln in s["lines"]:
+			var l := Label3D.new()
+			l.text = ln["text"]
+			l.font = FONT_JP if ln["font"] == "jp" else FONT_LATIN
+			l.font_size = 96
+			l.outline_size = 14
+			l.pixel_size = float(ln["size"]) / 96.0
+			l.modulate = Color(ln["color"])
+			l.outline_modulate = INK
+			l.billboard = BaseMaterial3D.BILLBOARD_DISABLED
+			l.double_sided = false
+			l.no_depth_test = false
+			l.shaded = true
+			l.alpha_cut = Label3D.ALPHA_CUT_OPAQUE_PREPASS
+			l.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			l.visibility_range_end = 260.0
+			l.transform = face * Transform3D(Basis(), Vector3(ln["offset"][0], ln["offset"][1], 0.004))
+			root.add_child(l)
+
+
+## Parked rally cars (service parks): static car models in a livery each, toon-converted
+## like the player's car, without physics.
+func _build_parked() -> void:
+	var cars: Array = info.get("parked", [])
+	if cars.is_empty():
+		return
+	var root := Node3D.new()
+	root.name = "ParkedCars"
+	add_child(root)
+	var scenes := {}
+	for c in cars:
+		var path: String = PARKED_MODELS.get(c["car"], "")
+		if path.is_empty() or not ResourceLoader.exists(path):
+			push_warning("MapWorld: no model for parked car '%s'" % c["car"])
+			continue
+		if not scenes.has(path):
+			scenes[path] = load(path)
+		var model: Node3D = (scenes[path] as PackedScene).instantiate()
+		var livery: Dictionary = GameScript.CAR_COLORS[clampi(int(c["livery"]), 0, GameScript.CAR_COLORS.size() - 1)]
+		_dress_parked(model, livery["primary"], livery["secondary"])
+		model.transform = Transform3D(Basis(Vector3.UP, c["yaw"]), Vector3(c["pos"][0], c["pos"][1], c["pos"][2]))
+		root.add_child(model)
+
+
+## Same cel conversion as the player's car (CarLook), with the livery baked into the paint.
+func _dress_parked(model: Node, primary: Color, secondary: Color) -> void:
+	for node in model.find_children("*", "MeshInstance3D", true, false):
+		var mi := node as MeshInstance3D
+		if mi.mesh == null:
+			continue
+		mi.visibility_range_end = CATEGORY_VIEW["vehicle"][0]
+		for s in mi.mesh.get_surface_count():
+			var src := mi.mesh.surface_get_material(s)
+			if src == null or src is ShaderMaterial:
+				continue
+			var base := src as BaseMaterial3D
+			var n := src.resource_name.to_lower()
+			var color := base.albedo_color if base else Color.WHITE
+			if n.contains("paint2"):
+				color = secondary
+			elif n.contains("paint"):
+				color = primary
+			var mat: Material = ToonMaterials.make(color, CarLook._opts(n, base))
+			for key in CarLook.OUTLINED:
+				if n.contains(key):
+					mat = ToonMaterials.with_outline(mat, 1.5 if key != "rubber" else 1.3)
+					break
+			mi.set_surface_override_material(s, mat)
 
 
 # ------------------------------------------------------------------ queries

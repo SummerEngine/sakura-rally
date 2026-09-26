@@ -1,7 +1,8 @@
 extends Node3D
 ## Camera-following sky dressing: a ring of painted cumulus cards (one mesh,
 ## drawn far to near so a single transparent draw sorts itself) and a volume of
-## falling petals (spring) or maple leaves (autumn) around the camera.
+## falling petals (spring), maple leaves (autumn) or drifting seed fluff (summer)
+## around the camera.
 
 const CLOUD_SHADER := preload("res://shaders/clouds.gdshader")
 const PETAL_SHADER := preload("res://shaders/petals.gdshader")
@@ -37,6 +38,9 @@ func _process(_delta: float) -> void:
 func _build_clouds(preset: Dictionary) -> void:
 	# Two layers: big cumulus high enough to clear the valley ridges (the reason
 	# they exist), and a far low stratus band that shows through mountain gaps.
+	# `cloud_tower` scales the cumulus up (big summer towers) and sits them lower so
+	# their flat bases stay near the horizon.
+	var tower: float = preset.get("cloud_tower", 1.0)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 4242
 	var cards: Array[Dictionary] = []
@@ -48,8 +52,8 @@ func _build_clouds(preset: Dictionary) -> void:
 		var n := low if is_low else high
 		var a := float(k) / n * TAU + rng.randf_range(-0.09, 0.09) + (0.13 if is_low else 0.0)
 		var r := rng.randf_range(6400.0, 8200.0) if is_low else rng.randf_range(3000.0, 5200.0)
-		var elev := rng.randf_range(0.03, 0.09) if is_low else rng.randf_range(0.11, 0.3)
-		var w := rng.randf_range(2400.0, 3600.0) if is_low else rng.randf_range(1100.0, 2000.0)
+		var elev := rng.randf_range(0.03, 0.09) if is_low else rng.randf_range(0.11, 0.3) / lerpf(1.0, tower, 0.6)
+		var w := rng.randf_range(2400.0, 3600.0) if is_low else rng.randf_range(1100.0, 2000.0) * tower
 		var cell := rng.randi_range(4, 5) if is_low else rng.randi_range(0, 3)
 		var h := w * (0.32 if cell >= 4 else 0.5)
 		cards.append({
@@ -116,9 +120,10 @@ func _build_clouds(preset: Dictionary) -> void:
 
 func _build_petals(season: String) -> void:
 	var autumn := season == "autumn"
+	var summer := season == "summer"
 	petals = GPUParticles3D.new()
 	petals.name = "Petals"
-	petals.amount = 420 if not autumn else 260
+	petals.amount = 260 if autumn else (140 if summer else 420)
 	petals.lifetime = 9.0
 	petals.preprocess = 9.0
 	petals.fixed_fps = 0
@@ -127,20 +132,21 @@ func _build_petals(season: String) -> void:
 	var pm := ParticleProcessMaterial.new()
 	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
 	pm.emission_box_extents = Vector3(36.0, 10.0, 36.0)
-	pm.direction = Vector3(1.0, -0.6, 0.4)
-	pm.spread = 25.0
-	pm.initial_velocity_min = 0.6
-	pm.initial_velocity_max = 1.6
-	pm.gravity = Vector3(0.35, -0.55 if not autumn else -0.9, 0.2)
-	pm.angular_velocity_min = -160.0
-	pm.angular_velocity_max = 160.0
+	pm.direction = Vector3(1.0, -0.6, 0.4) if not summer else Vector3(1.0, 0.15, 0.4)
+	pm.spread = 25.0 if not summer else 60.0
+	pm.initial_velocity_min = 0.6 if not summer else 0.3
+	pm.initial_velocity_max = 1.6 if not summer else 0.9
+	# seed fluff floats: almost no fall, a slow updraft wander
+	pm.gravity = Vector3(0.35, -0.9 if autumn else (0.02 if summer else -0.55), 0.2)
+	pm.angular_velocity_min = -160.0 if not summer else -30.0
+	pm.angular_velocity_max = 160.0 if not summer else 30.0
 	pm.angle_min = 0.0
 	pm.angle_max = 360.0
 	pm.turbulence_enabled = true
-	pm.turbulence_noise_strength = 1.4
+	pm.turbulence_noise_strength = 1.4 if not summer else 2.2
 	pm.turbulence_noise_scale = 5.0
 	pm.turbulence_influence_min = 0.06
-	pm.turbulence_influence_max = 0.14
+	pm.turbulence_influence_max = 0.14 if not summer else 0.22
 	pm.scale_min = 0.8
 	pm.scale_max = 1.3
 	var ramp := Gradient.new()
@@ -148,6 +154,10 @@ func _build_petals(season: String) -> void:
 		ramp.set_color(0, Color("d94a2b"))
 		ramp.add_point(0.5, Color("ee8a35"))
 		ramp.set_color(ramp.get_point_count() - 1, Color("f2c046"))
+	elif summer:
+		ramp.set_color(0, Color("fffbe8"))
+		ramp.add_point(0.6, Color("f6f1d2"))
+		ramp.set_color(ramp.get_point_count() - 1, Color("f3e6a8"))
 	else:
 		ramp.set_color(0, Color("f6bfd0"))
 		ramp.add_point(0.5, Color("fde6ee"))
@@ -157,7 +167,7 @@ func _build_petals(season: String) -> void:
 	pm.color_initial_ramp = gt
 	petals.process_material = pm
 	var quad := QuadMesh.new()
-	quad.size = Vector2(0.11, 0.11) if not autumn else Vector2(0.2, 0.2)
+	quad.size = Vector2(0.2, 0.2) if autumn else (Vector2(0.07, 0.07) if summer else Vector2(0.11, 0.11))
 	petal_material = ShaderMaterial.new()
 	petal_material.shader = PETAL_SHADER
 	petal_material.set_shader_parameter("tex", LEAF_TEX if autumn else PETAL_TEX)

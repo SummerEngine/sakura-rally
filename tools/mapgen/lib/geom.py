@@ -5,13 +5,19 @@ from __future__ import annotations
 import numpy as np
 
 
-def catmull_rom_closed(pts: np.ndarray, per_seg: int = 32, alpha: float = 0.5) -> np.ndarray:
-    """Centripetal Catmull-Rom through a closed loop of control points (n, 3)."""
+def catmull_rom(pts: np.ndarray, per_seg: int = 32, alpha: float = 0.5, closed: bool = True) -> np.ndarray:
+    """Centripetal Catmull-Rom through control points (n, 3). Closed: a loop of n segments.
+    Open: n - 1 segments ending exactly on the last point; each end gets a phantom point
+    mirrored through its neighbour, so the curve leaves the ends straight toward it."""
     pts = np.asarray(pts, dtype=np.float64)
     n = len(pts)
+    if closed:
+        ext = np.vstack([pts[-1:], pts, pts[:2]])
+    else:
+        ext = np.vstack([2 * pts[0] - pts[1], pts, 2 * pts[-1] - pts[-2]])
     out = []
-    for i in range(n):
-        p0, p1, p2, p3 = pts[(i - 1) % n], pts[i], pts[(i + 1) % n], pts[(i + 2) % n]
+    for i in range(n if closed else n - 1):
+        p0, p1, p2, p3 = ext[i], ext[i + 1], ext[i + 2], ext[i + 3]
 
         def knot(t, a, b):
             return t + max(np.linalg.norm((b - a)[[0, 2]]), 1e-6) ** alpha
@@ -27,6 +33,8 @@ def catmull_rom_closed(pts: np.ndarray, per_seg: int = 32, alpha: float = 0.5) -
         b1 = (t2 - t) / (t2 - t0) * a1 + (t - t0) / (t2 - t0) * a2
         b2 = (t3 - t) / (t3 - t1) * a2 + (t - t1) / (t3 - t1) * a3
         out.append((t2 - t) / (t2 - t1) * b1 + (t - t1) / (t2 - t1) * b2)
+    if not closed:
+        out.append(pts[-1:])
     return np.concatenate(out)
 
 

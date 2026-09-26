@@ -1,7 +1,7 @@
 """Road centreline, per-sample attributes, road ribbon mesh and roadside dressing."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -10,6 +10,7 @@ from .meshpack import MeshBuilder
 
 SURFACES = ("tarmac", "gravel", "dirt", "wood")
 PROFILE = 11  # vertices per cross-section
+LOT_DROP = 0.04  # a lot's paved surface sits this far below the road's carriageway edge
 
 
 @dataclass
@@ -28,9 +29,40 @@ class Road:
     ford: np.ndarray     # (n,) bool
     carve: np.ndarray    # (n,) 0..1 terrain carve weight (0 on bridges)
     control_s: np.ndarray  # distance of each control point
+    closed: bool = True  # False: point to point, from control point 0 to the last one
+    lots: list = field(default_factory=list)  # paved areas the road runs into (Lot)
+    on_lot: np.ndarray | None = None  # (n,) 0..1, 1 where the road crosses a lot
 
 
-def _attr_runs(points: list, key: str, default):
+@dataclass
+class Lot:
+    """Flat paved area (rounded rectangle) the road runs into: turn-arounds at the ends of
+    an open road, service parks, lay-bys. The road is levelled to it."""
+    name: str
+    center: np.ndarray   # (x, z)
+    axis: np.ndarray     # (x, z) unit vector along the lot's length
+    half_w: float        # across
+    half_l: float        # along
+    corner: float
+    y: float             # paved surface height
+    surface: str         # "tarmac" or "gravel"
+
+    def local(self, x, z) -> tuple[np.ndarray, np.ndarray]:
+        """(across, along) lot coordinates in metres; across is + to the right of axis."""
+        dx = np.asarray(x, dtype=np.float64) - self.center[0]
+        dz = np.asarray(z, dtype=np.float64) - self.center[1]
+        return dx * -self.axis[1] + dz * self.axis[0], dx * self.axis[0] + dz * self.axis[1]
+
+    def sdf(self, x, z) -> np.ndarray:
+        """Signed distance to the lot outline (m, negative inside)."""
+        a, b = self.local(x, z)
+        r = self.corner
+        qa = np.abs(a) - (self.half_w - r)
+        qb = np.abs(b) - (self.half_l - r)
+        return np.hypot(np.maximum(qa, 0.0), np.maximum(qb, 0.0)) + np.minimum(np.maximum(qa, qb), 0.0) - r
+
+
+def _attr_runs(points: list, key: str, default, closed: bool):
     """Persistent attribute per control segment: value set on a point applies to the
     segment that starts there and every following one until changed."""
     vals = []
@@ -39,6 +71,8 @@ def _attr_runs(points: list, key: str, default):
         if len(p) > 3 and key in p[3]:
             cur = p[3][key]
         vals.append(cur)
+    if not closed:
+        return vals
     # the loop wraps: segments before the first explicit value inherit the last one
     first_set = next((i for i, p in enumerate(points) if len(p) > 3 and key in p[3]), None)
     if first_set is not None and first_set > 0:
@@ -47,55 +81,98 @@ def _attr_runs(points: list, key: str, default):
     return vals
 
 
+def road_index(road: Road, s: float) -> int:
+    """Sample index at distance s (samples sit ~1 m apart): wraps around a loop, clamps
+    to the ends of an open road."""
+    n = len(road.pos)
+    if road.closed:
+        return int(round(s)) % n
+    return int(np.clip(round(s), 0, n - 1))
+
+
+def _build_lots(spec: dict, pos: np.ndarray, fwd: np.ndarray, right: np.ndarray,
+                control_s: np.ndarray, closed: bool, length: float) -> list[Lot]:
+    lots = []
+    n = len(pos)
+    for k, l in enumerate(spec.get("lots", [])):
+        s = control_s[l["road_at"]] + l.get("offset_m", 0.0)
+        i = int(round(s % length)) % n if closed else int(np.clip(round(s), 0, n - 1))
+        c = pos[i, [0, 2]] + right[i] * l.get("lateral", 0.0) + fwd[i] * l.get("along", 0.0)
+        ang = np.radians(l.get("yaw_add", 0.0))
+        f = fwd[i]
+        axis = np.array([f[0] * np.cos(ang) + f[1] * np.sin(ang), -f[0] * np.sin(ang) + f[1] * np.cos(ang)])
+        lots.append(Lot(name=l.get("name", f"lot_{k}"), center=c, axis=axis, half_w=l["width"] / 2.0,
+                        half_l=l["length"] / 2.0, corner=l.get("corner", 6.0), y=float(pos[i, 1]),
+                        surface=l.get("surface", "tarmac")))
+    return lots
+
+
 def build_road(spec: dict) -> Road:
+    closed = spec.get("closed", True)
     pts = spec["points"]
     ctrl = np.array([[p[0], p[2], p[1]] for p in pts], dtype=np.float64)  # (x, y, z)
     per_seg = 96
-    dense = geom.catmull_rom_closed(ctrl, per_seg=per_seg)
-    seg_id = np.repeat(np.arange(len(ctrl)), per_seg).astype(np.float64)
+    dense = geom.catmull_rom(ctrl, per_seg=per_seg, closed=closed)
+    n_seg = len(ctrl) if closed else len(ctrl) - 1
+    seg_id = np.repeat(np.arange(n_seg), per_seg).astype(np.float64)
     # carry the control segment index through resampling
-    closed_dense = np.vstack([dense, dense[:1]])
-    seglen = np.linalg.norm(np.diff(closed_dense[:, [0, 2]], axis=0), axis=1)
+    if closed:
+        path = np.vstack([dense, dense[:1]])
+    else:
+        path = dense
+        seg_id = np.append(seg_id, n_seg - 1)  # the end point closes the last segment
+    seglen = np.linalg.norm(np.diff(path[:, [0, 2]], axis=0), axis=1)
     cum = np.concatenate([[0.0], np.cumsum(seglen)])
-    pos, dist = geom.resample(dense, 1.0, closed=True)
-    sid = np.floor(np.interp(dist, cum[:-1], seg_id)).astype(np.int64) % len(ctrl)
-    control_s = np.array([np.interp(i * per_seg, np.arange(len(cum) - 1), cum[:-1]) for i in range(len(ctrl))])
+    knots = cum[:-1] if closed else cum  # distance of each dense point
+    pos, dist = geom.resample(dense, 1.0, closed=closed)
+    sid = np.floor(np.interp(dist, knots, seg_id)).astype(np.int64) % len(ctrl)
+    control_s = np.array([np.interp(i * per_seg, np.arange(len(knots)), knots) for i in range(len(ctrl))])
     length = float(cum[-1])
     n = len(pos)
 
     # heights: remove Catmull-Rom kinks, then add authored crests
-    pos[:, 1] = geom.smooth(pos[:, 1], spec.get("height_smooth", 8.0), closed=True)
+    pos[:, 1] = geom.smooth(pos[:, 1], spec.get("height_smooth", 8.0), closed=closed)
     for c in spec.get("crests", []):
         s0 = control_s[c["at"]] + c.get("offset", 0.0)
-        ds = (dist - s0 + length / 2) % length - length / 2
+        ds = (dist - s0 + length / 2) % length - length / 2 if closed else dist - s0
         pos[:, 1] += c["height"] * np.exp(-0.5 * (ds / c.get("width", 9.0)) ** 2)
 
-    fwd, right, curv = geom.frames(pos, closed=True)
-    curv_s = geom.smooth(curv, 6.0, closed=True)
+    fwd, right, curv = geom.frames(pos, closed=closed)
+    curv_s = geom.smooth(curv, 6.0, closed=closed)
 
-    surf_runs = _attr_runs(pts, "surface", spec.get("surface", "tarmac"))
+    # paved lots: the road is levelled to each lot's height inside it, easing out over 30 m
+    lots = _build_lots(spec, pos, fwd, right, control_s, closed, length)
+    on_lot = np.zeros(n)
+    for lot in lots:
+        w = 1.0 - geom.smoothstep(0.0, 30.0, lot.sdf(pos[:, 0], pos[:, 2]))
+        pos[:, 1] += (lot.y - pos[:, 1]) * w
+        on_lot = np.maximum(on_lot, w)
+
+    surf_runs = _attr_runs(pts, "surface", spec.get("surface", "tarmac"), closed)
     surface = np.array([SURFACES.index(surf_runs[i]) for i in sid])
-    bridge_runs = _attr_runs(pts, "bridge", None)
+    bridge_runs = _attr_runs(pts, "bridge", None, closed)
     bridge = np.array([bridge_runs[i] or "" for i in sid], dtype=object)
-    ford_runs = _attr_runs(pts, "ford", False)
+    ford_runs = _attr_runs(pts, "ford", False, closed)
     ford = np.array([bool(ford_runs[i]) for i in sid])
-    width_runs = _attr_runs(pts, "width", spec["width"])
-    half_width = geom.smooth(np.array([width_runs[i] / 2.0 for i in sid], dtype=np.float64), 10.0, closed=True)
+    width_runs = _attr_runs(pts, "width", spec["width"], closed)
+    half_width = geom.smooth(np.array([width_runs[i] / 2.0 for i in sid], dtype=np.float64), 10.0, closed=closed)
     surface[bridge != ""] = np.where(np.array([b.startswith("wood") for b in bridge[bridge != ""]]),
                                      SURFACES.index("wood"), surface[bridge != ""])
 
     bank_gain = spec.get("bank_gain", 14.0)
     bank_max = spec.get("bank_max", 0.05)
-    bank = geom.smooth(np.clip(curv_s * bank_gain, -bank_max, bank_max), 10.0, closed=True)
+    bank = geom.smooth(np.clip(curv_s * bank_gain, -bank_max, bank_max), 10.0, closed=closed)
     bank[bridge != ""] *= 0.2
+    if lots:
+        bank *= 1.0 - on_lot
 
     on_bridge = (bridge != "").astype(np.float64)
-    carve = 1.0 - np.clip(geom.smooth(on_bridge, 1.5, closed=True) * 1.2, 0.0, 1.0)
+    carve = 1.0 - np.clip(geom.smooth(on_bridge, 1.5, closed=closed) * 1.2, 0.0, 1.0)
     carve[bridge != ""] = 0.0
 
     return Road(pos=pos, dist=dist, length=length, fwd=fwd, right=right, curv=curv_s, bank=bank,
                 half_width=half_width, verge=spec.get("verge", 1.4), surface=surface, bridge=bridge,
-                ford=ford, carve=carve, control_s=control_s)
+                ford=ford, carve=carve, control_s=control_s, closed=closed, lots=lots, on_lot=on_lot)
 
 
 def surface_at_lateral_offsets(road: Road) -> tuple[np.ndarray, np.ndarray]:
@@ -204,14 +281,15 @@ def phys_surface(s: int) -> str:
 
 def guardrail_runs(road: Road, drop: np.ndarray, side: int, min_len: int = 24) -> list[tuple[int, int]]:
     """Index runs where the ground falls away steeply on `side` (+1 right, -1 left)."""
-    want = (drop > 2.6) & (road.bridge == "") & ~road.ford
+    want = (drop > 2.6) & (road.bridge == "") & ~road.ford & (road.on_lot < 0.5)
     n = len(want)
-    # close small gaps, drop short runs (circular)
+    # close small gaps, drop short runs (circular on a loop)
     runs = []
-    i = 0
-    visited = np.zeros(n, dtype=bool)
-    start_at = int(np.argmin(want)) if not want.all() else 0
-    order = [(start_at + k) % n for k in range(n)]
+    if road.closed:
+        start_at = int(np.argmin(want)) if not want.all() else 0
+        order = [(start_at + k) % n for k in range(n)]
+    else:
+        order = range(n)
     cur = None
     for k in order:
         if want[k]:
@@ -227,14 +305,21 @@ def guardrail_runs(road: Road, drop: np.ndarray, side: int, min_len: int = 24) -
         runs.append(cur)
     merged = []
     for r in runs:
-        if merged and (r[0] - merged[-1][1]) % n < 14:
+        gap = n
+        if merged:
+            gap = (r[0] - merged[-1][1]) % n if road.closed else r[0] - merged[-1][1]
+        if gap < 14:
             merged[-1][1] = r[1]
         else:
             merged.append(list(r))
     out = []
     for a, b in merged:
-        a = (a - 6) % n
-        b = (b + 6) % n
+        if road.closed:
+            a = (a - 6) % n
+            b = (b + 6) % n
+        else:
+            a = max(0, a - 6)
+            b = min(n - 1, b + 6)
         if (b - a) % n >= min_len:
             out.append((a, b))
     return out
@@ -285,7 +370,7 @@ def build_delineators(road: Road, mb: MeshBuilder, white, red, black) -> list[di
     last = -999
     for i in range(0, n, 3):
         c = road.curv[i]
-        if abs(c) < 1.0 / 140.0 or road.bridge[i] != "" or road.ford[i]:
+        if abs(c) < 1.0 / 140.0 or road.bridge[i] != "" or road.ford[i] or road.on_lot[i] > 0.2:
             continue
         spacing = 30 if abs(c) < 1.0 / 60.0 else 16
         if road.dist[i] - last < spacing:
@@ -301,7 +386,7 @@ def build_delineators(road: Road, mb: MeshBuilder, white, red, black) -> list[di
         mb.box((x, y + 0.95, z), (0.11, 0.14, 0.11), yaw, red)
         placed.append({"i": i, "side": side})
     # chevrons at the apex of tight bends
-    tight = np.abs(road.curv) > 1.0 / 32.0
+    tight = (np.abs(road.curv) > 1.0 / 32.0) & (road.on_lot < 0.2)
     i = 0
     while i < n:
         if tight[i]:
@@ -312,7 +397,7 @@ def build_delineators(road: Road, mb: MeshBuilder, white, red, black) -> list[di
             c = road.curv[apex]
             side = -1 if c > 0 else 1
             for k, off in enumerate((-10, 0, 10)):
-                a = (apex + off) % n
+                a = (apex + off) % n if road.closed else int(np.clip(apex + off, 0, n - 1))
                 lat = side * (road.half_width[a] + road.verge + 1.6)
                 y = road_height_at(road, np.array([a]), np.array([lat]))[0] - 0.3
                 x = road.pos[a, 0] + road.right[a, 0] * lat

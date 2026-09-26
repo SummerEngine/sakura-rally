@@ -8,9 +8,10 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from . import geom, noise
-from .road import Road, road_height_at
+from .road import Road, road_height_at, road_index
 
 CARVE_DROP = 0.25  # terrain sits this far below the road surface under the verges
+LOT_SKIRT = 2.3    # a lot's verge skirt reaches this far beyond its paved edge (lot_mesh)
 
 
 @dataclass
@@ -41,6 +42,7 @@ class Terrain:
     river_dist: np.ndarray
     river_y: np.ndarray
     water: Water
+    lot_sd: np.ndarray          # signed distance to the nearest paved lot (negative inside)
     extra: dict = field(default_factory=dict)
 
     @property
@@ -87,7 +89,7 @@ def build_water(spec: dict) -> Water:
     lake = spec.get("lake")
     if lake:
         poly = np.array([[p[0], 0.0, p[1]] for p in lake["poly"]], dtype=np.float64)
-        dense = geom.catmull_rom_closed(poly, per_seg=12)
+        dense = geom.catmull_rom(poly, per_seg=12, closed=True)
         xz, _ = geom.resample(dense, 3.0, closed=True)
         fwd, right, _ = geom.frames(xz, closed=True)
         wob = noise.fbm(xz[:, 0], xz[:, 2], 70.0, 3, 2.0, 0.5, seed + 201) * lake.get("wobble", 14.0)
@@ -242,7 +244,7 @@ def build_terrain(spec: dict, road: Road, water: Water) -> Terrain:
     # --- road cut and fill
     rf = geom.RoadField(X, Z, -size / 2, cell)
     step = 2
-    rf.add_polyline(road.pos[::step], road.dist[::step], radius=95.0, closed=True)
+    rf.add_polyline(road.pos[::step], road.dist[::step], radius=95.0, closed=road.closed)
     near = np.isfinite(rf.dist)
     si = (rf.seg[near] * step) % len(road.pos)
     lat = rf.lat[near]
@@ -272,8 +274,8 @@ def build_terrain(spec: dict, road: Road, water: Water) -> Terrain:
     # --- pads: flat ground for buildings and plazas, kept off the road corridor
     for pad in t.get("pads", []):
         if "road_at" in pad:
-            s = (road.control_s[pad["road_at"]] + pad.get("offset_m", 0.0)) % road.length
-            i = int(round(s)) % len(road.pos)
+            s = road.control_s[pad["road_at"]] + pad.get("offset_m", 0.0)
+            i = road_index(road, s % road.length if road.closed else s)
             px = road.pos[i, 0] + road.right[i, 0] * pad.get("lateral", 0.0)
             pz = road.pos[i, 2] + road.right[i, 1] * pad.get("lateral", 0.0)
             h0 = road.pos[i, 1] - CARVE_DROP
@@ -289,10 +291,20 @@ def build_terrain(spec: dict, road: Road, water: Water) -> Terrain:
                                road.half_width.max() + road.verge + 5.0, road_dist)
         H = H + (h0 - H) * wpad * keep
 
+    # --- lots: flat under the paved area and its verge ring, then easing into the ground
+    lot_sd = np.full(X.shape, 1e9)
+    for lot in road.lots:
+        sd = lot.sdf(X, Z)
+        y = lot.y - CARVE_DROP
+        E = np.clip(6.0 + 1.3 * np.abs(H - y), 6.0, 75.0)
+        tt = geom.smoothstep(LOT_SKIRT, LOT_SKIRT + E, sd)
+        H = y + (H - y) * tt
+        lot_sd = np.minimum(lot_sd, sd)
+
     diag = cell_diag(n - 1, seed)
     return Terrain(size=size, cell=cell, n=n, xs=xs, X=X, Z=Z, H=H, diag=diag,
                    road_dist=road_dist, road_lat=road_lat, road_seg=road_seg, lake_sd=lake_sd,
-                   river_dist=river_dist, river_y=river_y, water=water)
+                   river_dist=river_dist, river_y=river_y, water=water, lot_sd=lot_sd)
 
 
 def chunk_mesh(ter: Terrain, i0: int, i1: int, j0: int, j1: int, colors: np.ndarray):

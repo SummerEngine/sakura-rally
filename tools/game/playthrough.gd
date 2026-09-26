@@ -8,7 +8,10 @@ extends SceneTree
 ##   timeout 600 $S --disable-crash-handler --path . -s res://tools/game/playthrough.gd -- \
 ##       map=hanami mode=time_trial out=/tmp/playthrough speed=2 shots=8
 ##
-## map: hanami | momiji. mode: time_trial | free_roam (free roam drives `lap_s` seconds).
+## map: hanami | momiji. mode: time_trial | free_roam (free roam drives `lap_s` seconds) |
+## campaign (a fresh campaign from the title: every leg driven by the autopilot, the journey
+## map, results Continue, the arrival, the finale and its end card, back to the title; `map`
+## is ignored, FPS is reported per leg).
 ## speed: Engine.time_scale while the autopilot drives (the flow itself runs in real time).
 ## record=1: capture the end of the Master bus to <out>/playthrough.wav with
 ## <out>/playthrough_events.json (states, gears, surfaces, checkpoints) for
@@ -74,6 +77,9 @@ func _run() -> void:
 	await _seconds(5.0)
 	await _shot("title_b")
 	_mark()
+	if opts["mode"] == "campaign":
+		await _run_campaign()
+		return
 	game.request_start(opts["map"], opts["mode"])
 	await _until_state(&"LOADING", 10.0)
 	await _seconds(0.3)
@@ -100,10 +106,7 @@ func _run() -> void:
 	else:
 		await _until_state(&"FREE_ROAM", 20.0)
 	# autopilot takes the player car
-	car.controlled_by_player = false
-	var ap := Autopilot.new()
-	ap.curve = main.map.track.to_curve()
-	car.add_child(ap)
+	_drive(car)
 	Engine.time_scale = float(opts["speed"])
 	var shots := int(opts["shots"])
 	var shot_every := 150.0 / shots
@@ -138,13 +141,85 @@ func _run() -> void:
 	await _until_state(&"MENU", 60.0)
 	await _seconds(2.5)
 	await _shot("title_return")
-	fps_samples.sort()
-	var n := fps_samples.size()
-	if n > 0:
-		_log("FPS drive: min=%.0f p10=%.0f median=%.0f" % [fps_samples[0], fps_samples[n / 10], fps_samples[n / 2]])
+	_log_fps("drive")
 	_log("PLAYTHROUGH DONE")
 	_save_recording()
 	game.request_quit()
+
+
+func _run_campaign() -> void:
+	var ui: CanvasLayer = main.ui
+	game.request_campaign(true)
+	for li in game.CAMPAIGN.size():
+		var leg: Dictionary = game.CAMPAIGN[li]
+		await _until_state(&"JOURNEY", 60.0)
+		await _seconds(1.5)
+		await _shot("journey_%d" % li)
+		_mark()
+		await _until_state(&"INTRO", 60.0)
+		await _seconds(1.6)
+		await _shot("intro_%d" % li)
+		var car: Car = game.player_car
+		var driving: int
+		if leg["kind"] == "stage":
+			await _until_state(&"RACING", 30.0)
+			driving = game.State.RACING
+		else:
+			await _until_state(&"LIAISON", 30.0)
+			driving = game.State.LIAISON
+			await _seconds(1.5)
+			await _shot("liaison_%d" % li)
+		_drive(car)
+		Engine.time_scale = float(opts["speed"])
+		fps_samples.clear()
+		while game.state == driving:
+			await process_frame
+			fps_samples.append(Engine.get_frames_per_second())
+		Engine.time_scale = 1.0
+		_log_fps(str(leg["code"]))
+		_mark()
+		if leg["kind"] == "stage":
+			await _seconds(5.5)
+			await _shot("results_%d" % li)
+			ui.results._continue.pressed.emit()
+		else:
+			await _seconds(2.5)
+			await _shot("arrival_%d" % li)
+	await _until_state(&"JOURNEY", 60.0)
+	await _seconds(1.5)
+	await _shot("journey_goal")
+	_mark()
+	await _until_state(&"FINALE", 60.0)
+	await _seconds(5.5)
+	await _shot("finale_board")
+	ui.finale._continue.pressed.emit()
+	await _seconds(4.5)
+	await _shot("finale_end")
+	_mark()
+	ui.finale._back.pressed.emit()
+	await _until_state(&"MENU", 60.0)
+	await _seconds(2.5)
+	await _shot("title_finished")
+	_log("PLAYTHROUGH DONE")
+	_save_recording()
+	game.request_quit()
+
+
+## The autopilot takes the player car (Main drops it at a liaison's arrival).
+func _drive(car: Car) -> void:
+	car.controlled_by_player = false
+	var ap := Autopilot.new()
+	ap.curve = main.drive_curve()
+	ap.closed = main.map.track.closed
+	car.add_child(ap)
+	main.autopilot = ap
+
+
+func _log_fps(what: String) -> void:
+	fps_samples.sort()
+	var n := fps_samples.size()
+	if n > 0:
+		_log("FPS %s: min=%.0f p10=%.0f median=%.0f" % [what, fps_samples[0], fps_samples[n / 10], fps_samples[n / 2]])
 
 
 ## Gear and rear-wheel surface changes of the player car plus its one-shot events

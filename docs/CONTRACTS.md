@@ -224,14 +224,35 @@ never pushes and never touches `main`; the lead merges into `ep2`.
 ### Session and campaign (Campaign)
 
 - Session mode `Game.MODE_LIAISON`: no timer, no checkpoints, no wrong-way nag;
-  `RaceSession.arrived` fires when the car enters the arrival zone and `Game.notify_arrived()`
-  re-emits it as `Game.arrived`.
+  `RaceSession.arrived` fires when the car enters the arrival zone (within
+  `MapWorld.arrival_radius` of `map.arrival`, or on the road in its last `arrival_radius`
+  metres) and `Game.notify_arrived()` re-emits it as `Game.arrived`. `RaceSession.progress`
+  is start → arrival (0..1) and `RaceSession.distance_left` the road metres to go.
 - Campaign API on `Game`: `const CAMPAIGN` (legs `{"map", "kind": "stage"|"liaison", "code",
-  "title", "title_jp"}`: SS1 `hanami`, L1 `natsu`, SS2 `momiji`), `request_campaign(fresh: bool)`,
+  "title", "title_jp", "kanji"}`: SS1 `hanami`, L1 `natsu`, SS2 `momiji`), `const RIVALS`
+  (`{"name", "name_jp", "team", "pace": [factor per stage]}`, stage time = gold × factor),
+  `request_campaign(fresh: bool)` (a finished campaign always restarts),
   `request_campaign_continue()`, `campaign_status() -> {"started", "finished", "leg", "legs",
-  "next", "results"}`, `var campaign_active: bool`, signals `campaign_leg_started(index, leg)`,
-  `arrived`, `campaign_finished(summary)`. Progress lives in the player save (`persistent` rules).
-  Any new `Game.State` values are listed here by Campaign when added.
+  "next", "results"}` (`leg` = next leg to play, `legs` when only the finale is left;
+  `results` = map id → `{"time", "medal"}`), `var campaign_active: bool`, `var campaign_leg`
+  (leg being played, -1 outside), `campaign_classification()` (rows `{"name", "name_jp",
+  "team", "player", "times", "total", "gap"}`, fastest first), signals
+  `campaign_leg_started(index, leg)`, `arrived`, `campaign_finished(summary)` (summary
+  `{"classification", "results", "position", "field"}`). Main calls `notify_campaign_leg(i)`,
+  `notify_campaign_finished()` and `end_campaign_session()` (title / Time Attack).
+  A campaign stage's `race_finished` result adds `"campaign": true, "leg", "standing",
+  "field"`. Progress (`[campaign]` leg, results, finished) lives in the player save
+  (`persistent` rules); a quit resumes at the start of the saved leg.
+- `Game.State` adds, in this order after `FREE_ROAM`: `JOURNEY` (the painted journey map,
+  also the campaign's loading screen), `LIAISON` (driving a liaison; within braking distance
+  of the time control Main takes the car over and brakes it in, "Time control ahead"),
+  `ARRIVED` (the arrival beat: the car rolls to rest at the time control under a roadside
+  shot, arrival card), `FINALE` (classification and end card). Pause works in `LIAISON` as in
+  `RACING`.
+- Campaign flow: title → `JOURNEY` → `LOADING` → `INTRO` → stage (`COUNTDOWN`, `RACING`,
+  `FINISHED`, results Continue) or liaison (`LIAISON`, `ARRIVED`) → `JOURNEY` … → after the
+  last leg `JOURNEY` → `FINALE` → `MENU`. Music: `liaison` on the liaison drive, `menu` on the
+  journey map, `results` on the finale; stingers `arrived`, `campaign_complete`.
 
 ### Menu (Menu)
 

@@ -1,7 +1,8 @@
 extends CanvasLayer
 ## The whole UI layer (scenes/ui/ui_root.tscn). The Main scene instantiates it once; it
 ## follows the Game autoload (state_changed, session_started, countdown_tick,
-## checkpoint_passed, race_finished, paused_changed, notice) and switches screens itself.
+## checkpoint_passed, race_finished, paused_changed, notice, campaign_finished) and switches
+## screens itself.
 ##
 ## API for Main (see docs/UI.md):
 ##   await ui.transition_out(map_id)  # ink covers the screen; load / unload behind it
@@ -20,6 +21,10 @@ const Hud := preload("res://scripts/ui/screens/hud.gd")
 const ResultsScreen := preload("res://scripts/ui/screens/results_screen.gd")
 const PauseMenu := preload("res://scripts/ui/screens/pause_menu.gd")
 const TransitionLayer := preload("res://scripts/ui/screens/transition_layer.gd")
+const JourneyMap := preload("res://scripts/ui/screens/journey_map.gd")
+const LiaisonHud := preload("res://scripts/ui/screens/liaison_hud.gd")
+const ArrivalCard := preload("res://scripts/ui/screens/arrival_card.gd")
+const CampaignFinale := preload("res://scripts/ui/screens/campaign_finale.gd")
 const FocusRing := preload("res://scripts/ui/widgets/focus_ring.gd")
 
 const SHAKE_TIME := 0.38
@@ -31,6 +36,10 @@ var hud: Hud
 var results: ResultsScreen
 var pause_menu: PauseMenu
 var transition: TransitionLayer
+var journey: JourneyMap
+var liaison_hud: LiaisonHud
+var arrival: ArrivalCard
+var finale: CampaignFinale
 
 var _root := Control.new() ## everything that shakes (all but the transition)
 var _hud_wanted := true
@@ -49,12 +58,16 @@ func _ready() -> void:
 	add_child(_root)
 
 	hud = Hud.new()
+	liaison_hud = LiaisonHud.new()
 	race_intro = RaceIntro.new()
+	arrival = ArrivalCard.new()
 	results = ResultsScreen.new()
+	finale = CampaignFinale.new()
 	title = TitleScreen.new()
+	journey = JourneyMap.new()
 	pause_menu = PauseMenu.new()
 	settings = SettingsPanel.new()
-	for c: Control in [hud, race_intro, results, title, pause_menu, settings]:
+	for c: Control in [hud, liaison_hud, race_intro, arrival, results, finale, title, journey, pause_menu, settings]:
 		_root.add_child(c)
 	_root.add_child(FocusRing.new())
 	transition = TransitionLayer.new()
@@ -64,6 +77,9 @@ func _ready() -> void:
 	title.settings_requested.connect(settings.open)
 	title.shake_requested.connect(shake)
 	results.shake_requested.connect(shake)
+	journey.shake_requested.connect(shake)
+	arrival.shake_requested.connect(shake)
+	finale.shake_requested.connect(shake)
 	pause_menu.settings_requested.connect(settings.open)
 
 	var game := UIApi.game()
@@ -75,6 +91,7 @@ func _ready() -> void:
 	game.race_finished.connect(_on_race_finished)
 	game.paused_changed.connect(_on_paused_changed)
 	game.notice.connect(_on_notice)
+	game.campaign_finished.connect(finale.open)
 	_on_state_changed(int(game.state), int(game.state))
 
 
@@ -103,6 +120,7 @@ func is_screen_covered() -> bool:
 func set_hud_visible(value: bool) -> void:
 	_hud_wanted = value
 	hud.modulate.a = 1.0 if value else 0.0
+	liaison_hud.modulate.a = 1.0 if value else 0.0
 
 
 func set_ui_visible(value: bool) -> void:
@@ -117,11 +135,13 @@ func shake(strength: float) -> void:
 
 # ---------------------------------------------------------------- Game events
 
-func _on_state_changed(new_state: int, _old_state: int) -> void:
+func _on_state_changed(new_state: int, old_state: int) -> void:
 	var game := UIApi.game()
-	var state_name := str((game.State as Dictionary).find_key(new_state))
+	var states: Dictionary = game.State
+	var state_name := str(states.find_key(new_state))
 	match state_name:
 		"MENU":
+			_hide_campaign()
 			hud.hide_hud(true)
 			results.hide_result(true)
 			race_intro.reset()
@@ -130,10 +150,23 @@ func _on_state_changed(new_state: int, _old_state: int) -> void:
 		"LOADING":
 			title.leave()
 			pause_menu.close()
+			journey.close()
+			finale.close()
+		"JOURNEY":
+			# Entered behind the ink: everything else goes at once, the map plays as it lifts.
+			title.leave(true)
+			pause_menu.close()
+			hud.hide_hud(true)
+			results.hide_result(true)
+			race_intro.reset()
+			_hide_campaign()
+			var from: String = str(states.find_key(old_state))
+			journey.open(game.campaign_status(), from == "FINISHED" or from == "ARRIVED")
 		"INTRO":
 			title.leave(true)
 			results.hide_result(true)
 			hud.hide_hud(true)
+			liaison_hud.hide_hud(true)
 			race_intro.setup(str(game.map_id), str(game.mode))
 			race_intro.show_card()
 		"COUNTDOWN":
@@ -145,8 +178,26 @@ func _on_state_changed(new_state: int, _old_state: int) -> void:
 			results.hide_result(true)
 			race_intro.hide_card()
 			_show_hud()
+		"LIAISON":
+			race_intro.hide_card()
+			liaison_hud.show_hud()
+			liaison_hud.modulate.a = 1.0 if _hud_wanted else 0.0
+		"ARRIVED":
+			liaison_hud.hide_hud()
+			arrival.show_card()
 		"FINISHED":
 			hud.hide_hud()
+		"FINALE":
+			title.leave(true)
+			results.hide_result(true)
+			journey.close()
+
+
+func _hide_campaign() -> void:
+	journey.close()
+	finale.close()
+	arrival.hide_card(true)
+	liaison_hud.hide_hud(true)
 
 
 func _show_hud() -> void:
@@ -163,7 +214,11 @@ func _on_session_started(map_id: String, mode: String) -> void:
 	results.hide_result(true)
 	race_intro.reset()
 	hud.hide_hud(true)
-	hud.setup(map_id, mode)
+	liaison_hud.hide_hud(true)
+	if mode == str(UIApi.game().MODE_LIAISON):
+		liaison_hud.setup()
+	else:
+		hud.setup(map_id, mode)
 	race_intro.setup(map_id, mode)
 	if int(UIApi.game().state) == UIApi.state("INTRO"):
 		race_intro.show_card()
@@ -197,6 +252,8 @@ func _on_paused_changed(paused: bool) -> void:
 func _on_notice(text: String) -> void:
 	if hud.shown:
 		hud.on_notice(text)
+	elif liaison_hud.shown:
+		liaison_hud.on_notice(text)
 
 
 # ---------------------------------------------------------------- input / frame
@@ -220,7 +277,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event.is_action_pressed("pause"):
 		var s := int(game.state)
-		if s == UIApi.state("RACING") or s == UIApi.state("FREE_ROAM") or s == UIApi.state("COUNTDOWN"):
+		if s == UIApi.state("RACING") or s == UIApi.state("FREE_ROAM") or s == UIApi.state("COUNTDOWN") \
+				or s == UIApi.state("LIAISON"):
 			UIApi.ui_sound(&"click")
 			game.set_paused(true)
 			get_viewport().set_input_as_handled()
