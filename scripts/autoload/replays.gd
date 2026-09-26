@@ -88,6 +88,7 @@ var _cam_xf: Transform3D
 var _cam_fov: float = 70.0
 var _cam_t: float = 0.0
 var _settings: Dictionary = {}
+var _outcome: Dictionary = {} ## the finish or the arrival, repeated in the "end" event
 var _cost_sum: int = 0
 var _cost_max: int = 0
 var _cost_max_t: float = 0.0
@@ -138,8 +139,12 @@ func _ready() -> void:
 	_game.race_finished.connect(func(result: Dictionary) -> void:
 		var e := result.duplicate()
 		e["type"] = "finish"
-		_event(e))
-	_game.arrived.connect(func() -> void: _event({"type": "arrived"}))
+		_event(e)
+		_outcome = {"finished": result.get("time", 0.0), "medal": result.get("medal", ""),
+				"record": result.get("is_record", false)})
+	_game.arrived.connect(func() -> void:
+		_event({"type": "arrived"})
+		_outcome = {"arrived": true})
 	_game.notice.connect(func(text: String) -> void: _event({"type": "notice", "text": text}))
 	_game.paused_changed.connect(func(p: bool) -> void: _event({"type": "pause", "paused": p}))
 	_game.settings_changed.connect(_on_settings_changed)
@@ -299,6 +304,7 @@ func _open(car: Car) -> void:
 	_cost_max_t = 0.0
 	_cost_over = 0
 	_want_new = false
+	_outcome = {}
 	var block_frames := int(BLOCK_SECONDS * Engine.physics_ticks_per_second / F.TICKS_PER_FRAME) + 8
 	if _fbuf.size() < block_frames * F.FRAME_SIZE:
 		_fbuf.resize(block_frames * F.FRAME_SIZE)
@@ -370,6 +376,7 @@ func _close(reason: String) -> void:
 	var end := stats.duplicate()
 	end["type"] = "end"
 	end["reason"] = reason
+	end.merge(_outcome)
 	_event(end)
 	if is_instance_valid(_car):
 		if _car.impact.is_connected(_on_impact):

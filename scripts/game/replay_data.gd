@@ -55,8 +55,8 @@ static func load_file(file_path: String) -> ReplayData:
 	return r
 
 
-## The header and the events of the last block only (for listings: the "end" event and, for a
-## finished stage, usually "finish"), without decompressing the whole file:
+## The header and the events of the last block only (for listings: the "end" event, which
+## repeats the finish or the arrival), without decompressing the whole file:
 ## {header, events, bytes, error}.
 static func peek(file_path: String) -> Dictionary:
 	var out := {"header": {}, "events": [], "bytes": 0, "error": ""}

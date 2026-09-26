@@ -90,10 +90,10 @@ func _list(folder: String) -> void:
 				"end":
 					seconds = float(e.get("seconds", -1.0))
 					ending = str(e.get("reason", ""))
-				"finish":
-					result = "finished %s %s" % [Analysis._clock(float(e.get("time", 0.0))), e.get("medal", "")]
-				"arrived":
-					result = "arrived"
+					if e.has("finished"):
+						result = "finished %s %s" % [Analysis._clock(float(e["finished"])), e.get("medal", "")]
+					elif e.get("arrived", false):
+						result = "arrived"
 		print("  %s  %-8s %-10s %-7s %6s  %5.0f KB  %-22s %s" % [str(h.get("date", "")).replace("T", " "), h.get("route", ""),
 				h.get("mode", ""), h.get("car", ""), Analysis._clock(seconds) if seconds >= 0.0 else "?",
 				float(p["bytes"]) / 1024.0, result if result != "" else ending, n])
