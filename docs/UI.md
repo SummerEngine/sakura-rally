@@ -98,6 +98,12 @@ Pages slide in over the hub inside the parallax layer; Esc / B / "Back" returns 
 and to the item that opened the page. The page showing is mirrored to
 `Game.set_menu_view("title" | "time_attack" | "garage")`.
 
+Entrances call `UIMotion.layout_now(node)` (sorts the containers under it on the spot) before
+reading positions for their tweens. Don't wait for a drawn frame instead: on a first launch
+the pipeline compiles keep the window from drawing for seconds while the game keeps
+processing, and the intro would start seconds late (episode 2's first-run title came up
+without its wordmark that way).
+
 **Time Attack** (`screens/time_attack_panel.gd`): Time Trial / Free Roam picker; Time Trial
 shows cards for the timed stages (`Game.stage_maps()`), Free Roam every map including the
 liaison road `natsu` (cards slide in and out of the row as the mode changes). A card calls
@@ -129,7 +135,9 @@ flyover; in `"garage"` it parks on the map's start grid (autopilot off, brakes h
 so the car fits). A livery pick in the garage paints the new colour over the body with a brush
 front from nose to tail (`shaders/ui/paint_sweep.gdshader`, 0.8 s, ink line on the front); a car
 pick drops the other car onto the grid. Outside the garage both apply at once, so the flyover
-always shows the chosen car and livery.
+always shows the chosen car and livery. After a liaison or a Free Roam on an open road
+(`MapWorld.closed == false`) Main loads the menu map under the ink instead: the flyover
+autopilot needs a closed loop.
 
 ### Top-down card art
 
@@ -149,8 +157,9 @@ timeout 400 $S --headless --disable-crash-handler --path . --import
 
 `tools/ui/menu_tour.gd` drives the real title hub (live flyover, real menu car) with the ui_*
 actions: hub, Time Attack, garage with every livery (one frame mid-sweep), a car switch when a
-second car scene exists, and back to the flyover. It checks parking, saved choices, the paint on
-the car, the respawned car's scene and the resumed autopilot, and saves
+second car scene exists, and back to the flyover. It checks that the wordmark is settled and
+drawn on the title frame (ink pixels in its rect, after a wall-clock wait), parking, saved
+choices, the paint on the car, the respawned car's scene and the resumed autopilot, and saves
 `<out>/menu_<shot>_<aspect>.png`:
 
 ```
