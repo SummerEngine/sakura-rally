@@ -40,6 +40,18 @@ MUSIC = {
             "groove, warm round bass. Content, proud, relaxed feeling, polished studio mix. "
             "Consistent tempo throughout, no fade out, no ending. Instrumental only, no vocals."),
         "music_length_ms": 70000, "force_instrumental": True, "output_format": "mp3_44100_192"}},
+    "music_liaison_el": {"model": EL_MUSIC, "params": {
+        "prompt": (
+            "Chill, warm instrumental lo-fi Japanese city-pop with an acoustic feel for a relaxed, "
+            "untimed summer-afternoon drive between rally stages in a video game, played underneath "
+            "a car engine. 86 BPM, 4/4, key of D major. Fingerpicked nylon-string acoustic guitar, "
+            "mellow Rhodes electric piano chords, a few soft koto accents, round warm bass, "
+            "laid-back lo-fi drum groove with soft kick, brushed snare and a gentle shaker, subtle "
+            "tape warmth, an airy flute melody now and then. Lazy, sunny, carefree, low energy, "
+            "lots of space, light low-mids, polished mix. Short gentle intro, then a steady "
+            "consistent groove at the same tempo throughout, no big ending, no fade out. "
+            "Instrumental only, no vocals."),
+        "music_length_ms": 150000, "force_instrumental": True, "output_format": "mp3_44100_192"}},
 }
 
 _SFX_FMT = "mp3_44100_192"
@@ -88,6 +100,26 @@ SFX = {
         "text": "Dry autumn leaves rustling and skittering softly along the ground in a light "
                 "gust of wind, then settling, gentle, no footsteps",
         "duration_seconds": 5, "prompt_influence": 0.5, "output_format": _SFX_FMT}},
+    # ---- natsu (summer afternoon, liaison road)
+    "amb_natsu_breeze": {"model": EL_SFX, "params": {
+        "text": "Light warm summer breeze through tall grass and bamboo leaves on a quiet "
+                "countryside afternoon, soft continuous airy rustle, calm, no insects, no birds, "
+                "no people",
+        "loop": True, "duration_seconds": 22, "prompt_influence": 0.5, "output_format": _SFX_FMT}},
+    "amb_natsu_stream": {"model": EL_SFX, "params": {
+        "text": "A clear shallow summer stream flowing over pebbles nearby, gentle continuous "
+                "bright trickling and bubbling water, calm, no insects, no birds",
+        "loop": True, "duration_seconds": 22, "prompt_influence": 0.5, "output_format": _SFX_FMT}},
+    "amb_natsu_minmin": {"model": EL_SFX, "params": {
+        "text": "Japanese minminzemi cicadas singing in summer trees on a hot afternoon, the "
+                "rhythmic 'meen-meen-meen' call rising and falling, a few cicadas at a medium "
+                "distance, continuous, no birds, no people, no wind",
+        "loop": True, "duration_seconds": 22, "prompt_influence": 0.5, "output_format": _SFX_FMT}},
+    "amb_natsu_higurashi": {"model": EL_SFX, "params": {
+        "text": "A single higurashi cicada calling 'kana-kana-kana' in a Japanese forest on a "
+                "summer evening, a clear bell-like trill that slowly falls and fades, slightly "
+                "distant, quiet background, no other insects",
+        "duration_seconds": 8, "prompt_influence": 0.6, "output_format": _SFX_FMT}},
 }
 
 # Model comparison for the menu track (not used by any asset; its cached WAV was deleted and

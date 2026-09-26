@@ -8,11 +8,13 @@ extends Node3D
 ## run adapts to whatever the fake drivetrain does.
 ##
 ## Outputs (in tools/audio/renders/):
-##   audio_test[_mix|_clean].wav          Master bus recording
-##   audio_test[_mix|_clean]_events.json  [{"t": seconds since recording start, "label": ...}]
+##   audio_test[_mix[_liaison]|_clean][_na4].wav          Master bus recording
+##   audio_test[_mix[_liaison]|_clean][_na4]_events.json  [{"t": seconds since recording start, "label": ...}]
 ## User args (after `--`):
-##   --mix    also plays drive music + hanami ambience during the run.
+##   --mix    also plays drive music + hanami ambience during the run
+##            (with --liaison: liaison music + natsu ambience instead).
 ##   --clean  tarmac only, no stones/pops/impacts/horn: for the click detector.
+##   --na4    the fake car becomes the Hayate (engine_sound &"na4"); adds "_na4" to outputs.
 ##
 ## Run (headless is fine, audio still mixes):
 ##   $S --headless --disable-crash-handler --path . res://scenes/test/audio_test.tscn [-- --mix]
@@ -52,8 +54,9 @@ func _start_recording() -> void:
 	_record.set_recording_active(true)
 	if _mix:
 		var sound := get_node("/root/Sound")
-		sound.play_music(&"drive", 0.5)
-		sound.play_ambience("hanami", 0.5)
+		var liaison := "--liaison" in OS.get_cmdline_user_args()
+		sound.play_music(&"liaison" if liaison else &"drive", 0.5)
+		sound.play_ambience("natsu" if liaison else "hanami", 0.5)
 
 
 ## Step: when `cond` is true (checked every frame, after `delay` s since the previous
@@ -165,7 +168,9 @@ func _finish() -> void:
 	_record.set_recording_active(false)
 	var wav := _record.get_recording()
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUT_DIR))
-	var suffix := "_mix" if _mix else ("_clean" if _clean else "")
+	var args := OS.get_cmdline_user_args()
+	var suffix := ("_mix" if _mix else ("_clean" if _clean else "")) + ("_liaison" if _mix and "--liaison" in args else "") \
+			+ ("_na4" if "--na4" in args else "")
 	var path := ProjectSettings.globalize_path(OUT_DIR + "audio_test%s.wav" % suffix)
 	if wav == null:
 		push_error("audio_test: recording is empty")

@@ -16,6 +16,7 @@ import json
 import math
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 import librosa
 import numpy as np
@@ -30,12 +31,28 @@ from audiolib import (ASSETS, RENDERS, SR, filt, lufs, peak_eq, peak_db,  # noqa
 
 OUT = ASSETS / "music"
 
+class Track(NamedTuple):
+    key: str  # fal cache name
+    bpm: float  # expected tempo (beat-tracker hint)
+    xfade: float  # loop crossfade, seconds
+    eq: list  # tone EQ [(f0, q, gain_db)]
+    grid_beats: int = 32  # loop points on section starts: 32 = 8-bar sections, 16 = 4-bar phrases
+    min_a: float = 0.0  # earliest loop start, seconds
+    min_loop: float = 0.0  # shortest acceptable loop, seconds
+
+
 TRACKS = {
-    # name: (cache key, expected bpm, crossfade seconds, tone EQ [(f0, q, gain_db)])
-    "menu": ("music_menu_el", 84, 1.0, []),
+    "menu": Track("music_menu_el", 84, 1.0, []),
     # drive sits under the engine: carve the 150-400 Hz band a little
-    "drive": ("music_drive_el", 104, 0.75, [(260.0, 0.9, -3.0), (120.0, 1.0, -1.5)]),
-    "results": ("music_results_el", 92, 1.0, []),
+    "drive": Track("music_drive_el", 104, 0.75, [(260.0, 0.9, -3.0), (120.0, 1.0, -1.5)]),
+    "results": Track("music_results_el", 92, 1.0, []),
+    # liaison also plays under the engine (untimed drive): a lighter version of drive's carve.
+    # Its cymbal-marked sections fall every 4 bars (section phases 0 and 16 score a tie), so
+    # loop points may sit on any 4-bar phrase start. The loop starts after the drum-less intro
+    # and its full stop at 21-22 s, and is at least 80 s long: a liaison drive lasts minutes,
+    # and the best-matching 16-bar loop (45 s) would repeat audibly.
+    "liaison": Track("music_liaison_el", 86, 1.0, [(260.0, 0.9, -2.0)], grid_beats=16,
+                     min_a=23.0, min_loop=80.0),
 }
 TARGET_LUFS = -16.0
 TP_CEIL_DB = -1.0
@@ -111,24 +128,27 @@ def section_phase(mono: np.ndarray, beats: np.ndarray) -> tuple[int, list]:
     return best, sorted(((round(v, 2), p) for p, v in enumerate(ph)), reverse=True)[:3]
 
 
-def choose_loop(mono: np.ndarray, bpm_hint: float, xfade: float) -> dict:
-    """A and B both on 8-bar section starts (B - A whole sections), B before the generated
-    outro. Score = context similarity around A vs B + a length bonus (long loops repeat less)."""
-    bpm, b0, beats, resid_ms = beat_grid(mono, bpm_hint)
+def choose_loop(mono: np.ndarray, tr: Track) -> dict:
+    """A and B both on section starts every tr.grid_beats (B - A whole sections), A not before
+    tr.min_a, B - A at least tr.min_loop, B before the generated outro. Score = context
+    similarity around A vs B + a length bonus (long loops repeat less)."""
+    bpm, b0, beats, resid_ms = beat_grid(mono, tr.bpm)
     feats = features(mono, beats)
     sec, sec_scores = section_phase(mono, beats)
     end_ok = full_level_end(mono)
     ctx = 8  # beats of context compared on either side of the seam
     best = None
-    starts = np.arange(sec, len(beats), 32)  # beat indices of section downbeats
+    starts = np.arange(sec % tr.grid_beats, len(beats), tr.grid_beats)  # beat indices of section starts
     for ia in starts:
         A = beats[ia]
-        if A < max(4.0, xfade + 1.0):
+        if A < max(4.0, tr.xfade + 1.0, tr.min_a):
             continue
         for ib in starts[starts > ia]:
             B = beats[ib]
             if B > end_ok - 0.5:
                 break
+            if B - A < tr.min_loop:
+                continue
             off = 0 if beats[0] * SR < 512 else 1  # sync prepends a [0, beat0) column
             ja, jb = ia + off, ib + off  # feature column of the beat at A / B
             if jb + ctx >= feats.shape[1] or ja - ctx < 0:
@@ -214,12 +234,13 @@ def seam_report(y: np.ndarray, a: int, name: str) -> dict:
 
 
 def process(name: str) -> dict:
-    key, bpm_hint, xfade, eq = TRACKS[name]
+    tr = TRACKS[name]
+    key, xfade, eq = tr.key, tr.xfade, tr.eq
     spec = MUSIC[key]
     raw = falcache.generate(key, spec["model"], spec["params"])
     x = falcache.decode(raw, 2)
     mono = x.mean(1)
-    lp = choose_loop(mono, bpm_hint, xfade)
+    lp = choose_loop(mono, tr)
     a = int(round(lp["A"] * SR))
     b = int(round(lp["B"] * SR))
     align = onset_alignment(mono, a, b)
