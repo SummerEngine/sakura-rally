@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://uf6w7ugiuntm"
-path="res://.godot/imported/chevron_right.glb-59be5d493417f34b3d1779d1a6980bee.scn"
+uid="uid://3d86gqebaqix"
+path="res://.godot/imported/corner_warn_sharp_left.glb-9e59cc38b60199e10f3fc53cfddeabe9.scn"
 
 [deps]
 
-source_file="res://assets/models/props/chevron_right.glb"
-dest_files=["res://.godot/imported/chevron_right.glb-59be5d493417f34b3d1779d1a6980bee.scn"]
+source_file="res://assets/models/props/corner_warn_sharp_left.glb"
+dest_files=["res://.godot/imported/corner_warn_sharp_left.glb-9e59cc38b60199e10f3fc53cfddeabe9.scn"]
 
 [params]
 

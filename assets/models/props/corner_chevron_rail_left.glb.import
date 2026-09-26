@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://15p2avolb7xu"
-path="res://.godot/imported/sign_curve_right.glb-2430cf29d30a617b622a4559e0c9990d.scn"
+uid="uid://drugu41n7udri"
+path="res://.godot/imported/corner_chevron_rail_left.glb-7f87eb5b2646517fcec17adbdc9eb53f.scn"
 
 [deps]
 
-source_file="res://assets/models/props/sign_curve_right.glb"
-dest_files=["res://.godot/imported/sign_curve_right.glb-2430cf29d30a617b622a4559e0c9990d.scn"]
+source_file="res://assets/models/props/corner_chevron_rail_left.glb"
+dest_files=["res://.godot/imported/corner_chevron_rail_left.glb-7f87eb5b2646517fcec17adbdc9eb53f.scn"]
 
 [params]
 

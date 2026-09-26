@@ -36,9 +36,12 @@ MOVE_REACH = 16.0   # m, how far out an offender may be moved before it is dropp
 # SoftCourse.SMASHABLE in scripts/world/soft_course.gd; keep the two in step.
 SMASHABLE = frozenset((
     "tape_post", "banner_fence", "flag_pole", "flag_pole_pink", "flag_pole_blue", "traffic_cone",
-    "chevron_left", "chevron_right", "distance_board_100", "distance_board_50", "tire_stack",
-    "hay_bale_round", "hay_bale_square", "marshal_post", "sign_curve_left", "sign_curve_right",
-    "road_mirror", "rice_paddy_marker", "scarecrow", "koinobori", "fence_wood", "fence_bamboo", "bench",
+    "distance_board_100", "distance_board_50", "tire_stack", "hay_bale_round", "hay_bale_square",
+    "marshal_post", "road_mirror", "rice_paddy_marker", "scarecrow", "koinobori", "fence_wood",
+    "fence_bamboo", "bench",
+    "corner_chevron_left", "corner_chevron_right", "corner_warn_curve_left", "corner_warn_curve_right",
+    "corner_warn_sharp_left", "corner_warn_sharp_right", "corner_warn_hairpin_left", "corner_warn_hairpin_right",
+    "corner_warn_series_left", "corner_warn_series_right",
 ))
 # Built along the road on purpose (the car scrapes along them).
 WALLS = frozenset(("guardrail", "bridge_rail"))

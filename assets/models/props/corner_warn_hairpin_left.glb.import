@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://cokx8xhjja41v"
-path="res://.godot/imported/sign_curve_left.glb-c37d2cbcac27851261e4052aba70fbb5.scn"
+uid="uid://bmdbj6dqegcld"
+path="res://.godot/imported/corner_warn_hairpin_left.glb-82634c306b4867c6b9dc615fb85f679a.scn"
 
 [deps]
 
-source_file="res://assets/models/props/sign_curve_left.glb"
-dest_files=["res://.godot/imported/sign_curve_left.glb-c37d2cbcac27851261e4052aba70fbb5.scn"]
+source_file="res://assets/models/props/corner_warn_hairpin_left.glb"
+dest_files=["res://.godot/imported/corner_warn_hairpin_left.glb-82634c306b4867c6b9dc615fb85f679a.scn"]
 
 [params]
 
