@@ -274,36 +274,6 @@ def traffic_cone(kit: Kit) -> None:
         kit.cyl(mat, r0, z1 - z0, (0, 0, z0), seg=8, r_top=r1, cap_bot=(i == 0), cap_top=(i == 4))
 
 
-def _chevron(kit: Kit, left: bool) -> None:
-    W, Hb, z0 = 1.6, 0.6, 0.55
-    for x in (-0.6, 0.6):
-        kit.cyl("Galvanized", 0.035, z0 + Hb, (x, -0.04, 0), seg=5)
-    kit.cbox("Ink", (W + 0.04, 0.05, Hb + 0.04), (0, 0, z0 + Hb / 2))
-    kit.cbox("Red", (W, 0.06, Hb), (0, 0, z0 + Hb / 2))
-    sgn = 1 if left else -1
-    zc = z0 + Hb / 2
-    for k in range(3):
-        xc = (k - 1) * 0.45
-        tip, back, arm = xc + sgn * 0.14, xc - sgn * 0.14, 0.11
-        for dz in (1, -1):  # two convex arms per chevron, extruded through the board
-            arm2d = [(tip, zc), (back, zc + dz * 0.22), (back + sgn * arm, zc + dz * 0.22), (tip + sgn * arm, zc)]
-            kit.hull("White", [(x, y, z) for x, z in arm2d for y in (-0.036, 0.036)])
-
-
-@prop("chevron_left", "rally", ["roadside"], BOTH,
-      {"type": "box", "size": [1.64, 1.17, 0.12], "center": [0, 0.585, 0]}, 200)
-def chevron_left(kit: Kit) -> None:
-    """Red/white chevron board; arrows point left as seen by a driver facing its front (+Y side)."""
-    _chevron(kit, left=True)
-
-
-@prop("chevron_right", "rally", ["roadside"], BOTH,
-      {"type": "box", "size": [1.64, 1.17, 0.12], "center": [0, 0.585, 0]}, 200)
-def chevron_right(kit: Kit) -> None:
-    """Red/white chevron board; arrows point right as seen by a driver facing its front."""
-    _chevron(kit, left=False)
-
-
 @prop("tape_post", "rally", ["roadside", "spectator_zone"], BOTH, two_posts(1.5, 0.06, 1.1), 300)
 def tape_post(kit: Kit) -> None:
     """Two stakes 3 m apart with sagging red/white barrier tape (origin mid-span)."""

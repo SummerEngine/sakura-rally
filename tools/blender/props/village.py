@@ -467,37 +467,6 @@ def bus_stop(kit: Kit) -> None:
     kit.cbox("White", (0.22, 0.03, 0.5), (sx, D / 2 + 0.02, 1.55))
 
 
-def _curve_sign(kit: Kit, left: bool) -> None:
-    kit.cyl("Galvanized", 0.035, 2.35, (0, 0, 0), seg=6)
-    z = 2.15
-    s = 0.62
-    kit.cbox("Ink", (s + 0.03, 0.03, s + 0.03), (0, 0.04, z), (0, 45, 0))
-    kit.cbox("Yellow_Sign", (s - 0.03, 0.04, s - 0.03), (0, 0.05, z), (0, 45, 0))
-    # curved arrow: stem up, bend to the side, arrow head. Seen from the front (+Y), the
-    # viewer's left is world +X.
-    sgn = 1 if left else -1
-    pts = [Vector((0.08 * -sgn, 0.08, z - 0.3)), Vector((0.08 * -sgn, 0.08, z - 0.02)),
-           Vector((0.0, 0.08, z + 0.12)), Vector((0.1 * sgn, 0.08, z + 0.16))]
-    for a, b in zip(pts, pts[1:]):
-        kit.box_between("Ink", a, b, 0.075, 0.03, (0, 1, 0))
-    tip = pts[-1] + Vector((0.13 * sgn, 0, 0))
-    base = pts[-1]
-    kit.poly("Ink", [base + Vector((0, 0.0, 0.1)), tip, base + Vector((0, 0.0, -0.1)),
-                     base + Vector((0, 0.03, 0.1)), tip + Vector((0, 0.03, 0)), base + Vector((0, 0.03, -0.1))],
-             [(0, 1, 2), (5, 4, 3), (0, 3, 4, 1), (1, 4, 5, 2), (2, 5, 3, 0)], None, None, recalc=True)
-    kit.cbox("Galvanized", (0.08, 0.06, 0.2), (0, 0.02, z))
-
-
-@prop("sign_curve_left", "roadside", ["roadside"], BOTH, cyl(0.05), 300)
-def sign_curve_left(kit: Kit) -> None:
-    _curve_sign(kit, True)
-
-
-@prop("sign_curve_right", "roadside", ["roadside"], BOTH, cyl(0.05), 300)
-def sign_curve_right(kit: Kit) -> None:
-    _curve_sign(kit, False)
-
-
 @prop("road_mirror", "roadside", ["roadside"], BOTH, cyl(0.06), 400)
 def road_mirror(kit: Kit) -> None:
     """Orange convex traffic mirror on a pole, facing +Y."""

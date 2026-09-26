@@ -19,6 +19,7 @@ drops the few that find no room within reach.
 from __future__ import annotations
 
 import math
+from types import SimpleNamespace
 
 import numpy as np
 
@@ -37,9 +38,12 @@ MOVE_REACH = 16.0   # m, how far out an offender may be moved before it is dropp
 # SoftCourse.SMASHABLE in scripts/world/soft_course.gd; keep the two in step.
 SMASHABLE = frozenset((
     "tape_post", "banner_fence", "flag_pole", "flag_pole_pink", "flag_pole_blue", "traffic_cone",
-    "chevron_left", "chevron_right", "distance_board_100", "distance_board_50", "tire_stack",
-    "hay_bale_round", "hay_bale_square", "marshal_post", "sign_curve_left", "sign_curve_right",
-    "road_mirror", "rice_paddy_marker", "scarecrow", "koinobori", "fence_wood", "fence_bamboo", "bench",
+    "distance_board_100", "distance_board_50", "tire_stack", "hay_bale_round", "hay_bale_square",
+    "marshal_post", "road_mirror", "rice_paddy_marker", "scarecrow", "koinobori", "fence_wood",
+    "fence_bamboo", "bench",
+    "corner_chevron_left", "corner_chevron_right", "corner_warn_curve_left", "corner_warn_curve_right",
+    "corner_warn_sharp_left", "corner_warn_sharp_right", "corner_warn_hairpin_left", "corner_warn_hairpin_right",
+    "corner_warn_series_left", "corner_warn_series_right",
 ))
 # Spectators the runtime makes knockable (a car knocks them over; they get back up). Mirror
 # of Crowd.PEOPLE in scripts/world/crowd.gd; keep the two in step.
@@ -116,14 +120,30 @@ class Corridor:
         self.wide = wide
         self.tarmac = hw + TARMAC_MARGIN
         self.reach = float(wide.max()) + 2.0
-        # road samples bucketed on a coarse grid
+        self._bucket()
+
+    def _bucket(self) -> None:
+        """Road samples bucketed on a coarse grid."""
         self.cell = 16.0
-        self.grid: dict[tuple[int, int], np.ndarray] = {}
-        keys = np.floor(road.pos[:, [0, 2]] / self.cell).astype(np.int64)
+        keys = np.floor(self.road.pos[:, [0, 2]] / self.cell).astype(np.int64)
         buckets: dict[tuple[int, int], list[int]] = {}
         for i, (a, b) in enumerate(keys):
             buckets.setdefault((int(a), int(b)), []).append(i)
         self.grid = {k: np.array(v, dtype=np.int64) for k, v in buckets.items()}
+
+    @classmethod
+    def union(cls, cors: list["Corridor"]) -> "Corridor":
+        """One corridor over several roads (the world's loops and branch): margins are measured
+        to the nearest sample of any of them."""
+        u = cls.__new__(cls)
+        u.road = SimpleNamespace(**{k: np.concatenate([getattr(c.road, k) for c in cors])
+                                    for k in ("pos", "right", "fwd", "half_width")})
+        u.c = np.concatenate([c.c for c in cors])
+        u.wide = np.concatenate([c.wide for c in cors])
+        u.tarmac = np.concatenate([c.tarmac for c in cors])
+        u.reach = max(c.reach for c in cors)
+        u._bucket()
+        return u
 
     def _near(self, x: float, z: float, reach: float) -> np.ndarray:
         c = self.cell
