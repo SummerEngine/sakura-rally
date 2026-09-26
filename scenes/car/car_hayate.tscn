@@ -62,6 +62,7 @@ damper_rebound = 4300.0
 anti_roll_front = 14000.0
 anti_roll_rear = 9000.0
 wheel_inertia = 1.1
+grip_scale = 1.03
 tc_slip_multiple = 1.25
 drift_tc_relax = 5.0
 drag_area = 0.74
