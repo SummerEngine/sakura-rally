@@ -22,12 +22,13 @@ signal lap_completed(lap_time: float)
 @export var lateral_offset: float = 0.0
 @export var max_speed_kmh: float = 195.0
 ## Fraction of the surface grip used in corners and under braking. The car reaches about 90 %
-## of the surface mu on a skidpad; 0.76 in corners keeps ~15 % in hand for following the line.
-@export var corner_grip: float = 0.76
+## of the surface mu on a skidpad; 0.68 in corners keeps ~25 % in hand for following the line on
+## narrow loose roads (and leaves the keyboard bot the same margin on the same profile).
+@export var corner_grip: float = 0.68
 @export var brake_grip: float = 0.72
 ## Pure-pursuit lookahead: base metres + seconds of travel, clamped.
 @export var lookahead_base: float = 5.0
-@export var lookahead_time: float = 0.42
+@export var lookahead_time: float = 0.3
 @export var lookahead_min: float = 7.0
 @export var lookahead_max: float = 30.0
 ## Running wide: beyond `line_tolerance` metres off the line the target speed drops by

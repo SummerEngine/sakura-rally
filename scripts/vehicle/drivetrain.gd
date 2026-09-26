@@ -101,6 +101,10 @@ var drive_torque: PackedFloat32Array = [0.0, 0.0, 0.0, 0.0]
 var extra_inertia: PackedFloat32Array = [0.0, 0.0, 0.0, 0.0]
 ## Engine torque output this tick (Nm, after friction).
 var engine_torque: float = 0.0
+## Set by the car every tick: its traction-control scale (1 = no intervention). Besides the
+## throttle cut it limits a slipping clutch, so a launch cannot keep feeding flywheel energy into
+## spinning tyres.
+var traction_scale: float = 1.0
 
 var _omega_e: float = 900.0 * RPM_TO_RADS
 var _shift_timer: float = 0.0
@@ -242,6 +246,9 @@ func update_transmission(dt: float, v_fwd: float, thr_in: float, brk_in: float, 
 	if gear < 1 or not can_auto_shift or _shift_cooldown > 0.0:
 		return
 	var here := rpm_for_speed(v_fwd, gear, wheel_radius)
+	# With the clutch locked the engine's own speed counts too: on loose ground the driven wheels
+	# spin up and the engine reaches the limiter before road speed says so.
+	var up_here := maxf(here, rpm) if clutch_locked else here
 	if v_fwd < 0.5:
 		if gear > 1:
 			_start_shift(1)
@@ -249,8 +256,8 @@ func update_transmission(dt: float, v_fwd: float, thr_in: float, brk_in: float, 
 	var up_rpm := lerpf(upshift_rpm_light, upshift_rpm_full, clampf(thr_in, 0.0, 1.0))
 	# Near the full-throttle point the box always upshifts (no bouncing off the limiter);
 	# below it only while cruising and not slowing down.
-	var may_upshift := here > upshift_rpm_full or (_cruise_t > cruise_time and _accel > upshift_min_accel)
-	if gear < top_gear() and here > up_rpm and brk_in < 0.1 and may_upshift:
+	var may_upshift := up_here > upshift_rpm_full or (_cruise_t > cruise_time and _accel > upshift_min_accel)
+	if gear < top_gear() and up_here > up_rpm and brk_in < 0.1 and may_upshift:
 		_start_shift(gear + 1)
 		return
 	if gear <= 1:
@@ -346,15 +353,20 @@ func pre_wheels(dt: float, thr_request: float, omegas: PackedFloat32Array,
 	if r != 0.0:
 		var drivel_rpm := absf(omega_in) * RADS_TO_RPM
 		var launch_bite := pow(clampf((rpm - 1500.0) / (launch_rpm - 1500.0), 0.0, 1.0), 2.0)
-		var bite := maxf(launch_bite, smoothstep(1300.0, 2600.0, drivel_rpm))
-		var cap := clutch_max_torque * _engage * bite
+		# Pulling away gently the clutch also bites with driveline speed; on a real launch only the
+		# engine speed sets the bite, so a wheelspin spike cannot dump the flywheel into the tyres.
+		var bite := launch_bite if throttle >= 0.3 else maxf(launch_bite, smoothstep(1300.0, 2600.0, drivel_rpm))
+		var cap := clutch_max_torque * _engage * bite * traction_scale
 		var inv_carrier := 0.0
 		for i in 4:
 			inv_carrier += _split[i] * _split[i] / maxf(wheel_inertias[i], 0.01)
 		var i_carrier := 1.0 / maxf(inv_carrier, 1e-4)
 		var t_eq := (_omega_e - omega_in) / (dt * (1.0 / engine_inertia + r * r / i_carrier))
 		t_c = clampf(t_eq, -cap, cap)
-		if absf(t_eq) < cap and drivel_rpm > 1150.0 and _engage >= 1.0:
+		# On a launch the clutch keeps slipping until the driveline is well into the power band;
+		# locking on a wheelspin spike would drag the engine down to where it bogs.
+		var lock_rpm := 1150.0 if throttle < 0.3 else launch_rpm * 0.6
+		if absf(t_eq) < cap and drivel_rpm > lock_rpm and _engage >= 1.0:
 			clutch_locked = true
 		var axle := t_c * r * efficiency
 		for i in 4:

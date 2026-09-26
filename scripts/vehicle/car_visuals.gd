@@ -1,14 +1,19 @@
 class_name CarVisuals
 extends Node3D
 ## Drives the car's visual model from the physics wheel state: wheel spin, steering and suspension
-## travel, calipers (steer only) and a subtle visual body lean. Uses the car scene's model
-## (`model_path`, node names per docs/CONTRACTS.md) when present, otherwise builds a low-poly
-## placeholder hatchback from code.
+## travel, calipers (steer only), a subtle visual body lean and pop-up headlights (PopUp_L /
+## PopUp_R, when the model has them). Uses the car scene's model (`model_path`, node names per
+## docs/CONTRACTS.md) when present, otherwise builds a low-poly placeholder hatchback from code.
+##
+## Pop-ups: the pods rise while the car is awake (moving, revving on the start line, or any pedal
+## pressed) and fold away once it has stood still for `popup_sleep_time`. They move on a slightly
+## underdamped spring: opening overshoots a few degrees and settles, closing lands on the stop.
 ##
 ## Updated in _physics_process so physics interpolation smooths it together with the body.
 
 const WHEEL_NAMES: Array[StringName] = [&"Wheel_FL", &"Wheel_FR", &"Wheel_RL", &"Wheel_RR"]
 const CALIPER_NAMES: Array[StringName] = [&"Caliper_FL", &"Caliper_FR", &"Caliper_RL", &"Caliper_RR"]
+const POPUP_NAMES: Array[StringName] = [&"PopUp_L", &"PopUp_R"]
 
 ## The car's GLB (per car scene: rally_car.glb for the Sakura, hayate.glb for the Hayate).
 @export_file("*.glb") var model_path: String = "res://assets/models/car/rally_car.glb"
@@ -18,6 +23,12 @@ const CALIPER_NAMES: Array[StringName] = [&"Caliper_FL", &"Caliper_FR", &"Calipe
 @export var lean_smoothing: float = 10.0
 ## Visual-only high-frequency bounce on rough surfaces (metres at full roughness and speed).
 @export var surface_jiggle: float = 0.006
+## Pop-up headlights: open angle about the pod's local +X (the front edge lifts), spring period
+## (s) and damping ratio, and how long the car must stand still before they fold away (s).
+@export var popup_open_deg: float = 55.0
+@export var popup_period: float = 0.5
+@export var popup_damping: float = 0.62
+@export var popup_sleep_time: float = 4.0
 
 var model: Node3D
 var body: Node3D
@@ -37,6 +48,12 @@ var _prev_velocity: Vector3 = Vector3.ZERO
 var _lean: Vector2 = Vector2.ZERO ## x = pitch, y = roll (radians)
 var _livery_cache: Dictionary = {} ## original material -> per-instance duplicate
 var _time: float = 0.0
+var _popup_nodes: Array[Node3D] = []
+var _popup_rest: Array[Transform3D] = []
+var _popup_k: float = 0.0 ## 0 folded .. 1 open
+var _popup_vel: float = 0.0
+## Starts asleep: a car spawned parked (garage, menu) shows its pods folded.
+var _still_time: float = INF
 
 
 func _ready() -> void:
@@ -70,6 +87,13 @@ func _bind_nodes() -> void:
 		_caliper_rest.append(_relative(cn))
 		_caliper_parent.append(_relative(cn.get_parent_node_3d()) if cn != null else Transform3D.IDENTITY)
 	body = model.find_child("Body", true, false) as Node3D
+	_popup_nodes.clear()
+	_popup_rest.clear()
+	for pod_name in POPUP_NAMES:
+		var pod := model.find_child(String(pod_name), true, false) as Node3D
+		if pod != null:
+			_popup_nodes.append(pod)
+			_popup_rest.append(pod.transform)
 	_body_rest = _relative(body)
 	_body_parent = _relative(body.get_parent_node_3d()) if body != null else Transform3D.IDENTITY
 
@@ -111,6 +135,28 @@ func _physics_process(delta: float) -> void:
 			var crel := Transform3D(steer_basis * crest.basis, wheel_centre + steer_basis * arm + lift)
 			cn.transform = _caliper_parent[i].affine_inverse() * crel
 	_update_lean(delta)
+	_update_popups(delta)
+
+
+func _update_popups(delta: float) -> void:
+	if _popup_nodes.is_empty():
+		return
+	var awake := absf(_car.speed_kmh) > 2.0 or _car.launch_hold or _car.input_throttle > 0.05 \
+			or _car.input_brake > 0.05
+	_still_time = 0.0 if awake else _still_time + delta
+	var target := 1.0 if _still_time < popup_sleep_time else 0.0
+	if absf(target - _popup_k) < 1e-4 and absf(_popup_vel) < 1e-3:
+		return
+	var w := TAU / popup_period
+	_popup_vel += (w * w * (target - _popup_k) - 2.0 * popup_damping * w * _popup_vel) * delta
+	_popup_k += _popup_vel * delta
+	if _popup_k <= 0.0:
+		# The folded stop: no bounce into the bonnet.
+		_popup_k = 0.0
+		_popup_vel = maxf(_popup_vel, 0.0)
+	var rot := Basis(Vector3.RIGHT, deg_to_rad(popup_open_deg) * _popup_k)
+	for i in _popup_nodes.size():
+		_popup_nodes[i].transform = Transform3D(_popup_rest[i].basis * rot, _popup_rest[i].origin)
 
 
 func _update_lean(delta: float) -> void:

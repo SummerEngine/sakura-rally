@@ -398,6 +398,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	for i in 4:
 		var w: WheelState = wheels[i]
 		_omegas[i] = w.spin_speed
+	drivetrain.traction_scale = _tc_scale
 	drivetrain.pre_wheels(dt, thr_in * _tc_scale, _omegas, _wheel_inertias, handbrake > 0.5)
 	_update_tyres(state, xf, com, lin, ang, dt, brk_in, hold)
 	for i in 4:
@@ -674,9 +675,9 @@ func _update_tyres(state: PhysicsDirectBodyState3D, xf: Transform3D, com: Vector
 			var surf := TyreModel.get_surface(w.surface)
 			worst = maxf(worst, w.slip_long / (surf.long_peak * tc_slip_multiple))
 	if worst > 1.0:
-		_tc_scale = maxf(_tc_scale - dt * 4.0 * (worst - 0.8), 0.35)
+		_tc_scale = maxf(_tc_scale - dt * 3.0 * (worst - 0.9), 0.5)
 	else:
-		_tc_scale = minf(_tc_scale + dt * 2.5, 1.0)
+		_tc_scale = minf(_tc_scale + dt * 5.0, 1.0)
 
 
 ## Yaw-rate control, body-slip governor and drift hold: yaw torques about the car's up axis.

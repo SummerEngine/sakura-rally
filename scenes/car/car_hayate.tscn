@@ -1,0 +1,76 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/vehicle/car.gd" id="1_car"]
+[ext_resource type="Script" path="res://scripts/vehicle/car_visuals.gd" id="2_vis"]
+[ext_resource type="Script" path="res://scripts/vehicle/drivetrain.gd" id="3_dt"]
+
+[sub_resource type="Resource" id="Drivetrain_hayate"]
+script = ExtResource("3_dt")
+idle_rpm = 1000.0
+max_rpm = 8000.0
+engine_inertia = 0.07
+friction_base = 12.0
+friction_per_rpm = 0.0048
+torque_curve_rpm = PackedFloat32Array(0, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500, 6000, 6500, 7000, 7500, 8000, 8600)
+torque_curve_nm = PackedFloat32Array(119, 138, 151, 164, 178, 192, 205, 216, 224, 229, 231, 230, 227, 220, 211, 194, 97)
+turbo = false
+gear_ratios = PackedFloat32Array(3.3, 2.26, 1.72, 1.38, 1.15, 0.98)
+final_drive = 5.2
+clutch_max_torque = 320.0
+launch_rpm = 4200.0
+launch_hold_rpm = 5800.0
+front_split = 0.0
+lsd_rear_preload = 50.0
+lsd_rear_bias = 0.5
+upshift_rpm_light = 4800.0
+upshift_rpm_full = 7700.0
+downshift_rpm_light = 2200.0
+downshift_rpm_full = 4400.0
+downshift_target_max = 6200.0
+kickdown_rpm = 5000.0
+brake_downshift_rpm = 6000.0
+
+[sub_resource type="PhysicsMaterial" id="PhysicsMaterial_body"]
+friction = 0.35
+bounce = 0.05
+
+[sub_resource type="ConvexPolygonShape3D" id="ConvexPolygonShape3D_hull"]
+points = PackedVector3Array(-0.780, 0.300, -2.100, -0.720, 0.620, -2.100, 0.780, 0.300, -2.100, 0.720, 0.620, -2.100, -0.860, 0.250, -1.900, -0.820, 0.780, -1.900, 0.860, 0.250, -1.900, 0.820, 0.780, -1.900, -0.870, 0.250, -0.600, -0.840, 0.840, -0.600, 0.870, 0.250, -0.600, 0.840, 0.840, -0.600, -0.870, 0.250, 0.170, -0.560, 1.240, 0.170, 0.870, 0.250, 0.170, 0.560, 1.240, 0.170, -0.870, 0.250, 1.090, -0.560, 1.220, 1.090, 0.870, 0.250, 1.090, 0.560, 1.220, 1.090, -0.860, 0.260, 1.950, -0.800, 0.920, 1.950, 0.860, 0.260, 1.950, 0.800, 0.920, 1.950, -0.800, 0.340, 2.120, -0.740, 0.880, 2.120, 0.800, 0.340, 2.120, 0.740, 0.880, 2.120)
+
+[node name="Car" type="RigidBody3D"]
+collision_layer = 2
+collision_mask = 5
+mass = 1050.0
+physics_material_override = SubResource("PhysicsMaterial_body")
+center_of_mass_mode = 1
+center_of_mass = Vector3(0, 0.42, 0)
+inertia = Vector3(1250, 1400, 390)
+can_sleep = false
+continuous_cd = true
+contact_monitor = true
+max_contacts_reported = 8
+linear_damp_mode = 1
+angular_damp_mode = 1
+angular_damp = 0.02
+script = ExtResource("1_car")
+centre_of_mass = Vector3(0, 0.42, 0)
+body_inertia = Vector3(1250, 1400, 390)
+spring_front = 26000.0
+spring_rear = 25000.0
+damper_bump = 2250.0
+damper_rebound = 4300.0
+anti_roll_front = 14000.0
+anti_roll_rear = 9000.0
+wheel_inertia = 1.1
+tc_slip_multiple = 1.25
+drag_area = 0.74
+downforce_area = 0.3
+drivetrain = SubResource("Drivetrain_hayate")
+engine_sound = &"na4"
+
+[node name="Hull" type="CollisionShape3D" parent="."]
+shape = SubResource("ConvexPolygonShape3D_hull")
+
+[node name="Visuals" type="Node3D" parent="."]
+script = ExtResource("2_vis")
+model_path = "res://assets/models/car/hayate.glb"
