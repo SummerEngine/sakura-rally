@@ -148,4 +148,5 @@ func build(name_: String) -> void:
 
 func sun_direction() -> Vector3:
 	## Direction TOWARD the sun (world space).
-	return sun.global_transform.basis.z.normalized() if sun else Vector3.UP
+	## The rig sits at the origin unrotated, so the local basis is the world basis.
+	return sun.transform.basis.z.normalized() if sun else Vector3.UP

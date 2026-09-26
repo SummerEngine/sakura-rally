@@ -97,7 +97,8 @@ static func convert_tree(root: Node, overrides: Dictionary = {}, extra: Dictiona
 			var color := base.albedo_color if base else Color.WHITE
 			if overrides.has(mat_name):
 				color = overrides[mat_name]
-			var has_vc := (mesh.surface_get_format(s) & Mesh.ARRAY_FORMAT_COLOR) != 0
+			var am := mesh as ArrayMesh
+			var has_vc: bool = am != null and (am.surface_get_format(s) & Mesh.ARRAY_FORMAT_COLOR) != 0
 			var o := opts_for_name(mat_name, has_vc)
 			o.merge(extra, true)
 			if base and o.has("emission_energy") and not o.has("emission"):

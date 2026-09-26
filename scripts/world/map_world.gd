@@ -356,7 +356,8 @@ func _prop_mesh(name_: String) -> Mesh:
 			var base := src as BaseMaterial3D
 			var mat_name := src.resource_name
 			var color := base.albedo_color if base else Color.WHITE
-			var has_vc := (mesh.surface_get_format(s) & Mesh.ARRAY_FORMAT_COLOR) != 0
+			var am := mesh as ArrayMesh
+			var has_vc: bool = am != null and (am.surface_get_format(s) & Mesh.ARRAY_FORMAT_COLOR) != 0
 			var o := ToonMaterials.opts_for_name(mat_name, has_vc)
 			if o.has("sway"):
 				o.merge(extra, true)
