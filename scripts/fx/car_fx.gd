@@ -8,12 +8,13 @@ extends Node3D
 const DUST_SHADER := preload("res://shaders/dust.gdshader")
 const SKID_SHADER := preload("res://shaders/skid.gdshader")
 
-## Dust colour and how readily each surface throws dust.
+## Dust colour and how readily each surface throws dust. Paler than the ground it comes
+## from, so airborne dust reads as cloud and not as rocks lying on the road.
 const SURFACE_DUST := {
-	&"gravel": [Color("d7c3a0"), 1.0],
-	&"dirt": [Color("c8a57c"), 1.1],
-	&"sand": [Color("efe2c0"), 1.2],
-	&"grass": [Color("b9c98e"), 0.3],
+	&"gravel": [Color("e6d9c0"), 1.0],
+	&"dirt": [Color("dcc4a0"), 1.1],
+	&"sand": [Color("f5eed9"), 1.2],
+	&"grass": [Color("d2dcb2"), 0.22],
 	&"tarmac": [Color("e9e4ee"), 0.0], # smoke only when sliding
 }
 const SKID_SEGMENTS := 2400
@@ -59,7 +60,7 @@ func setup(new_car: Car, lights: Dictionary, new_sun_dir: Vector3) -> void:
 
 func set_quality(q: String) -> void:
 	quality = q
-	var n := 70 if q == "high" else (48 if q == "medium" else 28)
+	var n := 96 if q == "high" else (64 if q == "medium" else 36)
 	for p in _dust:
 		p.amount = n
 
@@ -72,7 +73,7 @@ func clear_marks() -> void:
 
 # ------------------------------------------------------------------ build
 
-## Three overlapping flat-shaded icosahedra: a cloud silhouette instead of a hexagon.
+## Five overlapping flat-shaded icosahedra: a cumulus silhouette instead of a hexagon.
 func _puff_mesh() -> ArrayMesh:
 	var t := (1.0 + sqrt(5.0)) * 0.5
 	var v := [
@@ -90,6 +91,8 @@ func _puff_mesh() -> ArrayMesh:
 		[Vector3(0.0, 0.0, 0.0), 0.5, 0.0],
 		[Vector3(0.38, 0.14, 0.1), 0.34, 0.9],
 		[Vector3(-0.3, 0.1, -0.2), 0.3, 2.1],
+		[Vector3(0.08, 0.34, 0.04), 0.3, 1.3],
+		[Vector3(-0.1, -0.04, 0.36), 0.26, 0.4],
 	]
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -122,8 +125,8 @@ func _chip_mesh() -> ArrayMesh:
 
 func _make_dust() -> GPUParticles3D:
 	var p := GPUParticles3D.new()
-	p.amount = 70
-	p.lifetime = 1.7
+	p.amount = 96
+	p.lifetime = 2.4
 	p.local_coords = false
 	p.emitting = false
 	p.amount_ratio = 0.0
@@ -132,25 +135,31 @@ func _make_dust() -> GPUParticles3D:
 	p.visibility_aabb = AABB(Vector3(-30, -10, -30), Vector3(60, 30, 60))
 	var m := ParticleProcessMaterial.new()
 	m.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
-	m.emission_sphere_radius = 0.25
-	m.direction = Vector3(0, 1, 0)
-	m.spread = 70.0
-	m.initial_velocity_min = 0.6
-	m.initial_velocity_max = 2.0
-	m.gravity = Vector3(0, 0.35, 0)
-	m.damping_min = 2.2
-	m.damping_max = 3.6
-	m.inherit_velocity_ratio = 0.4
+	m.emission_sphere_radius = 0.3
+	# Thrown up, out and back from the contact patch (direction and speed are set per
+	# tick). Quadratic drag stops the spray within a few tenths of a second, then the
+	# slight lift lets each puff billow upwards at ~0.7 m/s (lift outweighs drag only
+	# once the puff is slow; with linear damping it would never rise).
+	m.direction = Vector3.UP
+	m.spread = 30.0
+	m.initial_velocity_min = 1.0
+	m.initial_velocity_max = 3.0
+	m.gravity = Vector3(0, 0.22, 0)
+	m.particle_flag_damping_as_friction = true
+	m.damping_min = 6.0
+	m.damping_max = 9.0
+	m.inherit_velocity_ratio = 0.5
 	m.angle_min = 0.0
 	m.angle_max = 360.0
 	m.angular_velocity_min = -30.0
 	m.angular_velocity_max = 30.0
-	m.scale_min = 0.32
-	m.scale_max = 0.75
+	# Big from birth: at speed a puff is in the chase camera's view for only ~0.3 s.
+	m.scale_min = 0.8
+	m.scale_max = 1.6
 	var sc := Curve.new()
-	sc.add_point(Vector2(0.0, 0.3))
-	sc.add_point(Vector2(0.22, 1.0))
-	sc.add_point(Vector2(0.7, 0.8))
+	sc.add_point(Vector2(0.0, 0.55))
+	sc.add_point(Vector2(0.08, 1.0))
+	sc.add_point(Vector2(0.5, 0.85))
 	sc.add_point(Vector2(1.0, 0.0))
 	var sct := CurveTexture.new()
 	sct.curve = sc
@@ -263,6 +272,12 @@ func _on_backfire() -> void:
 	_flash.scale = Vector3.ONE * randf_range(0.8, 1.25)
 
 
+## Keeps the dust shader's line of sight to the car current (render rate, interpolated).
+func _process(_delta: float) -> void:
+	if car != null and is_instance_valid(car):
+		_dust_material.set_shader_parameter("focus", car.get_global_transform_interpolated().origin + Vector3.UP * 0.6)
+
+
 func _physics_process(delta: float) -> void:
 	if car == null or not is_instance_valid(car):
 		return
@@ -291,7 +306,16 @@ func _physics_process(delta: float) -> void:
 		amount = clampf(amount, 0.0, 1.0)
 		p.amount_ratio = amount
 		p.emitting = amount > 0.03
-		_dust_mats[i].color = col
+		# out to the wheel's own side, back, and towards where the contact patch slides
+		# (the tyre shoves the gravel the way the patch moves over it)
+		var xf := car.global_transform
+		var side := -xf.basis.x if w.is_left else xf.basis.x
+		var fling := side * 0.5 + xf.basis.x * clampf(w.slip_lat * 3.0, -1.0, 1.0) * sp
+		var dm := _dust_mats[i]
+		dm.direction = (fling + xf.basis.z * 0.4 + Vector3.UP * 0.8).normalized()
+		dm.initial_velocity_min = 0.8 + 2.4 * sp
+		dm.initial_velocity_max = 1.6 + 4.4 * sp
+		dm.color = col
 		var back := -vel.normalized() * 0.35 if speed > 1.0 else Vector3.ZERO
 		p.global_position = w.contact_point + w.contact_normal * 0.12 + back
 		if not w.is_front:

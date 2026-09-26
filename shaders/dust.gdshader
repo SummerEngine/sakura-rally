@@ -1,7 +1,8 @@
 // Low-poly dust puff / gravel chip. Opaque faceted shapes that grow and shrink
 // (particle scale curve) instead of fading, like dust painted in anime cels.
-// Three flat tones from the sun direction (the shade tone takes the violet tint),
-// and puffs shrink away as they near the camera so they never fill the frame.
+// Three flat tones from the sun direction (the shade tone takes the violet tint).
+// Puffs shrink away as they near the camera so they never fill the frame, and those
+// on the line of sight to the car (`focus`) shrink too, so a slide never hides the car.
 shader_type spatial;
 render_mode unshaded, cull_back, depth_draw_opaque, shadows_disabled;
 
@@ -11,15 +12,31 @@ uniform vec3 sun_dir = vec3(0.45, 0.7, 0.3);
 uniform float lit_boost = 1.07;
 uniform float shade_mix = 0.75;
 /// View distance (m) where a puff is gone / at full size.
-uniform float near_fade_start = 1.6;
-uniform float near_fade_end = 5.5;
+uniform float near_fade_start = 1.0;
+uniform float near_fade_end = 4.0;
+/// Car centre (world), updated every frame by CarFX.
+uniform vec3 focus = vec3(0.0);
+/// Radius (m) around the camera→car line cleared of dust, at the camera and at the car.
+uniform float clear_near = 0.5;
+uniform float clear_far = 1.9;
 
 varying vec3 v_normal_world;
 
 void vertex() {
 	v_normal_world = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	vec3 centre_view = (MODELVIEW_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-	VERTEX *= smoothstep(near_fade_start, near_fade_end, length(centre_view));
+	float size = smoothstep(near_fade_start, near_fade_end, length(centre_view));
+	// Line of sight: a cone from the camera that widens to the car's silhouette.
+	vec3 f = (VIEW_MATRIX * vec4(focus, 1.0)).xyz;
+	float fl = max(length(f), 1e-3);
+	vec3 dir = f / fl;
+	float t = dot(centre_view, dir);
+	float perp = length(centre_view - dir * t);
+	float clear = mix(clear_near, clear_far, clamp(t / fl, 0.0, 1.0));
+	float in_front = 1.0 - smoothstep(fl - 2.2, fl - 0.6, t);
+	float on_line = 1.0 - smoothstep(clear, clear + 1.3, perp);
+	size *= 1.0 - 0.85 * in_front * on_line;
+	VERTEX *= size;
 }
 
 void fragment() {
