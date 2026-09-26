@@ -75,7 +75,7 @@ def paint_terrain(spec: dict, ter, road, placed: dict, manifest: dict) -> tuple[
     g = pal["grass"]
     col = mix(g[0], g[1], geom.smoothstep(0.35, 0.65, n1))
     col = mix(col, g[2], geom.smoothstep(0.62, 0.78, n2) * 0.8)
-    col = mix(col, pal["grass_dry"], geom.smoothstep(0.15, 0.45, n3) * 0.55)
+    col = mix(col, pal["grass_dry"], geom.smoothstep(0.15, 0.45, n3) * 0.3)
 
     # forest floor / petals / leaf litter under trees
     tree_w = np.zeros(H.shape)
@@ -126,14 +126,18 @@ def paint_terrain(spec: dict, ter, road, placed: dict, manifest: dict) -> tuple[
     rc = mix(pal["rock"], pal["rock_dark"], geom.smoothstep(0.4, 0.7, n2))
     col = mix(col, rc, rock)
 
-    # dirt verges along the road (only where the road carves)
+    # road edges: gravel/dirt stages get a narrow worn dirt verge; tarmac keeps
+    # grass to the edge with the soft, lighter mown strip of a painted background
     D = ter.road_dist
     si = np.where(ter.road_seg >= 0, ter.road_seg, 0)
     hw = road.half_width[si]
     carve = np.where(ter.road_seg >= 0, road.carve[si], 0.0)
-    edge_noise = noise.fbm(X, Z, 9.0, 2, 2.0, 0.5, seed + 71) * 1.6
-    verge = (1.0 - geom.smoothstep(hw + road.verge + 1.0, hw + road.verge + 4.0, D + edge_noise)) * carve
-    col = mix(col, pal["dirt"], verge * 0.85)
+    loose = np.isin(road.surface[si], [SURFACES.index("gravel"), SURFACES.index("dirt")]).astype(np.float64)
+    edge_noise = noise.fbm(X, Z, 9.0, 2, 2.0, 0.5, seed + 71) * 1.2
+    near = (1.0 - geom.smoothstep(hw + road.verge + 0.5, hw + road.verge + 2.5, D + edge_noise)) * carve
+    verge = near * loose
+    col = mix(col, pal["dirt"], verge * 0.8)
+    col = mix(col, pal.get("verge_grass", pal["grass_dry"]), near * (1.0 - loose) * 0.55)
 
     # shores
     rw = ter.water.river_width / 2.0

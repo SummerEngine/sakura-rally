@@ -84,8 +84,8 @@ void fragment() {
 	vec2 pc = vec2(floor(lat_m / 1.7), floor(s / 6.5));
 	float ph = hash21(pc + 3.0);
 	vec2 pf = vec2(fract(lat_m / 1.7), fract(s / 6.5));
-	float patch = step(0.9, ph) * step(0.08, pf.x) * step(pf.x, 0.92) * step(0.1, pf.y) * step(pf.y, 0.85 - 0.4 * hash21(pc));
-	tar = mix(tar, tarmac_patch.rgb * (1.0 + (gf.g - 0.5) * 0.1), patch * (au < 0.9 ? 1.0 : 0.0));
+	float patch = step(0.955, ph) * step(0.08, pf.x) * step(pf.x, 0.92) * step(0.1, pf.y) * step(pf.y, 0.85 - 0.4 * hash21(pc));
+	tar = mix(tar, tarmac_patch.rgb * (1.0 + (gf.g - 0.5) * 0.1), patch * 0.55 * (au < 0.9 ? 1.0 : 0.0));
 	// polished wheel tracks, slightly lighter
 	float tracks = band(alat, half_width_m * 0.48, 0.45, 0.35);
 	tar *= 1.0 + tracks * 0.06;
@@ -127,6 +127,9 @@ void fragment() {
 	vec3 c = mix(road, sh_col, shoulder * (1.0 - wood));
 	float verge = smoothstep(0.15, 0.55, out_m + edge_n);
 	c = mix(c, COLOR.rgb * (1.0 + (gm.b - 0.5) * 0.12), verge * (1.0 - wood));
+	// the verge skirt slopes down under the terrain; light it as flat ground so
+	// it matches the terrain beside it instead of turning into a shaded band
+	NORMAL = normalize(mix(NORMAL, (VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz, smoothstep(-0.1, 0.3, out_m) * (1.0 - wood)));
 
 	// ---- litter, thicker towards the edges
 	float dist = length(v_world - CAMERA_POSITION_WORLD);

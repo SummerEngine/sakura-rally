@@ -106,6 +106,7 @@ SPEC = {
     "palette": {
         "grass": ["9ccb6b", "86bf5f", "b4d67f"],
         "grass_dry": "c8d48d",
+        "verge_grass": "bddc8c",
         "forest_floor": "6f9f55",
         "petal": "f5c6d5",
         "field": "d9c68f",

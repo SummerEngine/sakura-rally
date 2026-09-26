@@ -35,21 +35,27 @@ func _process(_delta: float) -> void:
 
 
 func _build_clouds(preset: Dictionary) -> void:
+	# Two layers: big cumulus high enough to clear the valley ridges (the reason
+	# they exist), and a far low stratus band that shows through mountain gaps.
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 4242
 	var cards: Array[Dictionary] = []
-	var count := 38
-	for i in count:
-		var a := float(i) / count * TAU + rng.randf_range(-0.07, 0.07)
-		var far := i % 3 == 0
-		var r := rng.randf_range(6200.0, 7600.0) if far else rng.randf_range(3400.0, 5600.0)
-		var w := rng.randf_range(1500.0, 2600.0) if far else rng.randf_range(900.0, 1900.0)
-		var cell := rng.randi_range(0, ATLAS_COLS * ATLAS_ROWS - 1)
-		var h := w * (0.5 if cell < 4 else 0.32)
-		var elev := rng.randf_range(0.012, 0.05) if far else rng.randf_range(0.03, 0.13)
+	var high := 26
+	var low := 16
+	for i in high + low:
+		var is_low := i >= high
+		var k := i - high if is_low else i
+		var n := low if is_low else high
+		var a := float(k) / n * TAU + rng.randf_range(-0.09, 0.09) + (0.13 if is_low else 0.0)
+		var r := rng.randf_range(6400.0, 8200.0) if is_low else rng.randf_range(3000.0, 5200.0)
+		var elev := rng.randf_range(0.03, 0.09) if is_low else rng.randf_range(0.11, 0.3)
+		var w := rng.randf_range(2400.0, 3600.0) if is_low else rng.randf_range(1100.0, 2000.0)
+		var cell := rng.randi_range(4, 5) if is_low else rng.randi_range(0, 3)
+		var h := w * (0.32 if cell >= 4 else 0.5)
 		cards.append({
-			"a": a, "r": r, "w": w, "h": h, "y": tan(elev) * r, "cell": cell,
-			"haze": 0.55 if far else rng.randf_range(0.1, 0.35), "flip": rng.randf() < 0.5,
+			"a": a, "r": r, "w": w, "h": h, "elev": elev, "cell": cell,
+			"haze": rng.randf_range(0.45, 0.6) if is_low else rng.randf_range(0.0, 0.22),
+			"flip": rng.randf() < 0.5,
 		})
 	cards.sort_custom(func(p: Dictionary, q: Dictionary) -> bool: return p["r"] > q["r"])
 	var pos := PackedVector3Array()
@@ -57,10 +63,14 @@ func _build_clouds(preset: Dictionary) -> void:
 	var col := PackedColorArray()
 	var idx := PackedInt32Array()
 	for c in cards:
-		var cx: float = sin(c["a"]) * c["r"]
-		var cz: float = cos(c["a"]) * c["r"]
-		var tx: float = cos(c["a"])
-		var tz: float = -sin(c["a"])
+		var a: float = c["a"]
+		var e: float = c["elev"]
+		var r: float = c["r"]
+		var out := Vector3(sin(a), 0.0, cos(a)) # away from the viewer
+		var t := Vector3(cos(a), 0.0, -sin(a)) # along the ring
+		# card plane faces the viewer: vertical axis leans in by the elevation
+		var up := Vector3.UP * cos(e) - out * sin(e)
+		var centre := out * (r * cos(e)) + Vector3.UP * (r * sin(e))
 		var cell: int = c["cell"]
 		var u0 := float(cell % ATLAS_COLS) / ATLAS_COLS
 		var v0 := float(cell / ATLAS_COLS) / ATLAS_ROWS
@@ -71,11 +81,11 @@ func _build_clouds(preset: Dictionary) -> void:
 		var uvs := [Vector2(0, 1), Vector2(1, 1), Vector2(1, 0), Vector2(0, 0)]
 		for k in 4:
 			var o: Vector2 = corners[k]
-			pos.append(Vector3(cx + tx * o.x, c["y"] - hh * 0.18 + o.y, cz + tz * o.x))
-			var t: Vector2 = uvs[k]
+			pos.append(centre + t * o.x + up * (o.y - hh * 0.35))
+			var tc: Vector2 = uvs[k]
 			if c["flip"]:
-				t.x = 1.0 - t.x
-			uv.append(Vector2(u0 + t.x / ATLAS_COLS, v0 + t.y / ATLAS_ROWS))
+				tc.x = 1.0 - tc.x
+			uv.append(Vector2(u0 + tc.x / ATLAS_COLS, v0 + tc.y / ATLAS_ROWS))
 			col.append(Color(c["haze"], 0.0, 0.0, 1.0))
 		idx.append_array([base, base + 1, base + 2, base, base + 2, base + 3])
 	var arr := []
@@ -100,7 +110,7 @@ func _build_clouds(preset: Dictionary) -> void:
 	clouds.mesh = mesh
 	clouds.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	clouds.extra_cull_margin = 16384.0
-	clouds.custom_aabb = AABB(Vector3(-9000, -100, -9000), Vector3(18000, 3000, 18000))
+	clouds.custom_aabb = AABB(Vector3(-9000, -100, -9000), Vector3(18000, 5000, 18000))
 	add_child(clouds)
 
 
