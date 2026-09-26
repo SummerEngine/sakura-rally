@@ -3771,6 +3771,193 @@
    "nodes": [
     "spectator_f"
    ]
+  },
+  {
+   "name": "garage_workshop",
+   "file": "res://assets/models/props/garage_workshop.glb",
+   "category": "building",
+   "size": [
+    15.0,
+    5.79,
+    10.718
+   ],
+   "aabb_center": [
+    0.0,
+    2.895,
+    0.0
+   ],
+   "collision": {
+    "type": "none"
+   },
+   "placement": [
+    "village",
+    "roadside"
+   ],
+   "footprint_radius": 9.172,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 8258,
+   "materials": [
+    "Concrete",
+    "Metal_Dark",
+    "Plaster",
+    "Wood_Dark",
+    "Wood_Weathered",
+    "Glass",
+    "Wood",
+    "Stone",
+    "Vermilion",
+    "Roof_Tin",
+    "Roof_Ridge",
+    "Paper_White",
+    "Gold",
+    "Ink",
+    "Rope",
+    "Light_Panel",
+    "Lantern_Red",
+    "Lantern_Paper",
+    "Wood_Pale",
+    "Metal",
+    "Red",
+    "Red_Dark",
+    "Blue",
+    "Rubber",
+    "Blue_Pale",
+    "Galvanized",
+    "Yellow_Sign",
+    "White",
+    "Banner_Pink",
+    "Banner_Ink",
+    "Banner_Rose",
+    "Blossom_Rose"
+   ],
+   "nodes": [
+    "garage_workshop",
+    "Lamp_0",
+    "Lamp_1",
+    "Lamp_2",
+    "Lantern_0",
+    "Lantern_1",
+    "Lantern_2",
+    "Lantern_3"
+   ],
+   "markers": {
+    "Lamp_0": [
+     -4.667,
+     2.93,
+     -0.2
+    ],
+    "Lamp_1": [
+     0.0,
+     2.93,
+     -0.2
+    ],
+    "Lamp_2": [
+     4.667,
+     2.93,
+     -0.2
+    ],
+    "Lantern_0": [
+     -6.79,
+     3.13,
+     -4.55
+    ],
+    "Lantern_1": [
+     -2.263,
+     3.13,
+     -4.55
+    ],
+    "Lantern_2": [
+     2.263,
+     3.13,
+     -4.55
+    ],
+    "Lantern_3": [
+     6.79,
+     3.13,
+     -4.55
+    ]
+   }
+  },
+  {
+   "name": "garage_nobori",
+   "file": "res://assets/models/props/garage_nobori.glb",
+   "category": "rally",
+   "size": [
+    1.0,
+    4.54,
+    0.56
+   ],
+   "aabb_center": [
+    0.22,
+    2.27,
+    0.0
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.06,
+    "height": 4.54
+   },
+   "placement": [
+    "roadside"
+   ],
+   "footprint_radius": 0.72,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 1746,
+   "materials": [
+    "Rubber",
+    "Galvanized",
+    "Banner_Pink",
+    "White",
+    "Vermilion",
+    "Banner_Ink",
+    "Banner_Rose"
+   ],
+   "nodes": [
+    "garage_nobori"
+   ]
+  },
+  {
+   "name": "garage_tyres",
+   "file": "res://assets/models/props/garage_tyres.glb",
+   "category": "rally",
+   "size": [
+    1.94,
+    0.91,
+    1.326
+   ],
+   "aabb_center": [
+    0.285,
+    0.455,
+    -0.079
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.7,
+    "height": 0.91
+   },
+   "placement": [
+    "roadside"
+   ],
+   "footprint_radius": 1.256,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 976,
+   "materials": [
+    "Rubber",
+    "Blue",
+    "Metal_Dark"
+   ],
+   "nodes": [
+    "garage_tyres"
+   ]
   }
  ]
 }
