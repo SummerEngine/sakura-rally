@@ -5,7 +5,11 @@ extends Node
 ## background, the demo video and the physics tests.
 ##
 ## Give it either `path` (a Path3D, world transform taken from the node) or `curve` +
-## `curve_transform`. The line is treated as closed when `closed` is true.
+## `curve_transform`. The line is treated as closed when `closed` is true; an open line (a
+## liaison road) is followed from its start to its end, where the car brakes to a stop.
+##
+## The controls go out through `_apply()`, which a subclass can override (the keyboard bot in
+## tools/physics/keyboard_bot.gd turns them into digital key presses).
 
 signal lap_completed(lap_time: float)
 
@@ -50,6 +54,7 @@ var _index: int = -1
 var _stuck_time: float = 0.0
 var _built: bool = false
 var _mu_cache: PackedFloat32Array = PackedFloat32Array()
+var _spacing: float = STEP
 
 
 func _ready() -> void:
@@ -83,7 +88,9 @@ func _build() -> bool:
 	length = c.get_baked_length()
 	_mu_cache.clear()
 	var count := maxi(int(length / STEP), 8)
-	var step := length / count
+	# A closed line wraps from the last sample to the first; an open one ends on its last sample.
+	_spacing = length / (count if closed else count - 1)
+	var step := _spacing
 	_points.resize(count)
 	_tangents.resize(count)
 	for i in count:
@@ -96,8 +103,8 @@ func _build() -> bool:
 	var curvature := PackedFloat32Array()
 	curvature.resize(count)
 	for i in count:
-		var ia := (i - 3 + count) % count
-		var ib := (i + 3) % count
+		var ia := _wrap_index(i - 3)
+		var ib := _wrap_index(i + 3)
 		var ta := Vector2(_tangents[ia].x, _tangents[ia].z)
 		var tb := Vector2(_tangents[ib].x, _tangents[ib].z)
 		curvature[i] = absf(ta.angle_to(tb)) / (6.0 * step)
@@ -107,10 +114,12 @@ func _build() -> bool:
 	for i in count:
 		var k := 0.0
 		for j in range(-2, 3):
-			k = maxf(k, curvature[(i + j + count) % count])
+			k = maxf(k, curvature[_wrap_index(i + j)])
 		var mu := _grip_at(space, _points[i])
 		var v := sqrt(mu * corner_grip * g / maxf(k, 1e-4))
 		_speeds[i] = minf(v, max_speed_kmh / 3.6)
+	if not closed:
+		_speeds[count - 1] = 0.0
 	# Braking-distance planning: backwards pass (twice around for closed lines).
 	var passes := count * (2 if closed else 1)
 	for n in passes:
@@ -140,14 +149,14 @@ func _grip_at_cached(i: int) -> float:
 
 
 func _drive(delta: float) -> void:
-	var count := _points.size()
 	var pos := _car.global_position
 	_index = _closest_index(pos)
 	var p := _points[_index]
 	var t := _tangents[_index]
 	# Sub-sample progress.
 	var along := (pos - p).dot(t)
-	var new_progress := fposmod(_index * (length / count) + along, length)
+	var raw_progress := _index * _spacing + along
+	var new_progress := fposmod(raw_progress, length) if closed else clampf(raw_progress, 0.0, length)
 	lap_time += delta
 	if closed and new_progress < length * 0.1 and progress > length * 0.9:
 		laps += 1
@@ -168,28 +177,33 @@ func _drive(delta: float) -> void:
 	var alpha := atan2(local.x, -local.z)
 	var k := 2.0 * sin(alpha) / dist
 	var delta_angle := atan(k * Car.WHEELBASE)
-	_car.input_steer = clampf(delta_angle / _car.steer_lock_at(kmh), -1.0, 1.0)
+	var steer := clampf(delta_angle / _car.steer_lock_at(kmh), -1.0, 1.0)
 
 	# Speed: profile value a little ahead, scaled. Off the line on a slower surface (grass
 	# beside a gravel hairpin) the profile's grip is not under the tyres: scale down to it.
 	var lead := speed * 0.35 + 3.0
-	var i_ahead := int(fposmod(progress + lead, length) / (length / count)) % count
+	var i_ahead := _index_at(progress + lead)
 	var grip_ratio := clampf(_car.current_grip() / _grip_at_cached(_index), 0.5, 1.0)
 	target_speed = minf(_speeds[_index], _speeds[i_ahead]) * speed_scale * sqrt(grip_ratio)
 	var err := target_speed - speed
+	var thr := 0.0
+	var brk := 0.0
 	if err >= 0.0:
 		# No power while sideways: flooring it in a slide turns the slide into a spin.
 		var v := _car.local_velocity
 		var slip := rad_to_deg(absf(atan2(v.x, maxf(-v.z, 0.5))))
-		_car.input_throttle = clampf(err / 2.5 + 0.15, 0.0, 1.0) * clampf(1.0 - (slip - 8.0) / 12.0, 0.3, 1.0)
-		_car.input_brake = 0.0
+		thr = clampf(err / 2.5 + 0.15, 0.0, 1.0) * clampf(1.0 - (slip - 8.0) / 12.0, 0.3, 1.0)
 	else:
-		_car.input_throttle = clampf(0.15 + err / 2.0, 0.0, 1.0)
-		_car.input_brake = clampf((-err - 0.3) / 1.5, 0.0, 1.0)
-	_car.input_handbrake = false
+		thr = clampf(0.15 + err / 2.0, 0.0, 1.0)
+		brk = clampf((-err - 0.3) / 1.5, 0.0, 1.0)
+	var at_end := not closed and progress > length - 6.0
+	if at_end:
+		thr = 0.0
+		brk = 1.0 if speed > 0.5 else 0.0
+	_apply(delta, steer, thr, brk, err)
 
-	# Recover if wedged somewhere.
-	if speed < 1.0:
+	# Recover if wedged somewhere (not when parked at the end of an open line).
+	if speed < 1.0 and not at_end:
 		_stuck_time += delta
 		if _stuck_time > 4.0:
 			_stuck_time = 0.0
@@ -210,9 +224,10 @@ func _closest_index(pos: Vector3) -> int:
 				best = i
 		return best
 	for j in range(-20, 40):
-		var i := (_index + j + count) % count
-		if not closed and (i < 0 or i >= count):
+		var raw := _index + j
+		if not closed and (raw < 0 or raw >= count):
 			continue
+		var i := (raw + count) % count
 		var d := pos.distance_squared_to(_points[i])
 		if d < best_d:
 			best_d = d
@@ -224,10 +239,39 @@ func _closest_index(pos: Vector3) -> int:
 	return best
 
 
-## Point on the offset line at a distance along it (world space).
+## Controls for this tick. steer: -1..1 (fraction of the car's current lock), thr/brk 0..1,
+## speed_error: target - current speed (m/s).
+func _apply(_delta: float, steer: float, thr: float, brk: float, _speed_error: float) -> void:
+	_car.input_steer = steer
+	_car.input_throttle = thr
+	_car.input_brake = brk
+	_car.input_handbrake = false
+
+
+## Sample index for sample i, wrapped on a closed line and clamped on an open one.
+func _wrap_index(i: int) -> int:
+	var count := _points.size()
+	return (i % count + count) % count if closed else clampi(i, 0, count - 1)
+
+
+## Sample index at a distance along the line.
+func _index_at(offset: float) -> int:
+	var count := _points.size()
+	if closed:
+		return int(fposmod(offset, length) / _spacing) % count
+	return clampi(int(offset / _spacing), 0, count - 1)
+
+
+## Point on the offset line at a distance along it (world space). Past the end of an open
+## line it continues straight along the last tangent.
 func _sample(offset: float) -> Vector3:
 	var count := _points.size()
-	var f := fposmod(offset, length) / (length / count)
+	if not closed and offset >= length:
+		var tl := _tangents[count - 1]
+		return _points[count - 1] + tl.cross(Vector3.UP).normalized() * lateral_offset + tl * (offset - length)
+	if not closed:
+		offset = maxf(offset, 0.0)
+	var f := (fposmod(offset, length) if closed else offset) / _spacing
 	var i0 := int(f) % count
 	var i1 := (i0 + 1) % count
 	var p := _points[i0].lerp(_points[i1], f - floorf(f))
