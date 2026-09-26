@@ -75,14 +75,11 @@ def house(off, lat, prop, pad=9.0, cp=START_CP, yaw_add=0.0):
             {"road_at": cp, "offset_m": off, "lateral": lat, "radius": pad, "blend": 9.0})
 
 
-def hairpin(cp, side, board_cp, board_off=0.0):
+def hairpin(cp, side):
     """Rally dressing for a hairpin whose apex is near control point `cp`; `side` is the
-    outside of the corner (-1 left, +1 right of the driving direction)."""
+    outside of the corner (-1 left, +1 right of the driving direction). Its warning signs,
+    chevrons and guardrail come from lib/roadside.py."""
     return [
-        {"kind": "single", "prop": "distance_board_100", "road_at": board_cp, "offset_m": board_off - 100.0,
-         "lateral": side * 7.6, "face": "along", "yaw_add": 180.0},
-        {"kind": "single", "prop": "distance_board_50", "road_at": board_cp, "offset_m": board_off - 50.0,
-         "lateral": side * 7.6, "face": "along", "yaw_add": 180.0},
         {"kind": "crowd", "road_at": cp, "offset_m": 10.0, "side": side, "length": 16.0, "gap": 6.8,
          "count": 9, "depth": 4.0, "extras": ["flag_pole", "tent", "flag_pole_blue"], "extras_spacing": 5.0},
         {"kind": "single", "prop": "marshal_post", "road_at": cp, "offset_m": 26.0, "lateral": side * 9.0,
@@ -224,8 +221,6 @@ FEATURES = [
     {"kind": "crowd", "road_at": 9, "offset_m": 30.0, "side": -1, "length": 14.0, "gap": 6.8,
      "barrier": "tape_post", "count": 7, "depth": 3.5, "extras": ["flag_pole_pink"]},
     # ---------------------------------------------------------------- gorge and stone bridge
-    {"kind": "single", "prop": "sign_curve_left", "road_at": 13, "offset_m": -40.0, "lateral": 6.9,
-     "face": "along", "yaw_add": 180.0},
     {"kind": "single", "prop": "road_mirror", "road_at": 14, "offset_m": -6.0, "lateral": 7.0, "face": "road"},
     {"kind": "single", "prop": "stone_lantern", "road_at": 14, "offset_m": -3.0, "lateral": 6.8, "face": "road"},
     {"kind": "single", "prop": "stone_lantern", "road_at": 14, "offset_m": -3.0, "lateral": -6.8, "face": "road"},
@@ -241,12 +236,10 @@ FEATURES = [
     {"kind": "single", "prop": "flag_pole", "road_at": 16, "offset_m": 12.0, "lateral": -8.0, "face": "road"},
     {"kind": "single", "prop": "kei_truck", "road_at": 16, "offset_m": 26.0, "lateral": 12.0, "face": "along"},
     # ---------------------------------------------------------------- switchbacks
-    *hairpin(22, -1, 21, 0.0),
-    *hairpin(28, 1, 27, 0.0),
+    *hairpin(22, -1),
+    *hairpin(28, 1),
     {"kind": "single", "prop": "jizo", "road_at": 19, "offset_m": 0.0, "lateral": 7.6, "face": "road"},
     {"kind": "single", "prop": "hokora", "road_at": 25, "offset_m": 0.0, "lateral": -8.0, "face": "road"},
-    {"kind": "single", "prop": "sign_curve_right", "road_at": 18, "offset_m": -30.0, "lateral": 6.9,
-     "face": "along", "yaw_add": 180.0},
     # handmade rhythm on the gravel climb: wayside jizo, lanterns and marshal kit
     {"kind": "single", "prop": "stone_lantern", "road_at": 20, "offset_m": 10.0, "lateral": -7.6, "face": "road"},
     {"kind": "single", "prop": "tire_stack", "road_at": 24, "offset_m": 20.0, "lateral": 8.5, "face": "road"},
@@ -279,8 +272,6 @@ FEATURES = [
     # ---------------------------------------------------------------- descent
     *[h for h, _ in _ridge_farm],
     {"kind": "row", "prop": "hazagi", "from": (-420, 450), "to": (-420, 420), "spacing": 5.0, "face": "across"},
-    {"kind": "single", "prop": "sign_curve_left", "road_at": 36, "offset_m": -40.0, "lateral": 6.9,
-     "face": "along", "yaw_add": 180.0},
     {"kind": "single", "prop": "road_mirror", "road_at": 38, "offset_m": 0.0, "lateral": 7.2, "face": "road"},
     {"kind": "line", "props": ["telephone_pole"], "from_cp": 36, "from_offset": 0.0, "to_cp": 0,
      "to_offset": 0.0, "spacing": 40.0, "lateral": -8.0, "sides": [1], "face": "along"},

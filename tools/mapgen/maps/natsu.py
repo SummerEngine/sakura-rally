@@ -117,8 +117,7 @@ def _dressing():
     f.append(row("telephone_pole", 2, 10.0, 0.0, -8.2, 36.0, face="road_side", cp_to=9))
 
     # ------------------------------------------------------------ along the pass (cp 2 .. 9)
-    f += [one("sign_curve_right", 3, -70.0, 6.6, "along", yaw_add=180.0),
-          one("stone_lantern", 4, 10.0, -8.4, "road", scale=0.8), one("jizo", 4, 12.0, -8.2, "road"),
+    f += [one("stone_lantern", 4, 10.0, -8.4, "road", scale=0.8), one("jizo", 4, 12.0, -8.2, "road"),
           one("bus_stop", 5, 0.0, 8.8, "road"), one("bench", 5, 0.0, 11.4, "road"),
           one("vending_machine", 5, 4.2, 8.4, "road"),
           one("road_mirror", 7, 10.0, -6.8, "road")]
@@ -138,9 +137,7 @@ def _dressing():
            (-10, -240), (30, -180), (170, -170))]
 
     # ------------------------------------------------------------ the long right-hander (cp 10 .. 12)
-    f += [one("sign_curve_right", 10, -60.0, 6.6, "along", yaw_add=180.0),
-          one("road_mirror", 11, 8.0, -6.8, "road"),
-          one("sign_curve_right", 12, -55.0, 6.6, "along", yaw_add=180.0)]
+    f += [one("road_mirror", 11, 8.0, -6.8, "road")]
 
     # ------------------------------------------------------------ terrace hamlet (cp 13 .. 15), heading west
     # right (+) is uphill toward the terraces, left (-) downhill toward the river
@@ -155,8 +152,7 @@ def _dressing():
           row("fence_bamboo", 13, 6.0, 28.0, 10.4, 2.05, face="road_side"),
           row(["azalea", "bush_b"], 14, -14.0, 34.0, -9.0, 3.6, sides=(-1,), sink=0.1)]
     f.append(row("telephone_pole", 12, 10.0, 0.0, 8.2, 38.0, face="road_side", cp_to=17))
-    f += [one("sign_curve_left", 17, -60.0, -6.6, "along", yaw_add=180.0),
-          one("road_mirror", 17, 6.0, 6.8, "road")]
+    f += [one("road_mirror", 17, 6.0, 6.8, "road")]
 
     # ------------------------------------------------------------ stone bridge over the river (cp 18 .. 20)
     f += [one("stone_lantern", 18, -6.0, 7.4, "road"), one("stone_lantern", 18, -6.0, -7.4, "road"),
@@ -209,8 +205,7 @@ def _dressing():
     f += [at("rice_paddy_marker", x, z, 0.0) for (x, z) in ((-20, 175), (40, 205), (70, 180), (120, 188))]
 
     # ------------------------------------------------------------ forest edge (cp 26 .. 29)
-    f += [one("sign_curve_right", 27, -50.0, 6.6, "along", yaw_add=180.0),
-          one("road_mirror", 27, 8.0, -6.8, "road"),
+    f += [one("road_mirror", 27, 8.0, -6.8, "road"),
           one("stone_lantern", 26, 20.0, 8.6, "road", scale=0.8), one("jizo", 26, 22.0, 8.4, "road"),
           one("log", 28, 10.0, -12.5, "along"), one("log", 28, 10.0, -13.2, "along"),
           one("log", 28, 10.3, -12.85, "along", y_offset=0.5)]

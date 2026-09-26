@@ -28,9 +28,10 @@ sys.path.insert(0, HERE)
 from lib import geom, noise  # noqa: E402
 from lib.meshpack import MeshBuilder, MeshPack, rotation  # noqa: E402
 from lib.road import (LOT_DROP, PROFILE, SURFACES, build_bridge, build_delineators,  # noqa: E402
-                      build_guardrails, build_road, guardrail_runs, phys_surface, ribbon_indices,
+                      build_guardrails, build_road, phys_surface, ribbon_indices,
                       road_chunks, road_height_at, road_index, road_vertices)
-from lib.corridor import Corridor, enforce, format_survey, survey  # noqa: E402
+from lib import roadside  # noqa: E402
+from lib.corridor import SMASHABLE, WALLS, Corridor, enforce, format_survey, survey  # noqa: E402
 from lib.scatter import Placer  # noqa: E402
 from lib.terrain import LOT_SKIRT, build_terrain, build_water, chunk_mesh  # noqa: E402
 
@@ -574,6 +575,12 @@ def build(map_id: str) -> None:
     cp_abs = [start_s + route * k / ncp for k in range(1, ncp + 1)]
     cor = Corridor(road, [s % road.length if road.closed else s for s in cp_abs])
 
+    # corners, and the guardrails that keep a car that misses one on the road
+    ground = roadside.Ground.from_terrain(ter, road.lots, LOT_DROP)
+    corners = roadside.find_corners(road, rs.get("roadside"))
+    runs = roadside.rail_runs(road, ground, corners, spec["play_half"], rs.get("roadside"))
+    print(f"[{map_id}] roadside {roadside.summary(corners, runs, road)}")
+
     placer = Placer(ter, road, manifest, spec["season"], spec["seed"] + 7, spec["play_half"])
     placer.start_s = start_s
     placer.route = route
@@ -581,6 +588,11 @@ def build(map_id: str) -> None:
     placer.features(spec.get("features", []))
     signs = place_signs(spec.get("signs", []), placer, cor)
     parked = place_parked(spec.get("parked", []), placer)
+    corner_signs = roadside.place_corner_signs(road, ground, corners, runs, placer, rs.get("roadside"))
+    authored = {k: len(v) for k, v in placer.out.items()}
+    print(f"[{map_id}] corner signs {dict(sorted(corner_signs.placed.items()))}; warnings visible from "
+          + ", ".join("-" if w is None else "s" if w == "series" else f"{w:.0f}" for w in corner_signs.warnings)
+          + " m (s: announced by the series sign before it)")
     counts = {}
     for r in spec.get("scatter", []):
         c = placer.rule(r)
@@ -588,22 +600,17 @@ def build(map_id: str) -> None:
     print(f"[{map_id}] scatter {counts}")
     if placer.missing:
         print(f"[{map_id}] WARN missing props (skipped): {sorted(placer.missing)}")
+    sight = roadside.clear_sightlines(placer, manifest, corner_signs.sightlines, SMASHABLE, WALLS, authored)
+    print(f"[{map_id}] sign sightlines cleared {sight['removed']}"
+          + (f", WARN still blocked by {sight['blocking']}" if sight["blocking"] else ""))
     before = survey(cor, placer.out, manifest)
 
     # roadside dressing
     pal = spec["palette"]
     dress = MeshBuilder()
     boxes: list = []
-    runs = []
-    for side in (-1, 1):
-        lat = side * (road.half_width + road.verge + 5.0)
-        gx = road.pos[:, 0] + road.right[:, 0] * lat
-        gz = road.pos[:, 2] + road.right[:, 1] * lat
-        drop = road.pos[:, 1] - ter.height_at(gx, gz)
-        for a, b in guardrail_runs(road, drop, side):
-            runs.append((a, b, side))
     build_guardrails(road, runs, dress, boxes, lin(pal.get("rail_post", "8f98a3")), lin(pal.get("rail", "d7dde2")))
-    build_delineators(road, dress, lin("f4f1ea"), lin("e0452f"), lin("2d2a33"))
+    build_delineators(road, dress, lin("f4f1ea"), lin("e0452f"), skip=corner_signs.marker_skip)
     # bridges
     n = len(road.pos)
     i = 0
@@ -698,6 +705,7 @@ def build(map_id: str) -> None:
         "water": water_info,
         "collision_boxes": boxes,
         "signs": sign_info,
+        "corners": roadside.corners_json(road, corners, 0.0 if road.closed else start_s, corner_signs),
         "parked": parked,
         "materials": spec.get("materials", {}),
         "meshes": pack.meshes,

@@ -110,13 +110,6 @@ def hairpin(cp, outside, bales="hay_bale_round", banner=True, crowd_n=12, crowd_
     return f
 
 
-def approach(cp, outside, sign, dist=(-95.0, -55.0)):
-    """Warning sign and 100/50 boards before a bend, facing the approaching driver."""
-    return [one(sign, cp, dist[0] - 25.0, outside * 6.7, "along", yaw_add=180.0),
-            one("distance_board_100", cp, dist[0], outside * 6.9, "along", yaw_add=180.0),
-            one("distance_board_50", cp, dist[1], outside * 6.9, "along", yaw_add=180.0)]
-
-
 def torii_path(cp, off, lat0, n, step, side, shrine="hokora"):
     """A tunnel of small torii leading away from the road to a roadside shrine."""
     f = [one("torii_small", cp, off, side * (lat0 + k * step), "road", scale=1.15) for k in range(n)]
@@ -223,7 +216,7 @@ def _dressing():
           one("kei_truck", 7, 12.0, 14.0, "along", yaw_add=160.0),
           one("koinobori", 7, -4.0, 16.0, "road", yaw_add=40.0),
           one("sakura_young", 7, -8.0, 13.0, "road")]
-    f += [one("road_mirror", 8, 10.0, -6.7, "road"), one("sign_curve_right", 8, -45.0, 6.7, "along", yaw_add=180.0)]
+    f += [one("road_mirror", 8, 10.0, -6.7, "road")]
     # the village power line keeps climbing with the road; a farm stall where the valley opens
     f.append(row("telephone_pole", 6, 22.0, -40.0, -8.4, 38.0, face="road_side", cp_to=9))
     f += [one("shed", 7, 58.0, -22.0, "road", radius=3.4), one("kei_truck", 7, 66.0, -16.0, "along", yaw_add=-10.0),
@@ -236,7 +229,7 @@ def _dressing():
     f += [row("tape_post", 9, 6.0, 36.0, -10.8, 3.05), row("tape_post", 9, 6.0, 36.0, 10.8, 3.05),
           crowd(9, 20.0, -16.0, 9, 5.0), crowd(9, 24.0, 16.5, 7, 4.0),
           one("marshal_post", 9, 40.0, 9.8, "road"), one("kei_truck", 9, 30.0, 27.0, "along", yaw_add=12.0)]
-    f += [one("road_mirror", 10, 6.0, 6.7, "road"), one("sign_curve_left", 10, -40.0, -6.7, "along", yaw_add=180.0),
+    f += [one("road_mirror", 10, 6.0, 6.7, "road"),
           one("shed", 11, -8.0, 27.0, "road", radius=3.4), one("log", 11, -20.0, 12.5, "along"),
           one("log", 11, -20.0, 13.2, "along"), one("log", 11, -19.8, 12.85, "along", y_offset=0.5)]
     # a mountain-road rest stop: vending machines, a bench and a lantern before the woods
@@ -245,7 +238,7 @@ def _dressing():
           one("stone_lantern", 9, 84.5, 10.5, "road", scale=0.8)]
 
     # ------------------------------------------------------------ hairpins
-    f += approach(12, 1, "sign_curve_left") + hairpin(12, 1)
+    f += hairpin(12, 1)  # corner warnings and chevrons: lib/roadside.py
     # fans walking up from their cars to the hairpin
     f += [one("kei_truck", 13, 40.0, -22.0, "along", yaw_add=170.0), one("kei_truck", 13, 46.0, -22.5, "along", yaw_add=175.0),
           crowd(13, 34.0, -15.0, 5, 3.0),
@@ -253,7 +246,7 @@ def _dressing():
     f += [one("road_mirror", 12, 26.0, 6.8, "road"), one("marshal_post", 12, 32.0, 10.0, "road"),
           one("stone_lantern", 14, 0.0, -8.6, "road"), one("jizo", 14, 1.4, -8.4, "road"),
           one("bench", 14, 5.0, -9.2, "road")]
-    f += approach(16, -1, "sign_curve_right") + hairpin(16, -1, bales="tire_stack", banner=True)
+    f += hairpin(16, -1, bales="tire_stack", banner=True)
     f += gate(2)
     f += [one("road_mirror", 16, 26.0, -6.8, "road"),
           one("hokora", 18, 52.0, -12.5, "road"), one("jizo", 18, 49.8, -8.6, "road"), one("jizo", 18, 50.6, -8.6, "road"),
@@ -261,7 +254,7 @@ def _dressing():
           one("sakura_young", 18, 58.0, -13.0, "road"), one("bench", 18, 46.0, -9.4, "road"),
           one("road_mirror", 18, 90.0, 6.8, "road")]
     f += [one("kei_truck", 18, 34.0, 10.5, "along", yaw_add=4.0), crowd(18, 40.0, 15.0, 4, 2.5)]
-    f += approach(20, 1, "sign_curve_left") + hairpin(20, 1, bales="hay_bale_square")
+    f += hairpin(20, 1, bales="hay_bale_square")
     f += [one("road_mirror", 20, 26.0, 6.8, "road"), one("marshal_post", 20, -32.0, 10.0, "road")]
     f += [one("torii_small", 21, 40.0, -9.6, "road"), one("hokora", 21, 40.0, -12.8, "road"),
           one("stone_lantern", 21, 37.5, -10.4, "road", scale=0.8), one("stone_lantern", 21, 42.5, -10.4, "road", scale=0.8),
@@ -307,11 +300,10 @@ def _dressing():
     f += [one("shed", 30, 52.0, -30.0, "road", radius=3.4), one("kei_truck", 30, 44.0, -22.0, "along", yaw_add=15.0, sink=0.25),
           one("log", 30, 60.0, -18.0, "along"), one("log", 30, 60.0, -18.7, "along"), one("log", 30, 60.0, -19.4, "along"),
           one("log", 30, 60.3, -18.35, "along", y_offset=0.5), one("log", 30, 60.3, -19.05, "along", y_offset=0.5),
-          one("marshal_post", 30, 30.0, 9.8, "road"), one("sign_curve_right", 31, -60.0, -6.7, "along", yaw_add=180.0)]
+          one("marshal_post", 30, 30.0, 9.8, "road")]
     f += [one("torii_large", 31, 70.0, -12.5, "road", sink=0.3), one("stone_lantern", 31, 66.0, -16.0, "road"),
           one("stone_lantern", 31, 74.0, -16.0, "road"), one("shrine", 31, 70.0, -27.0, "road", sink=0.35, radius=7.0),
-          one("jizo", 31, 62.0, -8.6, "road"), one("jizo", 31, 62.8, -8.6, "road"),
-          one("sign_curve_left", 32, -55.0, 6.7, "along", yaw_add=180.0)]
+          one("jizo", 31, 62.0, -8.6, "road"), one("jizo", 31, 62.8, -8.6, "road")]
     f += [one("stone_lantern", 30, 0.0, 8.8, "road"), one("jizo", 30, 2.0, 8.4, "road"),
           row("tape_post", 31, -10.0, 14.0, 11.0, 3.05, sides=(-1,)), crowd(31, 2.0, -16.0, 8, 4.5),
           one("shed", 32, 42.0, 24.0, "road", radius=3.4), one("kei_truck", 33, 0.0, -24.0, "along", yaw_add=20.0),
