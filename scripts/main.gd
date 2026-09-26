@@ -45,6 +45,8 @@ const ARRIVAL_HOLD := 2.6
 ## The gate beat after results Continue: the car rests, the gate opens over it, then the drive.
 const GATE_LEAD := 0.5
 const GATE_BEAT := 2.1
+## Where the gate shot's camera ends up: this many metres short of the gate.
+const GATE_CLOSE := 20.0
 ## Longest wait for a car still rolling to its finish stop before the gate beat starts anyway.
 const REST_WAIT := 8.0
 
@@ -418,7 +420,9 @@ func _release_stop() -> void:
 		car.input_steer = 0.0
 
 
-## Camera behind and above the resting car, looking over it at the gate, easing in a little.
+## Camera behind and above the resting car, looking over it at the gate, then flying up the road
+## to GATE_CLOSE metres short of the gate while it opens (the gate stands tens of metres ahead
+## of the finish stop; from behind the car it would only be a speck).
 func _gate_shot(gate: Node3D) -> void:
 	var xf := car.global_transform
 	var fwd := Vector3(-xf.basis.z.x, 0.0, -xf.basis.z.z).normalized()
@@ -426,15 +430,20 @@ func _gate_shot(gate: Node3D) -> void:
 	var g := gate.global_position + Vector3.UP * 1.2
 	var side := signf(right.dot(g - xf.origin))
 	var from := xf.origin - fwd * 7.0 - right * side * 1.6 + Vector3.UP * 2.6
-	var look := xf.origin.lerp(g, 0.7)
-	gate_cam.global_position = from
-	gate_cam.look_at(look, Vector3.UP)
+	var to_gate := g - from
+	to_gate.y = 0.0
+	var reach := maxf(to_gate.length() - GATE_CLOSE, 0.0)
+	var to := from + to_gate.normalized() * reach + Vector3.UP * 1.0
+	var look_from := xf.origin.lerp(g, 0.7)
+	var move := func(t: float) -> void:
+		gate_cam.global_position = from.lerp(to, t)
+		gate_cam.look_at(look_from.lerp(g, t), Vector3.UP)
+	move.call(0.0)
 	gate_cam.make_current()
 	if _cam_tween != null and _cam_tween.is_valid():
 		_cam_tween.kill()
 	_cam_tween = create_tween()
-	_cam_tween.tween_property(gate_cam, "global_position", from + (look - from).normalized() * 1.8,
-			GATE_LEAD + GATE_BEAT).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_cam_tween.tween_method(move, 0.0, 1.0, GATE_LEAD + GATE_BEAT).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 
 
 ## After the last leg (screen covered): the classification over a flyover of the current loop.
