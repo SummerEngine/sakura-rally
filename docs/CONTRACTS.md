@@ -94,8 +94,8 @@ their origin at the ground (tree base).
 override per position through the track node (`Track.surface_at(position) -> StringName`).
 Physics layers: 1 world, 2 car, 3 props, 4 triggers, 5 debris (value 16: smashed dressing, collides
 with layer 1 only). Layer 3 holds only rigid things: walls (mapgen `Barriers`: guardrails, bridge
-rails, sign posts) and the `PropBody_x_y` bodies of RIGID props. Soft course dressing has no collider
-(see "Soft course" below).
+rails, and sign posts in packs older than breakable signs) and the `PropBody_x_y` bodies of RIGID
+props. Soft course dressing has no collider (see "Soft course" below).
 
 ## Car runtime API (`scenes/car/car.tscn`, root RigidBody3D, `scripts/vehicle/car.gd`)
 
@@ -311,6 +311,12 @@ meets only walls it can scrape along or props it knocks over.
   Signals: `smashed(prop, point, speed_before, loss)`, `upright_hit(point, speed_before, loss)`.
 - `start_arch` / `finish_arch` legs (`SoftCourse.SOFT_UPRIGHT_PROPS`) are soft uprights: 2.5 %
   and the arch nods back; its visuals stay.
+- Road signs (`signs[i]` with `mesh`, `base` and `collider`): MapWorld `_build_signs` puts the
+  sign's mesh and its Label3D lines under one `Signs/Sign_<i>` node and registers it with
+  `SoftCourse.add_sign()` as kind `road_sign` (`SoftCourse.ROAD_SIGN`, 4 %, `thump`). A hit
+  hides the node (board and text together) and flings two debris pieces, the posts (triangles
+  reaching below 40 % of the sign's height) and the board. In an older pack (no `mesh`) the board
+  stays in `dressing` and its posts in `collision_boxes`, rigid as before.
 - `checkpoint_gate` instances are skipped (`SoftCourse.SKIPPED_PROPS`); `FabricGate`
   (`scripts/world/fabric_gate.gd`, banner shader `shaders/world/fabric_banner.gdshader`) stands at
   every `map.checkpoints` entry of a closed stage except one within 20 m of a start/finish arch,
@@ -322,9 +328,10 @@ meets only walls it can scrape along or props it knocks over.
 - The course comes back whole when a new car enters the tree (restart), when a car jumps farther
   than one physics step could move it (`Car.reset_to()`, reset to the track), and on a map reload.
 - Nothing is created or loaded at hit time: the debris bodies, burst emitters and their materials
-  are built with the map, the hit sounds are preloaded, and once `MapWorld.built` fires (the loading
-  cover is still up) every smashable mesh and burst type is drawn for a few frames, tiny, in front of
-  the active camera, so their pipelines compile behind the cover (`SoftCourse.is_warm()`).
+  are built with the map, the hit sounds sit in Sound's cache from boot, and once `MapWorld.built`
+  fires (the loading cover is still up) every smashable mesh and burst type is drawn for a few
+  frames, tiny, in front of the active camera, so their pipelines compile behind the cover
+  (`SoftCourse.is_warm()`).
 - Probe: `tools/game/softcourse_probe.gd -- map=hanami [car=hayate]` (headless). Run windowed
   (`--audio-driver Dummy`, no `--headless`) it also logs frame times, physics steps, pipeline
   compilations and node/resource counts in the second after the 1st, 2nd and 10th smash and the

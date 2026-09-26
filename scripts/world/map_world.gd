@@ -17,6 +17,8 @@ signal built
 
 const MANIFEST_PATH := "res://assets/models/props/manifest.json"
 const CHUNK := 160.0
+## Road sign debris: triangles reaching down below this share of the sign's height are the posts.
+const SIGN_POST_SHARE := 0.4
 const TERRAIN_SHADER := preload("res://shaders/terrain.gdshader")
 const ROAD_SHADER := preload("res://shaders/road.gdshader")
 const WATER_SHADER := preload("res://shaders/water.gdshader")
@@ -313,6 +315,8 @@ func _build_meshes() -> void:
 	add_child(water_root)
 	var tris := 0
 	for d in info["meshes"]:
+		if d.get("local", false):
+			continue # a road sign's own mesh, in its frame: _build_signs places it
 		var arr := _mesh_arrays(d)
 		var mesh := ArrayMesh.new()
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
@@ -573,8 +577,34 @@ func _build_signs() -> void:
 	var root := Node3D.new()
 	root.name = "Signs"
 	add_child(root)
-	for s in signs:
+	var local_meshes := {}
+	for d in info["meshes"]:
+		if d.get("local", false):
+			local_meshes[d["name"]] = d
+	for i in signs.size():
+		var s: Dictionary = signs[i]
 		var face := Transform3D(Basis(Vector3.UP, s["yaw"]), Vector3(s["pos"][0], s["pos"][1], s["pos"][2]))
+		var holder: Node3D = root
+		if local_meshes.has(s.get("mesh", "")) and s.has("base") and s.has("collider"):
+			# its own mesh and a soft collider: the sign breaks like the kit's dressing
+			holder = Node3D.new()
+			holder.name = "Sign_%d" % i
+			root.add_child(holder)
+			var xf := Transform3D(Basis(Vector3.UP, s["yaw"]), Vector3(s["base"][0], s["base"][1], s["base"][2]))
+			var col: Dictionary = s["collider"]
+			var size := Vector3(col["size"][0], col["size"][1], col["size"][2])
+			var arr := _mesh_arrays(local_meshes[s["mesh"]])
+			var mat: Material = materials["props_vc"]
+			var mesh := ArrayMesh.new()
+			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+			mesh.surface_set_material(0, mat)
+			var mi := MeshInstance3D.new()
+			mi.name = "Mesh"
+			mi.mesh = mesh
+			mi.transform = xf
+			holder.add_child(mi)
+			soft_course.add_sign(holder, _sign_pieces(arr, size.y, mat), xf, size,
+					Vector3(col["center"][0], col["center"][1], col["center"][2]))
 		for ln in s["lines"]:
 			var l := Label3D.new()
 			l.text = ln["text"]
@@ -592,7 +622,54 @@ func _build_signs() -> void:
 			l.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			l.visibility_range_end = 260.0
 			l.transform = face * Transform3D(Basis(), Vector3(ln["offset"][0], ln["offset"][1], 0.004))
-			root.add_child(l)
+			holder.add_child(l)
+
+
+## A sign's debris: the posts (triangles reaching down towards the ground) and the board.
+func _sign_pieces(arr: Array, top: float, mat: Material) -> Array[Mesh]:
+	var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+	var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX]
+	var cut := top * SIGN_POST_SHARE
+	var posts := PackedInt32Array()
+	var board := PackedInt32Array()
+	for t in range(0, idx.size(), 3):
+		var y := minf(verts[idx[t]].y, minf(verts[idx[t + 1]].y, verts[idx[t + 2]].y))
+		if y < cut:
+			posts.append_array(idx.slice(t, t + 3))
+		else:
+			board.append_array(idx.slice(t, t + 3))
+	var out: Array[Mesh] = []
+	for part in [posts, board]:
+		if part.is_empty():
+			continue
+		# compact: the piece's bounds (its debris box) cover only its own vertices
+		var remap := {}
+		var sub := []
+		sub.resize(Mesh.ARRAY_MAX)
+		var v := PackedVector3Array()
+		var n := PackedVector3Array()
+		var c := PackedColorArray()
+		var ni := PackedInt32Array()
+		for k in part:
+			if not remap.has(k):
+				remap[k] = v.size()
+				v.append(verts[k])
+				if arr[Mesh.ARRAY_NORMAL] != null:
+					n.append(arr[Mesh.ARRAY_NORMAL][k])
+				if arr[Mesh.ARRAY_COLOR] != null:
+					c.append(arr[Mesh.ARRAY_COLOR][k])
+			ni.append(remap[k])
+		sub[Mesh.ARRAY_VERTEX] = v
+		sub[Mesh.ARRAY_INDEX] = ni
+		if not n.is_empty():
+			sub[Mesh.ARRAY_NORMAL] = n
+		if not c.is_empty():
+			sub[Mesh.ARRAY_COLOR] = c
+		var m := ArrayMesh.new()
+		m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, sub)
+		m.surface_set_material(0, mat)
+		out.append(m)
+	return out
 
 
 ## Parked rally cars (service parks): static car models in a livery each, toon-converted

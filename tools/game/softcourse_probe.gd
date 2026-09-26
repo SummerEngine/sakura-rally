@@ -43,6 +43,7 @@ var _last_usec := 0
 var _steps := 0
 var _marks: Array[Dictionary] = [] ## {"label", "usec"}
 var _smash_usec := PackedInt64Array() ## every smash
+var _cut_usec := PackedInt64Array() ## the probe teleports, respawns or reloads: smash windows end here
 var _kinds_seen: Array[String] = []
 var _smash_n := 0
 var _upright_marked := false
@@ -83,8 +84,19 @@ func _physics_process(_delta: float) -> bool:
 	return false
 
 
+func _cut() -> void:
+	_cut_usec.append(Time.get_ticks_usec())
+
+
 func _mark(label: String) -> void:
 	_marks.append({"label": label, "usec": Time.get_ticks_usec()})
+
+
+func _cut_between(a: int, b: int) -> bool:
+	for c in _cut_usec:
+		if c > a and c <= b:
+			return true
+	return false
 
 
 ## Worst frames within 1 s of each mark, and what was created in that second.
@@ -98,7 +110,7 @@ func _report_frames() -> void:
 		for i in _f_usec.size():
 			if _f_usec[i] < t0:
 				continue
-			if _f_usec[i] > t0 + 1000000:
+			if _f_usec[i] > t0 + 1000000 or _cut_between(t0, _f_usec[i]):
 				break
 			if first < 0:
 				first = i
@@ -132,22 +144,27 @@ func _report_frames() -> void:
 			if worst > FRAME_BUDGET_MS:
 				failures.append("%s: frame %.1f ms" % [m["label"], worst])
 	# every frame within 1 s after any smash
+	# (a window ends early where the probe itself teleports, respawns or reloads)
 	var worst_all := 0.0
+	var worst_at := 0.0
 	var n_all := 0
 	var compiles := 0
-	var j := 0
+	var j := -1 # latest smash at or before the frame
 	for i in _f_usec.size():
-		while j < _smash_usec.size() and _smash_usec[j] + 1000000 < _f_usec[i]:
+		var t := _f_usec[i]
+		while j + 1 < _smash_usec.size() and _smash_usec[j + 1] <= t:
 			j += 1
-		if j >= _smash_usec.size() or _smash_usec[j] > _f_usec[i]:
+		if j < 0 or t > _smash_usec[j] + 1000000 or _cut_between(_smash_usec[j], t):
 			continue
 		n_all += 1
-		worst_all = maxf(worst_all, _f_ms[i])
+		if _f_ms[i] > worst_all:
+			worst_all = _f_ms[i]
+			worst_at = (t - _smash_usec[j]) / 1000.0
 		if i > 0:
 			for k in 3:
 				compiles += maxi(_f_perf[k][i] - _f_perf[k][i - 1], 0)
-	print("FRAMES all %d smashes: %d frames within 1 s after one  worst %.1f ms  pipeline compilations %d" % [
-		_smash_usec.size(), n_all, worst_all, compiles])
+	print("FRAMES all %d smashes: %d frames within 1 s after one  worst %.1f ms (%.0f ms after its smash)  pipeline compilations %d" % [
+		_smash_usec.size(), n_all, worst_all, worst_at, compiles])
 	if soft != null and (worst_all > FRAME_BUDGET_MS or compiles > 0):
 		failures.append("frames after smashes: worst %.1f ms, %d compilations" % [worst_all, compiles])
 
@@ -236,29 +253,44 @@ func _run() -> void:
 				failures.append("%s: %d hard impacts" % [label, a["hard_impacts"]])
 
 	# ---------------------------------------------------------------- B: through a gate
-	var cp: Dictionary = map.checkpoints[0]
-	var cs := map.track.dist(map.track.nearest(cp["position"]))
-	var gate: Node = soft.gate_for_checkpoint(int(cp["index"])) if soft != null else null
-	var billowed := [false]
-	var b := await _pass("gate_centre", cs - 90.0, cs + 20.0, 0.0, func() -> void:
-		if gate != null and gate.is_billowing():
-			if not billowed[0] and not _gate_marked:
-				_gate_marked = true
-				_mark("first gate pass")
-			billowed[0] = true)
-	print("GATE centre  billowed %s" % billowed[0])
-	if soft != null and not billowed[0]:
-		failures.append("gate: banner did not billow")
+	# an open road's only gate stands at the time control, where the autopilot stops the car
+	if not map.track.closed:
+		print("GATE skipped on an open road (its gate is at the time control)")
+	else:
+		# the first checkpoint with a gate
+		var cp: Dictionary = map.checkpoints[0]
+		var gate: Node = null
+		if soft != null:
+			for c in map.checkpoints:
+				if soft.gate_for_checkpoint(int(c["index"])) != null:
+					cp = c
+					gate = soft.gate_for_checkpoint(int(c["index"]))
+					break
+		var cs := map.track.dist(map.track.nearest(cp["position"]))
+		var billowed := [false]
+		var b := await _pass("gate_centre", cs - 90.0, cs + 20.0, 0.0, func() -> void:
+			if gate != null and gate.is_billowing():
+				if not billowed[0] and not _gate_marked:
+					_gate_marked = true
+					_mark("first gate pass")
+				billowed[0] = true)
+		print("GATE centre  billowed %s" % billowed[0])
+		if soft != null and not billowed[0]:
+			failures.append("gate: banner did not billow")
 
-	# ---------------------------------------------------------------- C: into a gate upright
-	# the car's right side runs into the right upright (ep2: the right post of checkpoint_gate)
-	var lat: float = (float(gate.half_span) if gate != null else 6.5) - 0.9
-	var c := await _pass("gate_upright", cs - 90.0, cs + 20.0, lat, Callable(), cs - 30.0)
+		# C: into a gate upright
+		# the car's right side runs into the right upright (ep2: the right post of checkpoint_gate)
+		var lat: float = (float(gate.half_span) if gate != null else 6.5) - 0.9
+		var c := await _pass("gate_upright", cs - 90.0, cs + 20.0, lat, Callable(), cs - 30.0)
+		if soft != null:
+			if int(c["upright_hits"]) < 1:
+				failures.append("upright: no hit")
+			if float(c["upright_loss"]) > 0.035:
+				failures.append("upright: lost %.1f %%" % (float(c["upright_loss"]) * 100.0))
+
+	# ---------------------------------------------------------------- E: into a road sign
 	if soft != null:
-		if int(c["upright_hits"]) < 1:
-			failures.append("upright: no hit")
-		if float(c["upright_loss"]) > 0.035:
-			failures.append("upright: lost %.1f %%" % (float(c["upright_loss"]) * 100.0))
+		await _sign_pass()
 
 	# ---------------------------------------------------------------- D: restoration
 	if soft != null:
@@ -280,6 +312,7 @@ func _spawn_car() -> void:
 	car = (load(scene) as PackedScene).instantiate() as Car
 	car.name = "ProbeCar"
 	root.add_child(car)
+	_cut()
 	car.reset_to(map.spawn)
 
 
@@ -368,6 +401,7 @@ func _pass(label: String, s_from: float, s_to: float, lat: float, each_tick: Cal
 		if n is Autopilot:
 			n.queue_free()
 	var road_lat := clampf(lat, -1.5, 1.5) if s_out > s_from else lat
+	_cut()
 	car.reset_to(track.transform_at_abs(s_from, road_lat, 0.35))
 	events.clear()
 	for i in 6:
@@ -463,6 +497,76 @@ func _pass(label: String, s_from: float, s_to: float, lat: float, each_tick: Cal
 	return result
 
 
+## Mapgen direction boards (natsu): straight into the first one, from 30 m in front of it.
+func _sign_pass() -> void:
+	var sign_id := -1
+	for id in soft.smashable_count():
+		if soft.prop_kind(id) == SoftCourse.ROAD_SIGN:
+			sign_id = id
+			break
+	var signs := map.find_child("Signs", false, false)
+	if sign_id < 0:
+		print("SIGN none on %s (%d sign nodes)" % [map.map_id, signs.get_child_count() if signs != null else 0])
+		return
+	var sd: Dictionary = map.info["signs"][0]
+	var yaw: float = sd["yaw"]
+	var base := Vector3(sd["base"][0], sd["base"][1], sd["base"][2])
+	var face := Basis(Vector3.UP, yaw).z
+	var start := base + face * 30.0
+	start.y = map.ground_height(start.x, start.z) + 0.2
+	_cut()
+	car.reset_to(Transform3D(Basis(Vector3.UP, yaw), start))
+	events.clear()
+	for i in 4:
+		await physics_frame
+	car.linear_velocity = -face * 16.0
+	var holder := signs.get_node("Sign_0") as Node3D
+	var labels := holder.find_children("*", "Label3D", false, false).size()
+	var debris0: int = soft.live_debris()
+	var yaw_before := 0.0
+	var max_yaw_step := 0.0
+	var air := 0.0
+	var t := 0.0
+	var hit_t := -1.0
+	while t < 5.0:
+		car.input_throttle = 0.6
+		car.input_steer = 0.0
+		var w0 := absf(car.angular_velocity.y)
+		await physics_frame
+		t += DT
+		air = maxf(air, car.airborne_time)
+		if hit_t < 0.0 and soft.is_broken(sign_id):
+			hit_t = t
+			yaw_before = w0
+		if hit_t >= 0.0 and t - hit_t < WINDOW:
+			max_yaw_step = maxf(max_yaw_step, absf(car.angular_velocity.y) - yaw_before)
+		if hit_t >= 0.0 and t - hit_t > WINDOW:
+			break
+	car.input_throttle = 0.0
+	var ev: Dictionary = {}
+	for e in events:
+		if e["kind"] == SoftCourse.ROAD_SIGN:
+			ev = e
+	print("SIGN %s  hit %s  speed %.1f km/h  loss %.1f %%  yaw step %.3f rad/s  airborne max %.2f s  debris pieces %d  sign node visible %s (%d text lines, hidden with it)" % [
+		holder.name, hit_t >= 0.0, float(ev.get("v", 0.0)) * 3.6, float(ev.get("loss", 0.0)) * 100.0,
+		max_yaw_step, air, soft.live_debris() - debris0, holder.visible, labels])
+	if hit_t < 0.0 or holder.visible:
+		failures.append("road sign did not break")
+	elif soft.live_debris() - debris0 < 2:
+		failures.append("road sign: %d debris pieces" % (soft.live_debris() - debris0))
+
+
+## Road sign nodes currently hidden (broken).
+func _hidden_signs() -> int:
+	var n := 0
+	var signs := map.find_child("Signs", false, false)
+	if signs != null:
+		for c in signs.get_children():
+			if c is Node3D and c.name.begins_with("Sign_") and not (c as Node3D).visible:
+				n += 1
+	return n
+
+
 func _restoration(row: Dictionary) -> void:
 	var broken_before: int = soft.broken_count()
 	var debris_before: int = soft.live_debris()
@@ -471,18 +575,21 @@ func _restoration(row: Dictionary) -> void:
 		await _pass("rebreak", row["s0"] - 90.0, row["s1"] + 25.0, row["lat"], Callable(), row["s0"] - 35.0)
 		broken_before = soft.broken_count()
 		debris_before = soft.live_debris()
+	var signs_before := _hidden_signs()
+	_cut()
 	car.reset_to(map.spawn)
 	for i in 3:
 		await physics_frame
 	var hidden := _hidden_instances()
-	print("RESTORE reset_to(spawn): broken %d -> %d  live debris %d -> %d  hidden MultiMesh instances %d" % [
-		broken_before, soft.broken_count(), debris_before, soft.live_debris(), hidden])
-	if soft.broken_count() != 0 or soft.live_debris() != 0 or hidden != 0:
+	print("RESTORE reset_to(spawn): broken %d -> %d  live debris %d -> %d  hidden MultiMesh instances %d  hidden signs %d -> %d" % [
+		broken_before, soft.broken_count(), debris_before, soft.live_debris(), hidden, signs_before, _hidden_signs()])
+	if soft.broken_count() != 0 or soft.live_debris() != 0 or hidden != 0 or _hidden_signs() != 0:
 		failures.append("restore after reset_to")
 	# stage restart: Main frees the car and spawns a new one
 	await _pass("rebreak", row["s0"] - 90.0, row["s1"] + 25.0, row["lat"], Callable(), row["s0"] - 35.0)
 	var b2: int = soft.broken_count()
 	var d2: int = soft.live_debris()
+	_cut()
 	car.queue_free()
 	await physics_frame
 	_spawn_car()
@@ -495,6 +602,7 @@ func _restoration(row: Dictionary) -> void:
 		failures.append("restore after new car")
 	# map reload: a fresh MapWorld is whole
 	var count: int = soft.smashable_count()
+	_cut()
 	map.queue_free()
 	await process_frame
 	map = MapWorld.new()

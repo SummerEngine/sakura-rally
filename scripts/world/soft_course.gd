@@ -66,13 +66,6 @@ const DEBRIS_LIFE_MAX := 5.6
 const DEBRIS_SHRINK := 0.7
 const BURSTS := 4
 const DUST_SHADER := preload("res://shaders/dust.gdshader")
-## The hit sounds, held so Sound.play_3d's load() of them is a cache lookup, never disk I/O
-## in the middle of a smash.
-const SFX_STREAMS := [
-	preload("res://assets/audio/car/thump_1.wav"), preload("res://assets/audio/car/thump_2.wav"),
-	preload("res://assets/audio/car/thump_3.wav"), preload("res://assets/audio/car/impact_light_1.wav"),
-	preload("res://assets/audio/car/impact_light_2.wav"), preload("res://assets/audio/car/impact_light_3.wav"),
-]
 ## Frames each warm-up batch stays drawn (the renderer builds pipelines on the first draw).
 const WARM_FRAMES := 3
 
