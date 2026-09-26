@@ -160,8 +160,11 @@ var livery_secondary: Color = Color("e8517c")
 @export var drift_gain: float = 12000.0
 @export var drift_hold: float = 0.7
 @export var drift_damping: float = 5000.0
-## Traction control: allowed driven slip as a multiple of the surface's peak slip ratio.
+## Traction control: allowed driven slip as a multiple of the surface's peak slip ratio; with
+## full drift intent the allowance grows by `drift_tc_relax` times itself (throttle keeps a
+## slide going, so the wheels may spin further).
 @export var tc_slip_multiple: float = 1.5
+@export var drift_tc_relax: float = 2.0
 @export var air_level_torque: float = 5500.0
 @export var air_damping: float = 5800.0
 @export var air_yaw_torque: float = 900.0
@@ -374,6 +377,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	var thr_in := clampf(input_brake if reversing else input_throttle, 0.0, 1.0)
 	var brk_in := clampf(input_throttle if reversing else input_brake, 0.0, 1.0)
 	handbrake = move_toward(handbrake, 1.0 if input_handbrake else 0.0, dt * 16.0)
+	drivetrain.sliding = drift_intent > 0.1
 	if not launch_hold:
 		drivetrain.update_transmission(dt, v_fwd, input_throttle, input_brake,
 				grounded_wheels >= 2 and handbrake < 0.1, automatic, WHEEL_RADIUS)
@@ -677,7 +681,7 @@ func _update_tyres(state: PhysicsDirectBodyState3D, xf: Transform3D, com: Vector
 		if w.contact and w.slip_long > 0.0:
 			var surf := TyreModel.get_surface(w.surface)
 			# Holding a drift the driven wheels may spin further: throttle is what keeps it going.
-			worst = maxf(worst, w.slip_long / (surf.long_peak * tc_slip_multiple * (1.0 + 2.0 * drift_intent)))
+			worst = maxf(worst, w.slip_long / (surf.long_peak * tc_slip_multiple * (1.0 + drift_tc_relax * drift_intent)))
 	if worst > 1.0:
 		_tc_scale = maxf(_tc_scale - dt * 3.0 * (worst - 0.9), 0.5)
 	else:

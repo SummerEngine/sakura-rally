@@ -105,6 +105,11 @@ var engine_torque: float = 0.0
 ## throttle cut it limits a slipping clutch, so a launch cannot keep feeding flywheel energy into
 ## spinning tyres.
 var traction_scale: float = 1.0
+## Set by the car every tick: the driver is holding a slide (drift intent). Road speed along the
+## car's nose then says nothing about the gear it wants (at 40 deg of slip it reads 25 % low and
+## the driven wheels spin), so the box holds the gear and only shifts on driveline speed (engine
+## rpm with the clutch locked) against the usual up- and downshift points.
+var sliding: bool = false
 
 var _omega_e: float = 900.0 * RPM_TO_RADS
 var _shift_timer: float = 0.0
@@ -252,6 +257,13 @@ func update_transmission(dt: float, v_fwd: float, thr_in: float, brk_in: float, 
 	if v_fwd < 0.5:
 		if gear > 1:
 			_start_shift(1)
+		return
+	if sliding:
+		if clutch_locked and gear < top_gear() and rpm > upshift_rpm_full:
+			_start_shift(gear + 1)
+		elif clutch_locked and gear > 1 and rpm < lerpf(downshift_rpm_light, downshift_rpm_full, clampf(thr_in, 0.0, 1.0)) \
+				and rpm_for_speed(v_fwd, gear - 1, wheel_radius) < downshift_target_max:
+			_start_shift(gear - 1)
 		return
 	var up_rpm := lerpf(upshift_rpm_light, upshift_rpm_full, clampf(thr_in, 0.0, 1.0))
 	# Near the full-throttle point the box always upshifts (no bouncing off the limiter);
