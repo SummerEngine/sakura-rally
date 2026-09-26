@@ -20,7 +20,7 @@ A custom rally car on a plain `RigidBody3D` (Jolt, 120 Hz, physics interpolation
 | `scenes/test/physics_test.tscn` + `tools/physics/test_ground.gd` | Proving ground |
 | `tools/physics/run_tests.gd` | Headless telemetry suite (below) |
 | `tools/physics/keyboard_bot.gd` + `key_taps.gd` | Keyboard proxy driver: the autopilot's line and speed profile played on digital keys through the InputMap |
-| `tools/physics/map_lap_runner.gd` / `map_drive.gd` | Timed laps of the real maps (tests; windowed camera check) |
+| `tools/physics/map_lap_runner.gd` / `map_drive.gd` | Timed runs of the world's routes (tests; offscreen camera check, frames along a route, frame rates per quality preset) |
 | `tools/physics/before_after.gd` | Self-contained keyboard scenario that runs on ep1 and ep2 (numbers below) |
 | `tools/physics/capture.gd` | Windowed screenshot / frame-strip capture into `docs/renders/` |
 
@@ -476,7 +476,7 @@ is the chase view 0.25 s into a 25° guardrail hit at 110 km/h: the car runs alo
 ```
 S=/Applications/Summer.app/Contents/MacOS/Summer
 timeout 2400 $S --headless --disable-crash-handler --fixed-fps 120 --path . -s res://tools/physics/run_tests.gd
-# -- car=sakura|hayate|all  only=<groups in _run_car()>,maps  maps=hanami,momiji  soak=300
+# -- car=sakura|hayate|all  only=<groups in _run_car()>,maps  maps=hanami,momiji,liaison  soak=300
 ```
 
 Every test except the straight-line braking tests and the skidpads drives through the real
@@ -486,8 +486,11 @@ under "Crashes and walls". The skidpad measures lateral g
 from the turn rate of the velocity itself, not the body's yaw rate (which also counts changes of
 body slip while the car slides in or out of the circle). "panic steer" reports max body slip /
 time until the slip is below 3° after the key is released, for throttle held, lifted and full brake.
-The `maps` group runs one lap per car and map with the analog autopilot and with the keyboard bot,
-and prints the medal times the analog laps imply.
+The `maps` group builds the world once (and records its build time), runs each route per car with
+the analog autopilot and with the keyboard bot (the stage laps, and the liaison from Hanami's
+finish stop through the opened gates to Momiji's grid), prints the medal times the analog stage
+laps imply, and checks the closed-road gates: a car driven at a closed gate at 60 km/h is stopped
+by it, and drives through once it is open.
 
 Latest results (2026-09-26, Apple M1 Max, headless, both cars): **120/120 PASS**.
 

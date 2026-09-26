@@ -484,6 +484,23 @@ rates measured during ep3 work are noisy: report them, the lead re-measures at i
 - `garage: Transform3D` (identity when the pack has none).
 - The world loads behind the boot / loading screen once; a start inside the loaded world only
   places the car (`place_at_rest`) under a short cover.
+- Implementation (WorldRuntime, done): `map_id` follows `select_route`, so records keyed by
+  `map.map_id` stay keyed by stage. After `select_route("liaison")` `spawn` is the liaison's
+  start pose (Hanami's `finish_stop`). Gates are `RoadGate` nodes (`scripts/world/road_gate.gd`)
+  at the road centre, -Z along the route: two striped wings hinged at the road edges
+  (`AnimatableBody3D` on the props layer, rigid), a 通行止め / ROAD CLOSED board and the
+  `marshal` prop; open, the wings fold back along the verges in 1.8 s and the marshal steps
+  off, then `opened` fires. `SoftCourse.build_gates(…, clear)` adds each closed route's fabric
+  gates; `SoftCourse.gate_near(pos)` finds one by checkpoint position.
+- Season look: `Atmosphere.set_weights(w)` blends `spring_noon`, `summer_afternoon`,
+  `autumn_golden` (sun by direction, colours, fog, ambient, exposure, `grade`, the `sr_*`
+  globals, cloud colours and towers) and counts `changed`; PostFX and the SkyRig follow it by
+  themselves (PostFX finds the node in group `atmosphere`), so nobody calls
+  `post.apply_preset` per start. MapWorld eases the weights at the camera at 1.5/s, snaps on a
+  camera jump over 60 m (a cut) and re-applies only when they moved by 0.002. The sky
+  particles are three volumes emitting by weight; litter picks a season per litter cell
+  (`shaders/inc/season.gdshaderinc`); the ambience is `Sound.play_ambience(fade)` +
+  `Sound.set_ambience_mix(w)` (MapWorld calls the mix).
 
 ### Campaign in one world (Campaign)
 
