@@ -1,9 +1,11 @@
 // Generic cel material: albedo colour x vertex colour x optional texture,
-// optional wind sway, emission and per-instance tint (MultiMesh custom data).
+// optional wind sway, emission, per-instance tint (MultiMesh custom data) and
+// spectator motion (shaders/inc/crowd.gdshaderinc).
 shader_type spatial;
 render_mode cull_back, depth_draw_opaque;
 
 #include "res://shaders/inc/toon.gdshaderinc"
+#include "res://shaders/inc/crowd.gdshaderinc"
 
 uniform vec4 albedo : source_color = vec4(1.0);
 uniform sampler2D albedo_texture : source_color, filter_linear_mipmap, repeat_enable, hint_default_white;
@@ -33,6 +35,9 @@ void vertex() {
 	if (sway_amount > 0.0) {
 		float w = smoothstep(sway_start, sway_end, VERTEX.y);
 		VERTEX += sr_sway(v_world, w, sway_amount);
+	}
+	if (crowd_motion > 0.0) {
+		VERTEX = sr_crowd(VERTEX, COLOR.a, MODEL_MATRIX, INSTANCE_CUSTOM, TIME);
 	}
 	v_tint = vec3(1.0);
 	if (use_instance_tint) {

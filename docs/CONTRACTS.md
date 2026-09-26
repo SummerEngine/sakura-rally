@@ -574,3 +574,11 @@ rates measured during ep3 work are noisy: report them, the lead re-measures at i
 - Spectators are not rigid anymore: a car that hits one knocks it over in a comic tumble (no
   gore); it lies a moment and gets back up, and the car loses a little speed.
   `scripts/world/crowd.gd` owns the list, mirrored in `corridor.py` like `SMASHABLE`.
+- Done (ep3-people): the kit is `spectator_a`..`spectator_l` (twelve people, same names for
+  a..f) plus a static `marshal` (not knockable; WorldRuntime's road gates). Materials
+  `Crowd_Base` (vertex colours) and `Crowd_Dye` (tinted per instance from `Crowd.PALETTE`);
+  vertex alpha weights the arms for the crowd motion (`shaders/inc/crowd.gdshaderinc`, opt
+  `crowd` of ToonMaterials). Crowd lists live in `tools/mapgen/lib/scatter.py`
+  (`SPECTATORS`, `SPECTATOR_WEIGHTS`); `corridor.py` `KNOCKABLE` = `Crowd.PEOPLE` (off the
+  tarmac only). A knock costs 1-1.5 % of the car's speed through SoftCourse's loss budget.
+  Verification: `tools/crowd/crowd_probe.gd` (shots, lineup, knock).

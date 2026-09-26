@@ -7,8 +7,9 @@ the outside of a corner, can hit it (docs/CONTRACTS.md, "Road corridor").
                 (room for the runtime's fabric gate uprights)
   low obstacles low rocks, stumps and logs clear the wide corridor everywhere (a car does not
                 see them coming and they launch it)
-  smashables    props the runtime makes soft (the car drives through them) may stand in the
-                corridor, but never on the tarmac: |lateral| >= half width + 0.3
+  smashables    props the runtime makes soft (the car drives through them) and knockable
+                spectators may stand in the corridor, but never on the tarmac:
+                |lateral| >= half width + 0.3 (crowds are placed >= 8 m out anyway)
   walls         guardrails and bridge rails are built along the road on purpose; they stay
 
 `enforce` moves every offender straight out from the road until it clears (keeping its
@@ -43,6 +44,12 @@ SMASHABLE = frozenset((
     "corner_chevron_left", "corner_chevron_right", "corner_warn_curve_left", "corner_warn_curve_right",
     "corner_warn_sharp_left", "corner_warn_sharp_right", "corner_warn_hairpin_left", "corner_warn_hairpin_right",
     "corner_warn_series_left", "corner_warn_series_right",
+))
+# Spectators the runtime makes knockable (a car knocks them over; they get back up). Mirror
+# of Crowd.PEOPLE in scripts/world/crowd.gd; keep the two in step.
+KNOCKABLE = frozenset((
+    "spectator_a", "spectator_b", "spectator_c", "spectator_d", "spectator_e", "spectator_f",
+    "spectator_g", "spectator_h", "spectator_i", "spectator_j", "spectator_k", "spectator_l",
 ))
 # Built along the road on purpose (the car scrapes along them).
 WALLS = frozenset(("guardrail", "bridge_rail"))
@@ -187,7 +194,7 @@ def mode_of(name: str, manifest: dict) -> str | None:
     col = m.get("collision", {})
     if col.get("type", "none") == "none" or name in WALLS or name in ARCHES:
         return None
-    if name in SMASHABLE:
+    if name in SMASHABLE or name in KNOCKABLE:
         return "soft"
     if name in LOW:
         return "low"

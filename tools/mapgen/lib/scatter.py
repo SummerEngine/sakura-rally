@@ -12,10 +12,13 @@ from . import geom, noise
 from .road import LOT_DROP, Road, road_index
 from .terrain import Terrain
 
-# The spectator kit and how often each one turns up in a crowd (the world's branch-road crowds
-# use these; the region specs carry their own lists).
-SPECTATORS = ["spectator_a", "spectator_b", "spectator_c", "spectator_d", "spectator_e", "spectator_f"]
-SPECTATOR_WEIGHTS = [1.0, 1.0, 0.8, 1.0, 0.7, 0.7]
+# The people kit (tools/blender/props/people.py; knockable at runtime, scripts/world/crowd.gd)
+# and how often each turns up in a crowd: the crouching fan, the child, the photographer, the
+# parasol and the grandpa on his stool a little less than the standing cheerers. The world's
+# crowds all draw from these.
+SPECTATORS = ["spectator_a", "spectator_b", "spectator_c", "spectator_d", "spectator_e", "spectator_f",
+              "spectator_g", "spectator_h", "spectator_i", "spectator_j", "spectator_k", "spectator_l"]
+SPECTATOR_WEIGHTS = [1.0, 1.0, 0.9, 0.7, 0.7, 0.6, 0.6, 0.8, 1.0, 1.0, 0.8, 0.5]
 
 
 class Occupancy:
@@ -215,8 +218,9 @@ class Placer:
             if float(self.ter.sample(self.ter.road_dist, x, z)) < road.half_width[i] + gap - 0.6:
                 continue  # another stretch of road is closer than this one
             self.emit(barrier, x, z, yaw, 1.0, sink=0.05, radius=0.6)
-        people = f.get("props", ["spectator_a", "spectator_b", "spectator_c", "spectator_d",
-                                 "spectator_e", "spectator_f"])
+        people = f.get("props", SPECTATORS)
+        weights = np.array(f.get("weights", SPECTATOR_WEIGHTS if people is SPECTATORS else [1.0] * len(people)))
+        weights = weights / weights.sum()
         depth = f.get("depth", 4.0)
         placed = 0
         tries = 0
@@ -231,7 +235,7 @@ class Placer:
                 continue
             if float(self.ter.sample(self.ter.road_dist, x, z)) < road.half_width[i] + 7.6:
                 continue
-            name = people[int(self.rng.integers(len(people)))]
+            name = people[int(self.rng.choice(len(people), p=weights))]
             p = road.pos[i]
             yaw = math.atan2(-(p[0] - x), -(p[2] - z)) + float(self.rng.normal(0.0, 0.3))
             self.emit(name, x, z, yaw, float(self.rng.uniform(0.95, 1.05)), sink=0.03, radius=0.45)

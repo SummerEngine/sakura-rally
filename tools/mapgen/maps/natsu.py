@@ -53,7 +53,7 @@ ARRIVAL_CP = 30
 # verge + 1.5 m, wider at checkpoints; lib/corridor.py moves offenders out). Singles first
 # (they reserve their footprint), then lines (they skip occupied spots), then groups.
 
-SPECTATORS = ["spectator_a", "spectator_b", "spectator_c", "spectator_d", "spectator_e", "spectator_f"]
+from lib.scatter import SPECTATOR_WEIGHTS, SPECTATORS  # noqa: E402 (the people kit)
 FLAGS = ["flag_pole_pink", "flag_pole", "flag_pole_blue"]
 
 
@@ -79,7 +79,7 @@ def line(props, a, b, spacing, face="along", **kw):
 
 
 def crowd(cp, off, lat, count, radius=5.0, face="road", clear=8.0, **kw):
-    return {"kind": "group", "props": SPECTATORS, "weights": [1.0, 1.0, 0.8, 1.0, 0.7, 0.7], "count": count,
+    return {"kind": "group", "props": SPECTATORS, "weights": SPECTATOR_WEIGHTS, "count": count,
             "road_at": cp, "offset_m": off, "lateral": lat, "radius": radius, "road_clear": clear, "face": face,
             "yaw_jitter": 22.0, "scale": (0.95, 1.05), "sink": 0.05, **kw}
 

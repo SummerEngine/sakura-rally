@@ -216,6 +216,20 @@ match. Seam kink ≤ 0.71 × p99 (turbo4 worst 0.82).
 | `impact_light_1..3.wav` | body knocks (modal panel + plastic crack + low body) |
 | `impact_heavy_1..3.wav` | crashes (pitch-dropping boom + crunch grains + metal modes + debris) |
 
+### Crowd — `assets/audio/crowd/` (synthesised: `tools/audio/synth_crowd.py`)
+
+Played by `scripts/world/crowd.gd` through `Sound.play_3d` (SFX bus) when a car knocks a
+spectator over. Voices are source-filter additive synthesis (a glottal harmonic series under
+moving vowel formants, breath noise); the crowd is 24 such voices with their own pitch, onset,
+vowel and vibrato in a small outdoor room.
+
+| File | What |
+|---|---|
+| `bonk_1..3.wav` | cartoon bonk: hollow wood-block knock, pitch falling from 520–640 Hz to ×0.62, a low thud and a click (0.42 s) |
+| `oof_1..4.wav` | the knocked person: "oof" (low, closing into an f), "wah!" (high), "whoa" (low slide), "ah!" (a child) |
+| `ooh_1..3.wav` | the crowd reacts (at most one every 1.6 s): a rising "ooooh"; "whoa-oh" with a few laughs; an "oh!" breaking into laughter and claps (−18 LUFS) |
+| `hop.wav` | the little rising boing when a knocked person hops back up |
+
 ### Music — `assets/audio/music/` (fal `elevenlabs/music/v2.5`, post: `tools/audio/gen_music.py`)
 
 Stereo OGG Vorbis, −16 LUFS integrated. Loop = `loop_offset` → end of file, baked into the
@@ -412,6 +426,7 @@ tools/audio/.venv/bin/python tools/audio/synth_engine.py      # [turbo4|na4], de
 tools/audio/.venv/bin/python tools/audio/synth_world.py
 tools/audio/.venv/bin/python tools/audio/synth_ui.py
 tools/audio/.venv/bin/python tools/audio/synth_stingers.py
+tools/audio/.venv/bin/python tools/audio/synth_crowd.py
 tools/audio/.venv/bin/python tools/audio/gen_music.py       # from tools/audio/cache (fal)
 tools/audio/.venv/bin/python tools/audio/gen_ambience.py    # from tools/audio/cache (fal)
 timeout 180 $S --headless --disable-crash-handler --path . --import
