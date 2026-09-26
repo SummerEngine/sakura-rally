@@ -206,7 +206,7 @@ never pushes and never touches `main`; the lead merges into `ep2`.
   z = -1.27 / +1.28, track ±0.78 m, tyre radius 0.33 m / width 0.24 m, wheel centres at
   y = 0.33). Body about 4.15 × 1.70 × 1.25 m: a low 1980s Japanese rear-drive coupe with
   pop-up headlights. Optional `PopUp_L` / `PopUp_R`: headlight pods, origin on the hinge,
-  closed at rest, open by rotating about their local -X by about 55°; code animates them.
+  closed at rest, open by rotating about their local +X by about 55° (front edge lifts); code animates them.
 - `Car.engine_sound: StringName` (Physics exports it, default `&"turbo4"`, Hayate `&"na4"`);
   `car_audio.gd` (Audio) picks its loop set from it.
 
