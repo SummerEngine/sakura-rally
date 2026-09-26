@@ -148,7 +148,7 @@ func _teardown() -> void:
 func _load_session(map_id: String, mode: String, run: int) -> void:
 	_teardown()
 	game.set_state(game.State.LOADING)
-	await wait(0.6)
+	await wait(0.9)
 	if run != _run:
 		return
 	var m: Dictionary = game.get_map(map_id)

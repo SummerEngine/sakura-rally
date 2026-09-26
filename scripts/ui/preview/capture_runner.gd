@@ -59,6 +59,8 @@ func run(p_driver: Node, p_aspect: String) -> void:
 	await _wait(0.3)
 	await _press("ui_accept")
 	await _sheet("transition_cover", 8, 0.12)
+	await _until(func() -> bool: return bool(ui.transition.is_covered))
+	await _wait(0.3)
 	await _shot("loading")
 	await _until(func() -> bool: return int(game.state) == int(game.State.INTRO))
 	await _sheet("intro_card", 12, 0.16)

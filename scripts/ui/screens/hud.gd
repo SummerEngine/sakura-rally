@@ -310,7 +310,6 @@ func on_notice(text: String) -> void:
 	_notice_card.reset_size()
 	var w := _notice_card.get_combined_minimum_size().x
 	var base := Vector2(-w * 0.5, 0.0)
-	_notice.position.x = 0.0
 	_notice_card.position = base + Vector2(0, 22)
 	_notice_card.pivot_offset = Vector2(w * 0.5, 30)
 	_notice_card.scale = Vector2(0.94, 0.94)

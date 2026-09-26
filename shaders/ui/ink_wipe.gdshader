@@ -11,7 +11,7 @@ uniform vec4 ink : source_color = vec4(0.165, 0.133, 0.208, 1.0);
 uniform vec4 accent : source_color = vec4(0.91, 0.318, 0.486, 1.0);
 uniform float seed = 0.0;
 
-const int BANDS = 7;
+const int BANDS = 8;
 
 float ease_io(float t) {
 	t = clamp(t, 0.0, 1.0);
@@ -20,8 +20,9 @@ float ease_io(float t) {
 
 // Coverage of one brush band (0..1) at point p (x in 0..aspect, y in 0..1, skewed).
 float band(vec2 p, float k, float delay, float h_scale, float aspect) {
-	float yc = -0.08 + k * (1.16 / float(BANDS - 1));
-	float h = (0.62 / float(BANDS)) * h_scale;
+	// Bands overlap (h * min edge * 2 > spacing) so the covered screen is solid ink.
+	float yc = -0.14 + k * (1.28 / float(BANDS - 1));
+	float h = (0.9 / float(BANDS)) * h_scale;
 	float travel = aspect + 0.9;
 	float t_in = ease_io((progress - delay) / 0.72);
 	float t_out = ease_io((progress - 1.0 - delay) / 0.72);
@@ -47,16 +48,16 @@ float band(vec2 p, float k, float delay, float h_scale, float aspect) {
 
 void fragment() {
 	float aspect = rect_size.x / max(rect_size.y, 1.0);
-	vec2 p = vec2(UV.x * aspect, UV.y);
-	// Slight diagonal for dynamism.
+	// Slight diagonal for dynamism, rotated about the screen centre so wide screens stay covered.
+	vec2 q = vec2((UV.x - 0.5) * aspect, UV.y - 0.5);
 	float ang = -0.11;
-	p = vec2(p.x * cos(ang) - (p.y - 0.5) * sin(ang), p.x * sin(ang) + (p.y - 0.5) * cos(ang) + 0.5);
+	vec2 p = vec2(q.x * cos(ang) - q.y * sin(ang) + aspect * 0.5, q.x * sin(ang) + q.y * cos(ang) + 0.5);
 	float ink_cov = 0.0;
 	float pink_cov = 0.0;
 	float shade = 0.0;
 	for (int i = 0; i < BANDS; i++) {
 		float k = float(i);
-		float delay = abs(k - 3.0) * 0.045 + ui_hash(vec2(k, seed)) * 0.05;
+		float delay = abs(k - 3.5) * 0.045 + ui_hash(vec2(k, seed)) * 0.05;
 		float b = band(p, k, delay + 0.05, 1.0, aspect);
 		float u = band(p, k, delay, 1.12, aspect);
 		if (b > ink_cov) {
@@ -65,6 +66,9 @@ void fragment() {
 		ink_cov = max(ink_cov, b);
 		pink_cov = max(pink_cov, u);
 	}
+	// Guarantee full coverage around progress == 1 (the loading card sits on solid ink).
+	float flood = smoothstep(0.9, 1.0, progress) * (1.0 - smoothstep(1.0, 1.08, progress));
+	ink_cov = max(ink_cov, flood);
 	vec3 ink_col = ink.rgb * (0.9 + 0.2 * shade);
 	ink_col += (ui_washi(UV * rect_size) - 0.5) * 0.05;
 	vec3 col = mix(accent.rgb, ink_col, ink_cov);
