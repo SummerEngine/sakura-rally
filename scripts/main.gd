@@ -286,6 +286,7 @@ func _restore_time() -> void:
 
 func _apply_quality() -> void:
 	var q := str(Game.get_setting("quality"))
+	Quality.apply(q, get_viewport(), map)
 	post.apply_quality(q)
 	if fx != null:
 		fx.set_quality(q)

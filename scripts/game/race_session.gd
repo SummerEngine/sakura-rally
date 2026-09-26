@@ -3,8 +3,10 @@ extends Node
 ## Follows the player car along the loaded map's road: lap progress, checkpoint
 ## splits, the lap timer, wrong-way and off-route notices, and the reset point.
 ##
-## Joins the "track" group, so Car.reset_to_track() lands on the last point of the
-## route the car legitimately reached (no shortcuts by falling down a switchback).
+## Joins the "track" group for Car.reset_to_track(). In a time trial the car resets to
+## the last point of the route it legitimately reached (no shortcuts by falling down a
+## switchback). Free roam goes anywhere: back on the road somewhere else, or after R,
+## the route carries on from the nearest stretch of road.
 ## Reports to the Game autoload through notify_*; Main owns the game state.
 
 signal finished(result: Dictionary)
@@ -15,6 +17,8 @@ signal reset_needed(reason: String)
 const ROUTE_MARGIN := 16.0
 ## Hinted nearest-sample search window (samples, 2 m each) per physics tick.
 const SEARCH_WINDOW := 10
+## Free roam, off route: physics ticks between full-track searches for road to rejoin.
+const REANCHOR_TICKS := 30
 
 var map: MapWorld
 var track: Track
@@ -34,6 +38,7 @@ var running: bool = false ## timer and checkpoints live
 var _idx: int = 0 ## nearest route sample the car legitimately reached
 var _last_p: float = 0.0 ## lap progress (m) at _idx
 var _dist: float = 0.0 ## unwrapped distance driven along the route since the start line
+var _next_line: float = 0.0 ## free roam: _dist of the next start-line crossing
 var _splits: Array[float] = []
 var _lap_start: float = 0.0
 var _wrong_way_time: float = 0.0
@@ -88,6 +93,7 @@ func reset_progress() -> void:
 	_last_p = track.progress_of(_idx, car.global_position)
 	# Standing start a few metres behind the line counts as negative distance.
 	_dist = _last_p - track.length if _last_p > track.length * 0.5 else _last_p
+	_next_line = _line_after(_dist)
 	progress = 0.0
 	_wrong_way_time = 0.0
 	_off_route_time = 0.0
@@ -100,12 +106,32 @@ func start_timer() -> void:
 	_lap_start = 0.0
 
 
-## Called by Car.reset_to_track(): the last legitimately reached point of the route.
-func nearest_reset_transform(_from: Vector3) -> Transform3D:
-	var s := track.dist(_idx)
+## Called by Car.reset_to_track(): the last legitimately reached point of the route in
+## a time trial, the nearest road in free roam.
+func nearest_reset_transform(from: Vector3) -> Transform3D:
+	var roam := mode != "time_trial"
+	var i := track.nearest(from) if roam else _idx
 	# Nudge back a little so the car does not land on the obstacle it just hit.
-	s -= 4.0
-	return track.transform_at_abs(s, 0.0, 0.35)
+	var xf := track.transform_at_abs(track.dist(i) - 4.0, 0.0, 0.35)
+	if roam:
+		_reanchor(track.nearest(xf.origin, i, SEARCH_WINDOW), xf.origin)
+	return xf
+
+
+## Free roam: carry on along the route from sample i. The skipped (or doubled-back)
+## stretch does not count as driven, so the lap in progress is void and the timer
+## restarts at the next start-line crossing.
+func _reanchor(i: int, pos: Vector3) -> void:
+	_idx = i
+	_last_p = track.progress_of(i, pos)
+	_dist = _last_p
+	_next_line = _line_after(_dist)
+	running = false
+
+
+## Route distance of the first start-line crossing ahead of d.
+func _line_after(d: float) -> float:
+	return (floorf(d / track.length) + 1.0) * track.length
 
 
 func _physics_process(delta: float) -> void:
@@ -117,8 +143,14 @@ func _physics_process(delta: float) -> void:
 		elapsed += delta
 		top_speed_kmh = maxf(top_speed_kmh, kmh)
 	var i := track.nearest(pos, _idx, SEARCH_WINDOW)
-	var lat := absf(track.lateral(i, pos))
-	var on_route := lat < track.half_width(i) + track.verge + ROUTE_MARGIN
+	var on_route := absf(track.lateral(i, pos)) < track.half_width(i) + track.verge + ROUTE_MARGIN
+	if not on_route and mode != "time_trial" and _tick % REANCHOR_TICKS == 0:
+		var g := track.nearest(pos)
+		if absf(track.lateral(g, pos)) < track.half_width(g) + track.verge \
+				and absf(pos.y - track.point(g).y) < 4.0:
+			_reanchor(g, pos)
+			i = g
+			on_route = true
 	if on_route:
 		_off_route_time = 0.0
 		_off_route_shown = false
@@ -135,7 +167,11 @@ func _physics_process(delta: float) -> void:
 		if _off_route_time > 3.0 and not _off_route_shown and kmh < 25.0:
 			_off_route_shown = true
 			_notice("Off the route — press R to reset")
-	_update_wrong_way(i, delta, kmh)
+	# Direction only matters against the clock, and only judged on the road.
+	if on_route and mode == "time_trial":
+		_update_wrong_way(i, delta, kmh)
+	else:
+		_wrong_way_time = 0.0
 	_tick += 1
 	if _tick % 4 == 0:
 		_update_hazards(pos, delta * 4.0)
@@ -160,14 +196,14 @@ func _check_crossings(before: float, after: float, delta: float) -> void:
 				_game().notify_checkpoint(checkpoint_index - 1, checkpoint_total, t)
 	else:
 		# free roam: quietly time laps across the start line
-		var line := track.length * float(lap + 1)
-		if before < line and after >= line:
-			var t := elapsed - delta * (after - line) / maxf(after - before, 1e-5)
-			lap += 1
-			if running and lap > 1:
-				_notice("Lap %d  %s" % [lap - 1, _format(t - _lap_start)])
-			_lap_start = t
-			if not running:
+		if before < _next_line and after >= _next_line:
+			var t := elapsed - delta * (after - _next_line) / maxf(after - before, 1e-5)
+			_next_line += track.length
+			if running:
+				lap += 1
+				_notice("Lap %d  %s" % [lap, _format(t - _lap_start)])
+				_lap_start = t
+			else:
 				start_timer()
 
 
