@@ -59,12 +59,12 @@ func _on_menu() -> void:
 | `COUNTDOWN`, `RACING`, `FREE_ROAM` | HUD slides in (time trial: timer + progress; free roam: odometer, no timer). |
 | `checkpoint_passed` | Split popup under the timer (delta green/red vs best, none on a first run), progress tick pulses, timer pops. `play_stinger(&"checkpoint")`. |
 | `notice(text)` | Centre paper pill for ~2 s (only while the HUD is up). |
-| `race_finished(result)` | FINISH 完走 slam, time count-up, results card, medal hanko stamp, NEW RECORD ribbon. `play_stinger(&"finish")`, `&"record"`. Buttons: Retry (`request_restart`), Next map (`request_start(next, time_trial)`), Menu (`request_menu`). |
-| `paused_changed` | Pause menu (blurred backdrop): Resume / Restart / Settings / Main menu. |
+| `race_finished(result)` | FINISH 完走 slam, time count-up, results card, medal hanko stamp, NEW RECORD ribbon. `play_stinger(&"finish")`, `&"record"`. Buttons: Retry (`request_restart`), Next map (`request_start(next, time_trial)`, liaison maps skipped), Menu (`request_menu`). A campaign stage (`result.campaign`) adds a "Rally standing" row and swaps the buttons for Continue (`request_campaign_continue`, focused), Retry stage, Quit to title. |
+| `paused_changed` | Pause menu (blurred backdrop): Resume / Restart / Settings / Main menu. In the campaign: Resume / Retry stage (stages only) / Settings / Quit to title. |
 
 The UI owns the **`pause` action** (Esc / P / gamepad Start): it calls `Game.set_paused(true)`
-during `COUNTDOWN`, `RACING`, `FREE_ROAM`, and `Game.set_paused(false)` from the pause menu
-(`pause` or `ui_cancel` again resumes). Main should not also handle `pause`.
+during `COUNTDOWN`, `RACING`, `FREE_ROAM`, `LIAISON`, and `Game.set_paused(false)` from the
+pause menu (`pause` or `ui_cancel` again resumes). Main should not also handle `pause`.
 
 UI sounds: every button calls `Sound.play_ui(&"hover")` on focus/hover and `&"click"` /
 `&"start"` / `&"back"` on press; pickers use `&"toggle"`. Music and ambience are left to Main
@@ -77,6 +77,23 @@ livery is the job of Sound / Main / the car (listen to `Game.settings_changed`).
 
 Map cards use `MAPS[i].preview` when that texture exists; otherwise a procedural painted
 landscape in the season palette (`shaders/ui/painted_scene.gdshader`).
+
+## Campaign screens
+
+The campaign (`Game.CAMPAIGN`, docs/CONTRACTS.md "Session and campaign") adds four screens,
+switched by the UI root from `Game.state` like the rest:
+
+| State / event | Screen |
+|---|---|
+| `JOURNEY` | **Journey map** (`screens/journey_map.gd`, `shaders/ui/journey_map.gdshader`): a painted washi map of the rally, spring greens through a summer bay to autumn maples, with the legs as hanko seals (春 夏 秋) on a dotted road from the start flag to the goal. It is the campaign's loading screen: the map washes in, the road is inked on at 12 fps, a leg just finished gets its seal slammed down (medal colour, time under it; ARRIVED on a liaison) with a petal burst, and the player's car (in its livery) drives to the next leg while that leg's map loads behind it. The right-hand card names the next leg (kicker, brush title, gold / best, "untimed" for a liaison) with a spinner and a loading line. Main awaits `ui.journey.travel_done` before covering the screen again. |
+| `INTRO` (campaign) | The race intro card gets a kicker line: "SS1 · SPECIAL STAGE 1 OF 2", "L1 · LIAISON → MOMIJI VALLEY"; a liaison shows the distance to go instead of the best time. |
+| `LIAISON` | **Liaison HUD** (`screens/liaison_hud.gd`): no timer. Top-left a blue Japanese road-direction sign to the next stage (brush name, distance left, a strip map of the road with the car dot and the time-control flag); bottom-right a small paper speed / gear card. Notices use the same centre pill as the race HUD. |
+| `ARRIVED` | **Arrival card** (`screens/arrival_card.gd`): ARRIVED over an indigo brush swash with 到着 painted beneath, the destination and the next stage slide in and a time-control seal is stamped (`play_stinger(&"arrived")`). Main has already taken the car over within braking distance of the time control (notice "Time control ahead"); it rolls to rest there under a roadside shot, then the journey map follows. |
+| `campaign_finished(summary)`, `FINALE` | **Finale** (`screens/campaign_finale.gd`), over a flyover of the last map: the rally classification (you and the rivals of `Game.RIVALS`, per-stage times with medal seals, total and gap) lands row by row from last place up on 12 fps steps, your row washed in sakura, then your position seal is stamped (`play_stinger(&"campaign_complete")`). Continue (or Esc) sinks the scene into ink for the end card: 完 painted large, SAKURA RALLY, the legs, the rivals, "Thanks for driving.", and Back to title (`request_menu`); the title then shows the campaign as finished (Replay). |
+
+Tools: `tools/game/flows.gd -- flow=campaign` drives the whole campaign with checks
+(headless or windowed; windowed saves a frame of every campaign screen to `out`), and
+`tools/game/playthrough.gd -- mode=campaign` is the screenshot / FPS / audio-recording tour.
 
 ## Input
 
@@ -127,6 +144,7 @@ sheets `docs/renders/ui_anim_<name>_<aspect>.png` (frames left-to-right, top-to-
 - `tools/ui/subset_fonts.py` - re-subsets the fonts; run after adding new Japanese text
   (it scans `scripts/` and `scenes/` for kana/kanji): `tools/ui/.venv/bin/python tools/ui/subset_fonts.py`
   (venv: `uv venv tools/ui/.venv && uv pip install --python tools/ui/.venv/bin/python fonttools brotli`).
+- Campaign: `scripts/ui/screens/journey_map.gd`, `liaison_hud.gd`, `arrival_card.gd`, `campaign_finale.gd`; `shaders/ui/journey_map.gdshader`.
 
 ## Fonts and rendering notes
 
