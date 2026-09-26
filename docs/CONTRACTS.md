@@ -224,6 +224,34 @@ never pushes and never touches `main`; the lead merges into `ep2`.
 - Atmosphere preset `summer_afternoon`; season `summer` in `MapWorld.SEASONS` and `SkyRig`.
 - Ambience id `natsu`: Audio adds `assets/audio/ambience/natsu.ogg` and the `Sound.AMBIENCE` entry.
 
+### Road corridor (mapgen, `tools/mapgen/lib/corridor.py`)
+
+Mapgen keeps the road driveable wide: a car that runs wide or leans on the outside of a corner
+meets only walls it can scrape along or props it knocks over.
+
+- **Corridor:** |lateral| < half width + verge + 1.5 m from the centreline of any stretch of
+  road. It widens to half width + verge + 4 m on the outside of corners tighter than 60 m and
+  over the 40 m braking zone before them, and on both sides for ±8 m around every
+  `map.checkpoints` entry (room for the runtime's fabric gate uprights).
+- **Rigid** props (every collider not listed below: trees, poles, rocks, lanterns, jizo,
+  buildings, spectators …) stay out of the corridor. Low rocks, stumps and logs stay out of
+  the wide corridor everywhere. Natsu's sign boards (`signs`, posts in `collision_boxes`) step
+  out until their posts clear it.
+- **Smashable** props (`SMASHABLE`, the mirror of `SoftCourse.SMASHABLE` in
+  `scripts/world/soft_course.gd`; keep the two in step) may stand in the corridor but never on
+  the tarmac: |lateral| >= half width + 0.3 m.
+- **Exempt:** guardrails and bridge rails (built along the road on purpose) and the start /
+  finish arches (the runtime softens their uprights).
+- Mapgen moves every offender straight out from the road until it clears, keeping its height
+  above the ground and staying off water, paved lots (trees), ground steeper than 40° and other
+  props and rails; one that finds no room within 16 m is dropped. Each build prints the survey
+  before and after (`corridor before / moved / after`); after must read 0.
+- Mapgen emits no `checkpoint_gate` instances; the runtime builds the gates from
+  `map.checkpoints`.
+- Bridge ends: where the carve fades out towards a deck, the ground is capped under the road
+  and ramps down under the deck (`road.bridge_clearance`, default 1.6 m below the deck), so no
+  bank shows through the road.
+
 ### Session and campaign (Campaign)
 
 - Session mode `Game.MODE_LIAISON`: no timer, no checkpoints, no wrong-way nag;

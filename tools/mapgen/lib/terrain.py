@@ -12,6 +12,7 @@ from .road import Road, road_height_at, road_index
 
 CARVE_DROP = 0.25  # terrain sits this far below the road surface under the verges
 LOT_SKIRT = 2.3    # a lot's verge skirt reaches this far beyond its paved edge (lot_mesh)
+BRIDGE_CLEARANCE = 1.6  # ground sits at least this far below a bridge deck (ramping to 0 off the bridge)
 
 
 @dataclass
@@ -258,13 +259,14 @@ def build_terrain(spec: dict, road: Road, water: Water) -> Terrain:
     cw = road.carve[si]
     tt = 1.0 - (1.0 - tt) * cw
     H[near] = y_road + (hn - y_road) * tt
-    clr = spec["road"].get("bridge_clearance", 0.0)
-    if clr > 0.0:
-        # bridge ends: natural ground never pokes through the deck; it ramps down under it
-        # at ~40 degrees from the deck edge so abutments read as cut banks
-        edge = np.maximum(rf.dist[near] - hw - road.verge, 0.0)
-        cap = y_road - clr * (1.0 - cw) + edge * 0.85
-        H[near] = np.where(cw < 1.0, np.minimum(H[near], cap), H[near])
+    # bridge ends: the carve fades out towards a deck (road.carve < 1), so natural ground would
+    # keep its own height there and a bank higher than the deck pokes through the road. Cap it
+    # under the ribbon and ramp it down under the deck at ~40 degrees from the deck edge, so
+    # abutments read as cut banks.
+    clr = spec["road"].get("bridge_clearance", BRIDGE_CLEARANCE)
+    edge = np.maximum(rf.dist[near] - hw - road.verge, 0.0)
+    cap = y_road - clr * (1.0 - cw) + edge * 0.85
+    H[near] = np.where(cw < 1.0, np.minimum(H[near], cap), H[near])
 
     road_dist = np.where(near, rf.dist, D_far)
     road_seg = np.full(X.shape, -1, dtype=np.int64)
