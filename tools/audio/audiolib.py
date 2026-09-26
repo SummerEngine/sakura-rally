@@ -189,6 +189,31 @@ def comb_circular(x: np.ndarray, delay_s: float, fb: float, damp_hz: float,
     return y[(reps - 1) * n:]
 
 
+def loop_phase(inst_hz: np.ndarray) -> np.ndarray:
+    """Phase (radians) of an oscillator with instantaneous frequency inst_hz that closes
+    exactly after len(inst_hz) samples: the frequency track is scaled by a hair so the loop
+    holds an integer number of cycles, and phase[0] = 0 continues from phase[n] = 2 pi K."""
+    cycles = float(np.sum(inst_hz)) / SR
+    f = inst_hz * (max(1, round(cycles)) / cycles)
+    return 2 * math.pi * np.concatenate([[0.0], np.cumsum(f)[:-1]]) / SR
+
+
+def rotate_to_quiet_zero_crossing(x: np.ndarray) -> np.ndarray:
+    """Rotate a (perfectly periodic) loop so the file starts at an upward zero crossing in
+    its quietest, smoothest region. Lossless for circular loops; it keeps the wrap off
+    steep transients (e.g. a firing pulse front) and gives players a click-free first sample."""
+    n = x.size
+    win = max(16, int(0.004 * SR))
+    energy = np.convolve(np.tile(x * x + 4.0 * np.diff(x, append=x[0]) ** 2, 2),
+                         np.ones(win) / win, mode="same")[n // 2: n // 2 + n]
+    energy = np.roll(energy, -(n // 2))
+    ups = np.nonzero((x < 0.0) & (np.roll(x, -1) >= 0.0))[0]
+    if ups.size == 0:
+        return x
+    best = int(ups[np.argmin(energy[ups])]) + 1
+    return np.roll(x, -best)
+
+
 # ----------------------------------------------------------------- envelopes and shapes
 
 def env_ad(n: int, attack_s: float, decay_s: float, curve: float = 4.0) -> np.ndarray:
@@ -244,22 +269,28 @@ def loop_crossfade(x: np.ndarray, xfade_s: float) -> np.ndarray:
 # ----------------------------------------------------------------- analysis
 
 def seam_metrics(x: np.ndarray) -> dict:
-    """Loop seam discontinuity: jump across the wrap vs the clip's typical sample step."""
+    """Loop seam discontinuity measures.
+
+    A click at the wrap is a jump that the waveform's own slope does not explain, so the
+    primary measure is the second difference (slope change) across the wrap, centred on both
+    wrap samples, relative to the clip's own second differences:
+      seam_kink_percentile  share of the clip's |second differences| below the wrap's
+                            (a seamless loop behaves like any other point: 0..1; a real
+                            step discontinuity lands at ~1.0 with ratio >> 1)
+      seam_kink_over_p99    the wrap's second difference / the clip's 99th percentile
+    The raw first-difference jump is reported too (it can be legitimately large when the
+    wrap falls on a steep, bright waveform edge)."""
     steps = np.abs(np.diff(x))
-    wrap = abs(float(x[0] - x[-1]))
-    p99 = float(np.percentile(steps, 99)) + 1e-12
-    med = float(np.median(steps)) + 1e-12
-    # second-difference (slope) discontinuity catches kinks, not only jumps
     d2 = np.abs(np.diff(x, 2))
-    wrap2 = abs(float(x[1] - 2 * x[0] + x[-1]))
+    wrap = abs(float(x[0] - x[-1]))
+    k1 = abs(float(x[1] - 2 * x[0] + x[-1]))
+    k2 = abs(float(x[0] - 2 * x[-1] + x[-2]))
+    kink = max(k1, k2)
     return {
         "wrap_jump": wrap,
-        # share of the clip's own sample steps that are smaller than the wrap step:
-        # a seamless loop sits anywhere in 0..1 like any other step; a click reads ~1.0
-        "wrap_step_percentile": float(np.mean(steps < wrap)),
-        "wrap_jump_over_p99_step": wrap / p99,
-        "wrap_jump_over_median_step": wrap / med,
-        "wrap_kink_over_p99": wrap2 / (float(np.percentile(d2, 99)) + 1e-12),
+        "wrap_jump_over_p99_step": wrap / (float(np.percentile(steps, 99)) + 1e-12),
+        "seam_kink_over_p99": kink / (float(np.percentile(d2, 99)) + 1e-12),
+        "seam_kink_percentile": float(np.mean(d2 < kink)),
     }
 
 

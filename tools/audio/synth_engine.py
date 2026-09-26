@@ -196,7 +196,7 @@ def engine_loop(rpm_nominal: float, load: str, seed: int) -> tuple[np.ndarray, f
     mix /= np.percentile(np.abs(mix), 99.9) + 1e-12
     mix = np.tanh(drive * mix) / math.tanh(drive)
     mix -= np.mean(mix)
-    return mix, rpm
+    return al.rotate_to_quiet_zero_crossing(mix), rpm
 
 
 def target_rms_db(rpm: float, load: str) -> float:
@@ -223,11 +223,7 @@ def turbo_whistle() -> np.ndarray:
 
     vib = 0.004 * np.sin(2 * math.pi * hz(5.0) * t) + 0.002 * np.sin(2 * math.pi * hz(1.5) * t)
     f0 = hz(3000.0)
-    phase = 2 * math.pi * np.cumsum(f0 * (1.0 + vib)) / SR
-    phase -= phase[0]
-    # cumulative vibrato phase must also close: correct the tiny residual linearly
-    total = phase[-1] + 2 * math.pi * f0 / SR
-    phase *= (round(total / (2 * math.pi)) * 2 * math.pi) / total
+    phase = al.loop_phase(f0 * (1.0 + vib))
     tone = np.sin(phase) + 0.18 * np.sin(2 * phase) + 0.05 * np.sin(3 * phase)
     tone *= periodic_lfo(n, r, 0.15, 4)
     air = al.filt_circular(np.vstack([al.sos_bp(2400.0, 7500.0, 2)]), al.white(n, r))
@@ -235,7 +231,7 @@ def turbo_whistle() -> np.ndarray:
     whoosh = al.filt_circular(np.vstack([al.sos_bp(350.0, 1600.0, 2)]), al.white(n, r))
     whoosh /= np.std(whoosh) + 1e-12
     y = 0.55 * tone + 0.30 * air + 0.22 * whoosh
-    return y - np.mean(y)
+    return al.rotate_to_quiet_zero_crossing(y - np.mean(y))
 
 
 def gear_whine() -> np.ndarray:
@@ -259,7 +255,7 @@ def gear_whine() -> np.ndarray:
     hiss = al.filt_circular(np.vstack([al.sos_bp(mesh * 0.9, mesh * 1.1, 2)]), al.white(n, r))
     hiss /= np.std(hiss) + 1e-12
     y = y / (np.std(y) + 1e-12) + 0.25 * hiss
-    return y - np.mean(y)
+    return al.rotate_to_quiet_zero_crossing(y - np.mean(y))
 
 
 # ======================================================================== one-shots
@@ -401,7 +397,7 @@ def main() -> None:
         else:
             manifest[load][str(int(name.split("_")[-1]))] = entry
         print(f"{name:20s} rpm={exact:8.2f} peak={al.peak_db(y):6.2f} rms={al.rms_db(y):6.2f}"
-              f" lufs={al.lufs(y):6.2f} seam={al.seam_metrics(y)['wrap_jump_over_p99_step']:.3f}")
+              f" lufs={al.lufs(y):6.2f} seam_kink={al.seam_metrics(y)['seam_kink_over_p99']:.3f}")
 
     al.write_wav(OUT / "turbo_whistle.wav", al.normalize_peak(turbo_whistle(), -3.0))
     al.write_wav(OUT / "gear_whine.wav", al.normalize_peak(gear_whine(), -3.0))

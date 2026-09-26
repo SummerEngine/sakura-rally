@@ -75,7 +75,7 @@ var _t: float = 0.0
 var _rpm: float = 900.0
 var _load: float = 0.0
 var _boost: float = 0.0
-var _prev_throttle: float = 0.0
+var _prev_foot: float = 0.0
 var _shift_dip_until: float = -1.0
 var _limiter_until: float = -1.0
 var _last_limiter_pop: float = -1.0
@@ -240,10 +240,13 @@ func _process(delta: float) -> void:
 	_mix_wind(speed, slowmo, delta)
 	_mix_horn(delta)
 
-	# Lifting off hard at boost vents the blow-off valve.
-	if _boost > 0.45 and _prev_throttle > 0.6 and throttle < 0.25 and _t - _last_bov > 0.8:
+	# The driver lifting off hard at boost vents the blow-off valve. Read the pedal (input),
+	# not the applied throttle, which the limiter and shifts also chop.
+	var foot := clampf(_num(&"input_throttle", throttle), 0.0, 1.0)
+	if _boost > 0.45 and _prev_foot > 0.6 and foot < 0.25 and not shifting and not limiting \
+			and _t - _last_bov > 0.8:
 		_play_bov(_boost)
-	_prev_throttle = throttle
+	_prev_foot = foot
 
 
 func _mix_engine(slowmo: float, limiting: bool) -> void:
@@ -372,7 +375,7 @@ func _on_gear_changed(new_gear: int, old_gear: int) -> void:
 	_shift_dip_until = _t + (0.11 if upshift else 0.07)
 	var shot := _shift_up if upshift else _shift_down
 	_fire(shot, SHIFT_DB, 1.0)
-	if upshift and _boost > 0.3:
+	if upshift and _boost > 0.3 and _t - _last_bov > 0.5:
 		_play_bov(_boost)
 	elif not upshift and _rpm > 3000.0 and randf() < 0.35:
 		_fire(_backfire, BACKFIRE_DB - 6.0, randf_range(0.95, 1.08))

@@ -107,10 +107,7 @@ def slide_tarmac(n: int, r: np.random.Generator) -> np.ndarray:
         wander = wander / (np.max(np.abs(wander)) + 1e-12) * 0.035
         f0 = round(base * per) / per
         inst = f0 * (1.0 + wander)
-        ph = 2 * math.pi * np.cumsum(inst) / SR
-        # close the phase exactly over the loop (integer cycles)
-        cyc = ph[-1] / (2 * math.pi)
-        ph *= round(cyc) / cyc
+        ph = al.loop_phase(inst)
         am = periodic_noise_lfo(n, r, 25, 0.6)
         y += amp * am * (np.sin(ph) + 0.35 * np.sin(2 * ph) + 0.12 * np.sin(3 * ph))
     scrub = norm(al.filt_circular(al.sos_bp(300.0, 3500.0, 2), al.white(n, r)))
@@ -237,12 +234,12 @@ def main() -> None:
     }
     for i, (name, (fn, target)) in enumerate(loops.items()):
         x = fn(loop_n, al.rng(500 + i))
-        x -= np.mean(x)
+        x = al.rotate_to_quiet_zero_crossing(x - np.mean(x))
         y = al.soft_limit(al.normalize_lufs(x, target, peak_ceiling_db=-1.0), -1.0, 1.5)
         al.write_wav(OUT / f"{name}.wav", y)
-    w = wind(int(6.0 * SR), al.rng(600))
+    w = al.rotate_to_quiet_zero_crossing(wind(int(6.0 * SR), al.rng(600)))
     al.write_wav(OUT / "wind.wav", al.soft_limit(al.normalize_lufs(w - np.mean(w), -16.0), -1.0, 1.5))
-    al.write_wav(OUT / "horn.wav", al.normalize_peak(horn(int(1.0 * SR)), -3.0))
+    al.write_wav(OUT / "horn.wav", al.normalize_peak(al.rotate_to_quiet_zero_crossing(horn(int(1.0 * SR))), -3.0))
     r = al.rng(700)
     for i in range(6):
         al.write_wav(OUT / f"stone_{i + 1}.wav", al.normalize_peak(stone(r), -1.0))

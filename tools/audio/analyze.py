@@ -75,7 +75,8 @@ def main(argv: list[str]) -> None:
         al.spectrogram_png(x, al.RENDERS / sub / f"{p.stem}.png",
                            f"{rel}  peak {entry['peak_dbfs']} dBFS  {entry['lufs']} LUFS", sr=sr)
         report[str(rel)] = entry
-        seam_txt = f" seam/p99={entry['seam']['wrap_jump_over_p99_step']:.3f}" if is_loop else ""
+        seam_txt = (f" seam kink/p99={entry['seam']['seam_kink_over_p99']:.3f}"
+                    f" (pct {entry['seam']['seam_kink_percentile']:.2f})") if is_loop else ""
         print(f"{str(rel):55s} {entry['seconds']:7.2f}s peak {entry['peak_dbfs']:6.2f} "
               f"LUFS {entry['lufs']:7.2f}{seam_txt}")
     out = al.RENDERS / "report.json"
