@@ -28,8 +28,9 @@ const MODE_LIAISON := "liaison"
 const SAVE_PATH := "user://sakura_rally.cfg"
 
 ## Map catalogue. Medal times are in seconds for one lap in time trial, set against the
-## autopilot's clean reference lap (hanami 123.4 s, momiji 108.2 s): gold ~1.1x, silver
-## ~1.22x, bronze ~1.42x.
+## autopilot's clean reference lap in the default car, the Sakura (ep2 handling: hanami 113.3 s,
+## momiji 99.5 s; tools/physics/run_tests.gd only=maps): gold 1.1x, silver 1.22x, bronze 1.42x,
+## rounded to 0.5 s.
 const MAPS: Array[Dictionary] = [
 	{
 		"id": "hanami",
@@ -38,7 +39,7 @@ const MAPS: Array[Dictionary] = [
 		"tagline": "Spring noon. Gravel and tarmac under the blossom.",
 		"preview": "res://assets/textures/previews/hanami.png",
 		"season": "spring",
-		"medals": {"gold": 135.0, "silver": 150.0, "bronze": 175.0},
+		"medals": {"gold": 124.5, "silver": 138.0, "bronze": 161.0},
 	},
 	{
 		"id": "momiji",
@@ -47,7 +48,7 @@ const MAPS: Array[Dictionary] = [
 		"tagline": "Autumn, golden hour. Loose dirt through the maples.",
 		"preview": "res://assets/textures/previews/momiji.png",
 		"season": "autumn",
-		"medals": {"gold": 118.0, "silver": 132.0, "bronze": 154.0},
+		"medals": {"gold": 109.5, "silver": 121.5, "bronze": 141.5},
 	},
 	{
 		"id": "natsu",
