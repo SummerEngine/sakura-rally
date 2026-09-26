@@ -17,6 +17,7 @@ signal race_finished(result: Dictionary)
 signal paused_changed(paused: bool)
 signal settings_changed
 signal notice(text: String) ## short transient message for the HUD ("Car reset", "Wrong way")
+signal menu_view_changed(view: String) ## "title" | "time_attack" | "garage" (Main parks the car in the garage)
 ## Campaign (docs/CONTRACTS.md, "Session and campaign"). Main listens to the *_requested ones.
 signal campaign_requested
 signal campaign_continue_requested
@@ -46,7 +47,6 @@ const MAPS: Array[Dictionary] = [
 		"name": "Hanami Pass",
 		"name_jp": "花見峠",
 		"tagline": "Spring noon. Gravel and tarmac under the blossom.",
-		"preview": "res://assets/textures/previews/hanami.png",
 		"season": "spring",
 		"medals": {"gold": 124.5, "silver": 138.0, "bronze": 161.0},
 	},
@@ -55,7 +55,6 @@ const MAPS: Array[Dictionary] = [
 		"name": "Momiji Valley",
 		"name_jp": "紅葉谷",
 		"tagline": "Autumn, golden hour. Loose dirt through the maples.",
-		"preview": "res://assets/textures/previews/momiji.png",
 		"season": "autumn",
 		"medals": {"gold": 109.5, "silver": 121.5, "bronze": 141.5},
 	},
@@ -139,6 +138,7 @@ var state: int = State.BOOT
 var mode: String = MODE_FREE_ROAM
 var map_id: String = ""
 var paused: bool = false
+var menu_view: String = "title"
 var settings: Dictionary = DEFAULT_SETTINGS.duplicate(true)
 ## map_id -> {"time": float, "splits": Array[float]}
 var records: Dictionary = {}
@@ -194,6 +194,15 @@ func request_restart() -> void:
 func request_menu() -> void:
 	set_paused(false)
 	menu_requested.emit()
+
+
+## Which part of the title hub is showing. "garage" parks the menu car on the start grid under a
+## showroom orbit; the other views keep the flyover.
+func set_menu_view(view: String) -> void:
+	if view == menu_view:
+		return
+	menu_view = view
+	menu_view_changed.emit(view)
 
 
 ## Every quit comes through here: the title's Quit button, closing the window, Cmd+Q, and the

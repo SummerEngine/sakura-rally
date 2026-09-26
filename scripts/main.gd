@@ -44,6 +44,7 @@ var car: Car
 var fx: CarFX
 var session: RaceSession
 var autopilot: Autopilot
+var menu_stage: MenuStage
 
 var _run: int = 0
 var _busy: bool = false
@@ -65,6 +66,10 @@ func _ready() -> void:
 	Game.start_requested.connect(_on_start_requested)
 	Game.restart_requested.connect(_on_restart_requested)
 	Game.menu_requested.connect(_on_menu_requested)
+	menu_stage = MenuStage.new()
+	menu_stage.name = "MenuStage"
+	add_child(menu_stage)
+	Game.menu_view_changed.connect(_on_menu_view_changed)
 	Game.settings_changed.connect(_on_settings_changed)
 	get_window().size_changed.connect(func() -> void:
 		Quality.apply_render_scale(str(Game.get_setting("quality")), get_window()))
@@ -139,10 +144,18 @@ func _on_campaign_requested() -> void:
 
 
 func _on_settings_changed() -> void:
-	if car != null:
+	if Game.state == Game.State.MENU:
+		menu_stage.apply_car_settings()
+	elif car != null:
 		var c := Game.car_colors()
 		car.set_livery(c["primary"], c["secondary"])
 	_apply_quality()
+
+
+## Title hub pages: the garage parks the menu car under a showroom orbit (MenuStage).
+func _on_menu_view_changed(view: String) -> void:
+	if Game.state == Game.State.MENU:
+		menu_stage.set_view(view)
 
 
 # ------------------------------------------------------------------ flows (screen covered on entry)
@@ -153,15 +166,16 @@ func _enter_menu(map_id: String, run: int) -> void:
 	Game.set_state(Game.State.LOADING)
 	_clear_car()
 	cine.stop()
+	# The flyover autopilot loops the road, so an open liaison road hands over to the menu map.
+	if map != null and map.map_id == map_id and not map.closed:
+		map_id = MENU_MAP
 	if map == null or map.map_id != map_id:
 		await _load_map(map_id)
 		if run != _run:
 			return
-	_spawn_car(false, Game.MODE_FREE_ROAM)
-	_attach_autopilot(0.82, 150.0)
+	menu_stage.enter(self)
 	post.letterbox_target = 0.0
 	post.snap()
-	cine.start_menu(car, map.track)
 	await _hold_cover(covered_at)
 	if run != _run:
 		return

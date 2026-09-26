@@ -27,13 +27,21 @@ static func apply(car: Car) -> Dictionary:
 			var n := src.resource_name.to_lower()
 			var color := base.albedo_color if base else Color.WHITE
 			var mat: Material = ToonMaterials.make(color, _opts(n, base))
+			# make() returns a shared cached material; lights and outlined parts get their own copy.
+			var own := false
 			if n.contains("taillight") or n.contains("headlight"):
 				mat = mat.duplicate()
+				own = true
 				lights["tail" if n.contains("taillight") else "head"].append(mat)
 			for key in OUTLINED:
 				if n.contains(key):
 					mat = ToonMaterials.with_outline(mat, 1.5 if key != "rubber" else 1.3)
+					own = true
 					break
+			# Keep the glTF name on the car's own copies: CarVisuals.apply_livery finds Paint /
+			# Paint2 by name, so later livery changes recolour the converted toon paint.
+			if own:
+				mat.resource_name = src.resource_name
 			mi.set_surface_override_material(s, mat)
 	# re-apply the livery on top of the converted paint (duplicates per car)
 	visuals.apply_livery(car.livery_primary, car.livery_secondary)

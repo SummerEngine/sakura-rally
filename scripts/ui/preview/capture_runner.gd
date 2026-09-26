@@ -28,21 +28,49 @@ func run(p_driver: Node, p_aspect: String) -> void:
 	var game: Node = driver.game
 	var ui: Node = driver.ui
 
-	# Title: intro animation, settled menu, focus moved to the second card, livery row.
+	# Title hub: intro animation, settled hub (Campaign focused), focus moved down the column.
 	await _sheet("title_intro", 12, 0.2)
 	await _wait(0.8)
 	await _shot("title")
-	await _press("ui_right")
-	await _wait(0.6)
-	await _shot("title_focus")
-	await _press("ui_up")
-	await _press("ui_right")
-	await _wait(0.5)
-	await _shot("title_livery")
-	await _press("ui_left")
 	await _press("ui_down")
+	await _wait(0.5)
+	await _shot("title_focus")
+
+	# Time Attack page: Time Trial cards, the route drawing itself on a newly focused card,
+	# the settled card, Free Roam (every map), back to the hub.
+	await _press("ui_accept")
+	await _sheet("time_attack_open", 8, 0.1)
+	await _wait(1.0)
+	await _shot("time_attack")
+	await _press("ui_right")
+	await _sheet("route_draw", 8, 0.08)
 	await _press("ui_left")
 	await _wait(0.3)
+	await _shot("time_attack_route_draw")
+	await _wait(1.4)
+	await _shot("time_attack_focus")
+	await _press("ui_up")
+	await _press("ui_right")
+	await _wait(1.0)
+	await _shot("time_attack_free_roam")
+	await _press("ui_left")
+	await _press("ui_cancel")
+	await _wait(0.9)
+	await _shot("title_return")
+
+	# Garage page (the UI; the parked car itself shows in the real game, see docs/UI.md).
+	await _press("ui_down")
+	await _press("ui_accept")
+	await _sheet("garage_open", 8, 0.12)
+	await _wait(1.0)
+	await _shot("garage")
+	await _press("ui_down")
+	await _press("ui_right")
+	await _wait(0.6)
+	await _shot("garage_livery")
+	await _press("ui_left")
+	await _press("ui_cancel")
+	await _wait(1.6)
 
 	# Settings from the title (keyboard: move to the Settings button and accept).
 	ui.title.focus_settings_button()
@@ -54,8 +82,12 @@ func run(p_driver: Node, p_aspect: String) -> void:
 	await _press("ui_cancel")
 	await _wait(0.6)
 
-	# Start Hanami Pass (time trial) from the focused first card.
-	(ui.title._cards[0] as Control).grab_focus()
+	# Start Hanami Pass (time trial) from the first card of the Time Attack page.
+	(ui.title._time_attack_item as Control).grab_focus()
+	await _wait(0.2)
+	await _press("ui_accept")
+	await _wait(1.2)
+	(ui.title._time_attack.cards[0] as Control).grab_focus()
 	await _wait(0.3)
 	await _press("ui_accept")
 	await _sheet("transition_cover", 8, 0.12)
@@ -134,7 +166,7 @@ func run(p_driver: Node, p_aspect: String) -> void:
 	await _wait(2.0)
 	await _shot("hud_autumn")
 
-	# Pause -> Main menu -> Free roam on Momiji.
+	# Pause -> Main menu (back on the Time Attack page it left from) -> Free roam on Momiji.
 	await _press("pause")
 	await _wait(0.5)
 	for i in 3:
@@ -142,9 +174,11 @@ func run(p_driver: Node, p_aspect: String) -> void:
 	await _press("ui_accept")
 	await _until(func() -> bool: return int(game.state) == int(game.State.MENU))
 	await _wait(3.0)
-	await _shot("title_return")
-	ui.title._mode.selected = 1
-	(ui.title._cards[1] as Control).grab_focus()
+	await _shot("time_attack_return")
+	await _press("ui_up")
+	await _press("ui_right")
+	await _wait(0.6)
+	(ui.title._time_attack.cards[1] as Control).grab_focus()
 	await _wait(0.2)
 	await _press("ui_accept")
 	await _until(func() -> bool: return int(game.state) == int(game.State.FREE_ROAM))

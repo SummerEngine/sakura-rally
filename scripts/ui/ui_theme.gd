@@ -20,6 +20,7 @@ const MATCHA := Color("5d9a4c")
 const MAPLE := Color("e75b3d")
 const MAPLE_GOLD := Color("f5b04a")
 const SKY := Color("6aa8e8")
+const SUMMER := Color("3b8fd4")
 const WHITE := Color(1, 1, 1)
 
 # ---------------------------------------------------------------- fonts
@@ -35,9 +36,14 @@ const RADIUS_PILL := 999
 static var _theme: Theme
 
 
-## Accent colour for a map season ("spring" -> sakura, "autumn" -> maple).
+## Accent colour for a map season ("spring" -> sakura, "autumn" -> maple, "summer" -> sky blue).
 static func season_accent(season: String) -> Color:
-	return MAPLE if season == "autumn" else SAKURA
+	match season:
+		"autumn":
+			return MAPLE
+		"summer":
+			return SUMMER
+	return SAKURA
 
 
 static func medal_color(medal: String) -> Color:

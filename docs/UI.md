@@ -30,12 +30,15 @@ func _on_start(map_id: String, mode: String) -> void:
 
 func _on_menu() -> void:
 	await ui.transition_out()           # loading card shows 桜 SAKURA RALLY
-	# ...unload the map, start the menu flyover...
+	# ...load the menu map; menu_stage.enter(self) spawns the menu car for Game.menu_view...
 	Game.set_state(Game.State.MENU)
 	ui.transition_in()
 ```
 
-`scripts/ui/preview/mock_driver.gd` implements exactly this flow and is the reference.
+`scripts/ui/preview/mock_driver.gd` implements this flow and is the reference for the UI side
+(it has no menu car). Main also forwards `Game.menu_view_changed(view)` to
+`menu_stage.set_view(view)` and, while the menu shows, `Game.settings_changed` to
+`menu_stage.apply_car_settings()`.
 
 ### UI root API (`scripts/ui/ui_root.gd`)
 
@@ -52,8 +55,8 @@ func _on_menu() -> void:
 
 | Game event | UI reaction |
 |---|---|
-| `state_changed` -> `MENU` | Title menu plays its intro (brush 桜, wordmark, hanko, cards). |
-| `start_requested` / `LOADING` | Title leaves (chosen card pops, the rest slides away). |
+| `state_changed` -> `MENU` | Title hub plays its intro (brush 桜, wordmark, hanko, hub items); back from a Time Attack drive it reopens the Time Attack page. |
+| `start_requested` / `LOADING` | Title leaves (the chosen map card pops, the rest slides away). |
 | `session_started`, `INTRO` | HUD configured for the map/mode; intro title card slides in. |
 | `countdown_tick(3,2,1,0)` | Kinetic numerals over 三/二/一, ring sweep; GO! + 出発 with ink splash + flash. Plays `Sound.play_stinger(&"countdown"/&"go")`. |
 | `COUNTDOWN`, `RACING`, `FREE_ROAM` | HUD slides in (time trial: timer + progress; free roam: odometer, no timer). |
@@ -71,12 +74,100 @@ UI sounds: every button calls `Sound.play_ui(&"hover")` on focus/hover and `&"cl
 (`Sound.play_music(&"menu"/&"drive"/&"results")`) since it knows when scenes are ready.
 
 Settings written by the UI (`Game.set_setting`): `master_volume`, `music_volume`,
-`sfx_volume`, `quality`, `transmission`, `camera`, `units`, `fullscreen`, `car_color`.
-The UI reads `units` for speed/odometer display. Applying volumes / quality / camera /
-livery is the job of Sound / Main / the car (listen to `Game.settings_changed`).
+`sfx_volume`, `quality`, `transmission`, `camera`, `units`, `fullscreen`, `car_id`, `car_color`.
+The UI reads `units` for speed/odometer display. Applying volumes / quality / camera is the job
+of Sound / Main / the car (listen to `Game.settings_changed`); the menu car follows `car_id` /
+`car_color` through `MenuStage` (below).
 
-Map cards use `MAPS[i].preview` when that texture exists; otherwise a procedural painted
-landscape in the season palette (`shaders/ui/painted_scene.gdshader`).
+## Title hub
+
+`screens/title_screen.gd` is a hub over the live flyover: logo, wordmark, hanko, petals and
+mouse parallax as in episode 1, and a column of `widgets/hub_item.gd` entries (brush kanji,
+tracked overline, title; focus paints a brush swash behind the item, nudges it right and turns
+the kanji vermilion; the swash is the focus indicator, so the global ring skips hub items):
+
+| Item | Does |
+|---|---|
+| 旅 Campaign | Label from `Game.campaign_status()`: "New journey", "Continue · <next leg title>" (overline "LEG n OF m"), "Replay journey" once finished. A `widgets/journey_strip.gd` under it draws the legs (stage stamps, liaison diamonds, driven / next / ahead, season tints). Press = `Game.request_campaign(fresh)`: continues an unfinished journey, otherwise starts one. |
+| Start a new journey | Only while a journey is in progress. Asks first (`widgets/confirm_dialog.gd`, focus on "Keep going", Esc = keep), then `request_campaign(true)`. |
+| 時 Time Attack | Opens the Time Attack page. |
+| 車 Garage | Opens the garage (overline shows the current car and livery). |
+| Settings / Quit | Settings panel / `Game.request_quit()`. |
+
+Pages slide in over the hub inside the parallax layer; Esc / B / "Back" returns to the hub
+and to the item that opened the page. The page showing is mirrored to
+`Game.set_menu_view("title" | "time_attack" | "garage")`.
+
+Entrances call `UIMotion.layout_now(node)` (sorts the containers under it on the spot) before
+reading positions for their tweens. Don't wait for a drawn frame instead: on a first launch
+the pipeline compiles keep the window from drawing for seconds while the game keeps
+processing, and the intro would start seconds late (episode 2's first-run title came up
+without its wordmark that way). `KineticText` runs on tweens for the same reason: every intro element
+shares one clock, so a long frame moves the wordmark exactly as far as the logo and hanko.
+
+**Time Attack** (`screens/time_attack_panel.gd`): Time Trial / Free Roam picker; Time Trial
+shows cards for the timed stages (`Game.stage_maps()`), Free Roam every map including the
+liaison road `natsu` (cards slide in and out of the row as the mode changes). A card calls
+`Game.request_start(map_id, mode)`.
+
+**Map cards** (`widgets/map_card.gd`): the map's top-down render
+(`assets/ui/maps/<id>_top.png`, rounded top corners, `shaders/ui/map_image.gdshader`) with
+`widgets/route_overlay.gd` on top: an ink-outlined route coloured by surface (tarmac / gravel
+/ dirt), start and finish flags, checkpoint dots, and a legend chip with the length and the
+surfaces. On focus the card lifts, the map zooms, the route redraws itself along its length
+(0.9 s, out-expo) and a small car marker loops along it. Best time and medal sit in the
+footer (liaison roads: "Open road · no clock"). The card draws its own focus outline as a
+child of the lifted layer (same transform and corner radius, so no offset or lag during lift
+and parallax) and sets `no_focus_ring`. A card without art shows a flat season-tinted panel.
+
+**Garage** (`screens/garage_panel.gd`): a washi card on the left with
+`widgets/car_selector.gd` (Game.CARS name, kanji, tagline, spec, animated stat bars for speed,
+acceleration, grip, drift; left / right or the arrows switch) and `widgets/livery_picker.gd`
+(paint-chip cards: an ink-edged brush stroke of the body colour over the stripe colour, the
+livery's name and kanji; left / right or click). Only cars whose scene exists in the project are
+listed. Choices save at once (`car_id`, `car_color`). Opening and closing the garage hides the
+camera cut under a short ink wipe.
+
+**Menu car** (`scripts/game/menu_stage.gd`, created by Main): spawns the selected car and
+livery for the menu. In `"title"` / `"time_attack"` it laps under the autopilot with the cine
+flyover; in `"garage"` it parks on the map's start grid (autopilot off, brakes held) while
+`CineCamera.start_garage()` orbits it low and slow, off-centre to the right of the panel
+(it swings through the widest arc clear of props and terrain, and backs off on narrow screens
+so the car fits). A livery pick in the garage paints the new colour over the body with a brush
+front from nose to tail (`shaders/ui/paint_sweep.gdshader`, 0.8 s, ink line on the front); a car
+pick drops the other car onto the grid. Outside the garage both apply at once, so the flyover
+always shows the chosen car and livery. After a liaison or a Free Roam on an open road
+(`MapWorld.closed == false`) Main loads the menu map under the ink instead: the flyover
+autopilot needs a closed loop.
+
+### Top-down card art
+
+`tools/build/capture_topdown.gd` loads each map like the game does, turns off fog, clouds and
+petals, and renders it straight down with an orthographic camera framed on the route bounds
+plus a margin at the card's aspect, in the game's toon + ink look, at 3x and downsampled. It
+writes `assets/ui/maps/<id>_top.png` (904 x 520) and `<id>_route.json` (format in
+`docs/CONTRACTS.md`, route points every 8 m). Windowed only (headless has no pixels); re-run it
+whenever a map's layout changes:
+
+```
+timeout 300 $S --disable-crash-handler --path . -s res://tools/build/capture_topdown.gd -- hanami momiji natsu
+timeout 400 $S --headless --disable-crash-handler --path . --import
+```
+
+### Menu tour in the real game
+
+`tools/ui/menu_tour.gd` drives the real title hub (live flyover, real menu car) with the ui_*
+actions: hub, Time Attack, garage with every livery (one frame mid-sweep), a car switch when a
+second car scene exists, and back to the flyover. It checks that the wordmark is settled and
+drawn on the title frame (ink pixels in its rect), parking, saved
+choices, the paint on the car, the respawned car's scene and the resumed autopilot, and saves
+`<out>/menu_<shot>_<aspect>.png`:
+
+```
+for a in 16x9 21x9 16x10; do
+  timeout 300 $S --disable-crash-handler --path . -s res://tools/ui/menu_tour.gd -- aspect=$a out=/tmp/menu_tour
+done
+```
 
 ## Campaign screens
 
@@ -100,10 +191,11 @@ Tools: `tools/game/flows.gd -- flow=campaign` drives the whole campaign with che
 Everything works with keyboard, gamepad and mouse. Focus navigation uses Godot's `ui_*`
 actions (arrows / d-pad / left stick, Enter / A to accept, Esc / B to go back; the engine's
 built-in `ui_accept` / `ui_cancel` are keyboard-only, so `Game` adds A and B to them). Pickers
-(mode, livery, settings rows) are a single focus stop each: left/right change the value,
-up/down move between rows. Mouse hover moves focus, so the single sakura focus ring
-(`widgets/focus_ring.gd`) always shows where you are. Keycap hints on the title switch to
-gamepad glyphs after gamepad input.
+(mode, livery, car, settings rows) are a single focus stop each: left/right change the value,
+up/down move between rows. Mouse hover moves focus. The sakura focus ring
+(`widgets/focus_ring.gd`) glides to each newly focused control and then follows it exactly;
+hub items and map cards draw their own focus (meta `no_focus_ring`). Keycap hints on the title
+switch to gamepad glyphs after gamepad input.
 
 ## Preview harness
 
@@ -136,9 +228,12 @@ sheets `docs/renders/ui_anim_<name>_<aspect>.png` (frames left-to-right, top-to-
 - `scripts/ui/ui_theme.gd` - palette, fonts, shared Theme (paper pills, vermilion primary, quiet).
 - `scripts/ui/ui_motion.gd` - easing curves (expo, back, spring, 12-fps stepping) and tween helpers; all UI motion ignores `Engine.time_scale` and runs while paused.
 - `scripts/ui/ui_api.gd` - `Game` / `Sound` access by node path (also works from `-s` tool scripts).
-- `scripts/ui/screens/` - `title_screen`, `settings_panel`, `transition_layer`, `race_intro`, `hud`, `results_screen`, `pause_menu`.
-- `scripts/ui/widgets/` - `paper_card` (frosted washi card), `brush_kanji` (+ `kanji_strokes` stroke-order data), `kinetic_text`, `hanko`, `petal_field`, `map_card`, `segmented`, `paper_slider`, `livery_swatches`, `ink_button`, `focus_ring`, `key_hints`, `tachometer`, `stage_progress`, `sakura_spinner`, `shader_rect`.
-- `shaders/ui/` - `paper_card`, `brush_reveal` (stroke-order kanji), `brush_band` (paint swash), `ink_wipe` (transition), `ink_splash` (GO!), `hanko`, `painted_scene`, `backdrop_blur`, shared `ui_common.gdshaderinc`.
+- `scripts/ui/screens/` - `title_screen` (hub), `time_attack_panel`, `garage_panel`, `settings_panel`, `transition_layer`, `race_intro`, `hud`, `results_screen`, `pause_menu`.
+- `scripts/ui/widgets/` - `paper_card` (frosted washi card), `brush_kanji` (+ `kanji_strokes` stroke-order data), `kinetic_text`, `hanko`, `petal_field`, `hub_item`, `journey_strip`, `confirm_dialog`, `map_card`, `route_overlay`, `car_selector`, `livery_picker`, `segmented`, `paper_slider`, `ink_button`, `focus_ring`, `key_hints`, `tachometer`, `stage_progress`, `sakura_spinner`, `shader_rect`.
+- `scripts/game/menu_stage.gd` - the menu car (flyover / garage parking, livery sweep, car switch).
+- `shaders/ui/` - `paper_card`, `brush_reveal` (stroke-order kanji), `brush_band` (paint swash), `ink_wipe` (transitions), `ink_splash` (GO!), `hanko`, `map_image` (card art), `paint_sweep` (garage livery change, 3D), `painted_scene` (preview backdrop), `backdrop_blur`, shared `ui_common.gdshaderinc`.
+- `assets/ui/maps/` - top-down card art and route data per map (`tools/build/capture_topdown.gd`).
+- `tools/ui/menu_tour.gd` - real-game title hub / garage tour (above).
 - `scripts/ui/preview/` - `mock_driver`, `mock_car`, `mock_session`, `capture_runner`.
 - `assets/fonts/` - subsets of Zen Maru Gothic (Medium/Bold/Black), Dela Gothic One, Yuji Syuku, with their OFL licences.
 - `tools/ui/subset_fonts.py` - re-subsets the fonts; run after adding new Japanese text
