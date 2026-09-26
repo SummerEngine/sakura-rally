@@ -3543,7 +3543,7 @@
     "spring",
     "autumn"
    ],
-   "tris": 709,
+   "tris": 713,
    "materials": [
     "Crowd_Base",
     "Crowd_Dye"
@@ -3580,7 +3580,7 @@
     "spring",
     "autumn"
    ],
-   "tris": 803,
+   "tris": 809,
    "materials": [
     "Crowd_Base",
     "Crowd_Dye"
@@ -3596,12 +3596,12 @@
    "size": [
     1.445,
     2.659,
-    0.382
+    0.392
    ],
    "aabb_center": [
     0.41,
     1.329,
-    -0.05
+    -0.045
    ],
    "collision": {
     "type": "cylinder",
@@ -3617,7 +3617,7 @@
     "spring",
     "autumn"
    ],
-   "tris": 803,
+   "tris": 835,
    "materials": [
     "Crowd_Base",
     "Crowd_Dye"
@@ -3654,7 +3654,7 @@
     "spring",
     "autumn"
    ],
-   "tris": 878,
+   "tris": 890,
    "materials": [
     "Crowd_Base",
     "Crowd_Dye"
@@ -3691,7 +3691,7 @@
     "spring",
     "autumn"
    ],
-   "tris": 710,
+   "tris": 726,
    "materials": [
     "Crowd_Base",
     "Crowd_Dye"
@@ -3802,7 +3802,7 @@
     "spring",
     "autumn"
    ],
-   "tris": 792,
+   "tris": 804,
    "materials": [
     "Crowd_Base",
     "Crowd_Dye"
@@ -3839,7 +3839,7 @@
     "spring",
     "autumn"
    ],
-   "tris": 709,
+   "tris": 725,
    "materials": [
     "Crowd_Base",
     "Crowd_Dye"
@@ -3876,7 +3876,7 @@
     "spring",
     "autumn"
    ],
-   "tris": 809,
+   "tris": 815,
    "materials": [
     "Crowd_Base",
     "Crowd_Dye"
@@ -3950,7 +3950,7 @@
     "spring",
     "autumn"
    ],
-   "tris": 692,
+   "tris": 698,
    "materials": [
     "Crowd_Base",
     "Crowd_Dye"
@@ -3987,7 +3987,7 @@
     "spring",
     "autumn"
    ],
-   "tris": 876,
+   "tris": 884,
    "materials": [
     "Crowd_Base"
    ],

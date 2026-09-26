@@ -257,6 +257,7 @@ class Figure:
         self.hands: dict[int, Vector] = {}
         self.hand_dir: dict[int, Vector] = {}
         self.head_m = Matrix.Identity(4)
+        self.hem = 0.8
 
     def U(self, x: float, y: float, z: float) -> Vector:
         return self.up @ Vector((x, y, z))
@@ -280,7 +281,7 @@ class Figure:
         return rings
 
     def front_y(self, z: float, grow: float) -> float:
-        rings = self.torso_rings(grow, hem=0.6)
+        rings = self.torso_rings(grow, hem=self.hem)
         for a, b in zip(rings, rings[1:]):
             if a[2] <= z <= b[2]:
                 t = (z - a[2]) / max(1e-6, b[2] - a[2])
@@ -292,12 +293,15 @@ class Figure:
         """A vertical band on the torso front (open jacket, zip, collar bands)."""
         pts_l = []
         pts_r = []
-        for i in range(n + 1):
-            z = z0 + (z1 - z0) * i / n
+        # sample at the garment's ring heights too, or the torso bulges through between samples
+        zs = {round(z0 + (z1 - z0) * i / n, 5) for i in range(n + 1)}
+        zs |= {round(r[2], 5) for r in self.torso_rings(grow, hem=self.hem) if z0 < r[2] < z1}
+        zs = sorted(zs)
+        for z in zs:
             y = self.front_y(z, grow) + lift
             pts_l.append(self.U(x0, y, z))
             pts_r.append(self.U(x1, y, z))
-        for i in range(n):
+        for i in range(len(zs) - 1):
             decal(self.kit, col or WHITE, [pts_l[i], pts_r[i], pts_r[i + 1], pts_l[i + 1]],
                   None if col else (1, 1, 1, 1), out=self.up.to_3x3() @ Vector((0, 1, 0)))
             if col is None:  # a dyed strip: its face goes onto the dye material
@@ -305,7 +309,7 @@ class Figure:
                 self.kit.bm.faces[-1].material_index = self.kit.mat(DYE)
 
     def band(self, col: str | None, z: float, h: float, grow: float, sides: int = 10) -> None:
-        rings = self.torso_rings(grow, hem=0.6)
+        rings = self.torso_rings(grow, hem=self.hem)
         def at(zz: float) -> tuple:
             for a, b in zip(rings, rings[1:]):
                 if a[2] <= zz <= b[2]:
@@ -323,6 +327,9 @@ class Figure:
         k = self.kit
         top = l.top
         c = l.top_col
+        # strips and bands follow the garment's own hem flare
+        self.hem = {"tee": 0.84, "hoodie": 0.83, "jacket": 0.82, "cardigan": 0.82, "puffer": 0.8, "happi": 0.66,
+                    "yukata": 0.8, "vest": 0.82, "hivis": 0.8}.get(top, 0.8)
         if top == "tee":
             loft(k, mat_of(c), self.torso_rings(0.004, hem=0.84), 10, paint(c), self.up)
             self.collar(l.top_col, 0.012)
@@ -354,12 +361,12 @@ class Figure:
             self.collar(c, 0.04, h=0.08)
             self.strip("#3a3440", -0.004, 0.004, 0.81, 1.3, 0.05, 3, 0.012)
         elif top == "happi":
-            loft(k, mat_of(c), self.torso_rings(0.022, hem=0.66), 10, paint(c), self.up)
+            loft(k, mat_of(c), self.torso_rings(0.032, hem=0.66), 10, paint(c), self.up)
             # dark collar bands down both sides of the front, a white inner shirt, the obi
-            self.strip(l.inner, -0.03, 0.03, 0.9, 1.41, 0.022, 3, 0.004)
+            self.strip(l.inner, -0.03, 0.03, 0.9, 1.41, 0.032, 3, 0.004)
             for sx in (-1, 1):
-                self.strip("#2d2a4a", sx * 0.03, sx * 0.07, 0.67, 1.42, 0.022, 5, 0.007)
-            self.band("#2d2a4a", 0.99, 0.07, 0.03)
+                self.strip("#2d2a4a", sx * 0.03, sx * 0.07, 0.67, 1.42, 0.032, 5, 0.007)
+            self.band("#2d2a4a", 0.99, 0.07, 0.04)
         elif top == "yukata":
             rings = self.torso_rings(0.02, hem=0.8)
             rings = [(0.0, 0.0, 0.1, 0.2, 0.15), (0.0, 0.0, 0.45, 0.19, 0.14)] + rings
@@ -744,7 +751,7 @@ def parasol(kit: Kit, hand: Vector, tilt: Vector) -> None:
     fwd = side.cross(u).normalized()
     rim = [top + (side * math.cos(2 * math.pi * i / n) + fwd * math.sin(2 * math.pi * i / n)) * 0.62 - u * 0.2
            for i in range(n)]
-    # alternating red and white panels, and a pale underside
+    # alternating red and white panels, the same stripes a little darker underneath
     for i in range(n):
         col = "#e0483c" if i % 2 == 0 else "#f6f1e6"
         a, b = rim[i], rim[(i + 1) % n]
@@ -752,7 +759,8 @@ def parasol(kit: Kit, hand: Vector, tilt: Vector) -> None:
         if (a - top).cross(b - top).dot(u) < 0:
             outer = [top + u * 0.12, b, a]
         decal(kit, col, outer, paint(col, 0.9))
-        decal(kit, "#c9b8a8", [top + u * 0.1, outer[2] - u * 0.004, outer[1] - u * 0.004], paint("#c9b8a8", 0.9))
+        under = darker(col, 0.85)
+        decal(kit, under, [top + u * 0.1, outer[2] - u * 0.004, outer[1] - u * 0.004], paint(under, 0.95))
 
 
 def board(kit: Kit, a: Vector, b: Vector, col: str, emblem: str) -> None:
