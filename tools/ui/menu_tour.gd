@@ -34,11 +34,10 @@ func _run() -> void:
 	root.size = win
 	ui = main.ui
 	await _until(func() -> bool: return int(game.state) == int(game.State.MENU), 90.0)
-	# Wall-clock wait: on a cold first launch the frame that brings up the menu can carry a
-	# multi-second step (pipeline compiles), which a SceneTreeTimer would swallow at once.
-	await _wall_seconds(3.5)
+	# The UI clock (unscaled, like every UI tween): the intro is 1.8 s long on it.
+	await _seconds(3.5)
 	var wm: Control = ui.title._wordmark
-	_check(wm.is_visible_in_tree() and not wm.leaving and wm.t_in >= wm.total_in_time() and not wm.is_processing(),
+	_check(wm.is_visible_in_tree() and not wm.leaving and wm.t_in >= wm.total_in_time(),
 		"wordmark settled (t_in %.2f, leaving %s)" % [wm.t_in, wm.leaving])
 	var img := await _shot("title")
 	var ink := _ink_pixels(img, wm.get_global_rect())
@@ -156,11 +155,6 @@ func _press(action: StringName) -> void:
 func _seconds(s: float) -> void:
 	await create_timer(s, true, false, true).timeout
 
-
-func _wall_seconds(s: float) -> void:
-	var end := Time.get_ticks_msec() + int(s * 1000.0)
-	while Time.get_ticks_msec() < end:
-		await process_frame
 
 
 func _until(cond: Callable, timeout: float) -> void:

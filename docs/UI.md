@@ -102,7 +102,8 @@ Entrances call `UIMotion.layout_now(node)` (sorts the containers under it on the
 reading positions for their tweens. Don't wait for a drawn frame instead: on a first launch
 the pipeline compiles keep the window from drawing for seconds while the game keeps
 processing, and the intro would start seconds late (episode 2's first-run title came up
-without its wordmark that way).
+without its wordmark that way). `KineticText` runs on tweens for the same reason: every intro element
+shares one clock, so a long frame moves the wordmark exactly as far as the logo and hanko.
 
 **Time Attack** (`screens/time_attack_panel.gd`): Time Trial / Free Roam picker; Time Trial
 shows cards for the timed stages (`Game.stage_maps()`), Free Roam every map including the
@@ -158,7 +159,7 @@ timeout 400 $S --headless --disable-crash-handler --path . --import
 `tools/ui/menu_tour.gd` drives the real title hub (live flyover, real menu car) with the ui_*
 actions: hub, Time Attack, garage with every livery (one frame mid-sweep), a car switch when a
 second car scene exists, and back to the flyover. It checks that the wordmark is settled and
-drawn on the title frame (ink pixels in its rect, after a wall-clock wait), parking, saved
+drawn on the title frame (ink pixels in its rect), parking, saved
 choices, the paint on the car, the respawned car's scene and the resumed autopilot, and saves
 `<out>/menu_<shot>_<aspect>.png`:
 
