@@ -114,27 +114,30 @@ timeout 180 $G --headless --disable-crash-handler --path . --import   # after ch
 
 ## Verification
 
-Latest results, 2026-09-26, M1 Max:
+Latest results, 2026-09-26, M1 Max, `S=/Applications/Summer.app/Contents/MacOS/Summer`:
 
 ```sh
-timeout 900 $G --headless --disable-crash-handler --fixed-fps 120 --path . -s res://tools/physics/run_tests.gd
-timeout 400 $G --disable-crash-handler --path . -s res://tools/game/flows.gd -- map=hanami
-timeout 600 $G --disable-crash-handler --path . -s res://tools/game/playthrough.gd -- map=momiji mode=time_trial
+timeout 2400 $S --headless --disable-crash-handler --fixed-fps 120 --path . -s res://tools/physics/run_tests.gd
+timeout 400 $S --headless --disable-crash-handler --path . -s res://tools/game/flows.gd -- map=hanami
+timeout 900 $S --headless --disable-crash-handler --path . -s res://tools/game/flows.gd -- flow=campaign speed=3
+timeout 400 $S --headless --disable-crash-handler --path . -s res://tools/game/softcourse_probe.gd -- map=natsu
 ```
 
-- Physics suite: 26/26 passed. 0–100 km/h takes 5.0 s on tarmac and 5.5 s on gravel; top speed is
-  188 km/h; skidpad grip is 1.03 g on tarmac and 0.74 g on gravel; the car settles after a jump
-  landing in 0.26 s with no bounce; a 309 s soak over jumps, walls and banking produced no NaN.
-- Game flows on both maps (free roam, pause and resume, reset, restart during the countdown,
-  launch, camera cycling, all three quality presets): 0 failures. Median FPS in a 1920×1080
-  window, low / medium / high: Hanami 120 / 120 / 109, Momiji 120 / 96 / 87. 120 is the vsync cap.
-- End-to-end playthroughs, with the autopilot driving the real game from the title through the
-  results and back: Time Trial and Free Roam on both maps. The autopilot takes gold on both:
-  2:03.595 on Hanami Pass, 1:48.351 on Momiji Valley.
-- Fullscreen on the built-in 3456×2168 display, through the render budget: high 78 fps,
-  medium 80 fps, low 119 fps.
-- The launcher, driven in a real window with OS key events: title, intro card, countdown, race,
-  pause, and Cmd+Q mid-race, which exits with no errors or leaks.
+- Physics suite, both cars: 120/120 passed. Sakura does 0–100 km/h in 3.5 s, stops from
+  100 km/h in 27 m, tops out at 189 km/h and holds 1.19 g on tarmac and 0.93 g on gravel;
+  Hayate does 0–100 km/h in 5.0 s. Walls hit at 10°, 25° and 45°, at 90 and 130 km/h, cost
+  5–6 %, 18 % and 41 % of the speed, with no spin and no air. Every row is in
+  [docs/PHYSICS.md](docs/PHYSICS.md).
+- Game flows on both stages (free roam, pause and resume, reset, restart during the countdown,
+  launch, camera cycling, all three quality presets): 0 failures.
+- The campaign end to end, the autopilot driving both stages and the liaison through the results,
+  the arrival, the finale and the end card: 46 checks, 0 failures.
+- Soft course probes on all three roads, with both cars: 0 failures.
+- Crashing through the roadside does not cost frames: offscreen at 1600×900, frames with the car
+  against rails and trees take 8.3 ms at the median and under 10 ms at p95, and the first smash
+  of a session adds no hitch.
+- Median FPS offscreen at 1600×900, low / medium / high: Hanami 120 / 115 / 96, Momiji
+  113 / 87 / 77.
 
 ## License
 
