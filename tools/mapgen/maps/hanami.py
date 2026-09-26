@@ -49,10 +49,11 @@ POINTS = [
 
 # ---------------------------------------------------------------------------- dressing
 # Road-relative placement: (control point, metres along the road from it, lateral metres,
-# + = right of the driving direction). The road corridor (half width + verge + 1 m = 5.9 m)
-# stays free of anything solid; spectators stand 8 m or more from the road edge
-# (road_clear 8), behind tape or bales. Order matters: singles first (they reserve their
-# footprint), then lines (they skip occupied spots), then groups.
+# + = right of the driving direction). Nothing rigid stands in the road corridor (half width +
+# verge + 1.5 m = 6.4 m, wider at tight corners; lib/corridor.py moves offenders out);
+# spectators stand 8 m or more from the road edge (road_clear 8), behind tape or bales. Order
+# matters: singles first (they reserve their footprint), then lines (they skip occupied spots),
+# then groups.
 
 SPECTATORS = ["spectator_a", "spectator_b", "spectator_c", "spectator_d", "spectator_e", "spectator_f"]
 FLAGS = ["flag_pole_pink", "flag_pole", "flag_pole_blue"]
