@@ -219,9 +219,9 @@ def _dressing():
           one("flag_pole_pink", 29, -20.0, 8.8, "road_side"), one("flag_pole_blue", 29, -20.0, -8.8, "road_side")]
 
     # ------------------------------------------------------------ Momiji Valley time control (cp 29 .. 31)
-    # heading east-north-east; the service park is on the right (+), spectators on the left
-    f += [one("checkpoint_gate", 30, 0.0, 0.0, "along", scale=1.25, sink=0.2),
-          one("marshal_post", 30, -6.0, -9.6, "road"), one("marshal_post", 30, 4.0, 9.8, "road"),
+    # heading east-north-east; the service park is on the right (+), spectators on the left. The
+    # runtime puts up the time-control gate from map.checkpoints.
+    f += [one("marshal_post", 30, -6.0, -9.6, "road"), one("marshal_post", 30, 4.0, 9.8, "road"),
           one("traffic_cone", 30, -14.0, -6.4, "road"), one("traffic_cone", 30, -10.0, -6.4, "road"),
           one("traffic_cone", 30, 22.0, -6.4, "road"), one("traffic_cone", 30, 30.0, -6.4, "road")]
     # the stage start for SS2 set up across the park, the queue of rally cars behind it

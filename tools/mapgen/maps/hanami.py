@@ -87,10 +87,10 @@ def bale_stack(cp, off, lat, face="road_side"):
 
 
 def gate(k):
-    """Checkpoint gate over the road with a bale at the foot of each post."""
+    """Checkpoint dressing: a bale and a flag either side of the road (the runtime builds the
+    fabric gate itself from map.checkpoints)."""
     off = LAP * k / 6.0
-    return [one("checkpoint_gate", 4, off, 0.0, "along", scale=1.25, sink=0.2),
-            one("hay_bale_square", 4, off, 7.9, "road_side"), one("hay_bale_square", 4, off, -7.9, "road_side"),
+    return [one("hay_bale_square", 4, off, 7.9, "road_side"), one("hay_bale_square", 4, off, -7.9, "road_side"),
             one("flag_pole_pink", 4, off + 3.0, 9.0, "road_side"), one("flag_pole_blue", 4, off + 3.0, -9.0, "road_side")]
 
 
