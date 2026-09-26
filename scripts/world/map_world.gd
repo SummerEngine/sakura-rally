@@ -7,6 +7,10 @@ extends Node3D
 ## `sun_dir` are ready for the race session, the car and the camera. Open roads
 ## (liaisons, `closed == false`) also have an arrival zone: `arrival` (on the road,
 ## facing along it) and `arrival_radius`, reached at progress `arrival_progress`.
+##
+## Course dressing is soft (`soft_course`, scripts/world/soft_course.gd): SMASHABLE props get
+## no collider and break when a car drives through them, the start/finish arch legs wobble, and
+## fabric gates stand at the checkpoints (the pack's `checkpoint_gate` instances are skipped).
 
 signal build_progress(fraction: float, label: String)
 signal built
@@ -80,12 +84,14 @@ var arrival: Transform3D
 var arrival_radius: float = 0.0
 var arrival_progress: float = 0.0
 var checkpoints: Array[Dictionary] = []
+var soft_course: SoftCourse
 var terrain_body: StaticBody3D
 var sun_dir: Vector3 = Vector3.UP
 var season: Dictionary = {}
 var materials: Dictionary = {}
 var stats: Dictionary = {}
 var is_built: bool = false
+var _arches := PackedVector3Array()
 
 
 func _ready() -> void:
@@ -114,12 +120,15 @@ func build(yield_frames: bool = false) -> void:
 		await get_tree().process_frame
 	build_progress.emit(0.55, "props")
 	_load_manifest()
+	soft_course = SoftCourse.new()
+	add_child(soft_course)
 	_build_instances()
 	if yield_frames:
 		await get_tree().process_frame
 	build_progress.emit(0.85, "details")
 	_build_barriers()
 	_build_checkpoints()
+	soft_course.build_gates(checkpoints, track, closed, _arches)
 	_build_signs()
 	_build_parked()
 	sky_rig = Node3D.new()
@@ -421,7 +430,14 @@ func _build_instances() -> void:
 	var bodies := {}
 	var total := 0
 	var shapes := 0
+	var smashables := 0
+	var uprights := 0
+	_arches.clear()
 	for prop_name in inst.keys():
+		if prop_name in SoftCourse.SKIPPED_PROPS:
+			continue
+		var smashable := SoftCourse.is_smashable(prop_name)
+		var soft_legs: bool = prop_name in SoftCourse.SOFT_UPRIGHT_PROPS
 		var mesh := _prop_mesh(prop_name)
 		if mesh == null:
 			continue
@@ -448,6 +464,12 @@ func _build_instances() -> void:
 				var sc: float = e[4]
 				var b := Basis(Vector3.UP, e[3]).scaled(Vector3(sc, sc, sc))
 				mm.set_instance_transform(k, Transform3D(b, Vector3(e[0], e[1], e[2])))
+				if smashable:
+					soft_course.add_smashable(prop_name, mesh, mm, k, e, m)
+					smashables += 1
+				elif soft_legs:
+					uprights += soft_course.add_soft_uprights(mm, k, e, m)
+					_arches.append(Vector3(e[0], e[1], e[2]))
 			var mmi := MultiMeshInstance3D.new()
 			mmi.name = "%s_%d_%d" % [prop_name, key.x, key.y]
 			mmi.multimesh = mm
@@ -458,9 +480,9 @@ func _build_instances() -> void:
 				mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 			props_root.add_child(mmi)
 			total += list.size()
-		# collision
+		# collision: soft dressing has none, SoftCourse tests it against the cars itself
 		var col: Dictionary = m.get("collision", {"type": "none"})
-		if col.get("type", "none") == "none":
+		if smashable or soft_legs or col.get("type", "none") == "none":
 			continue
 		for e in inst[prop_name]:
 			var key := Vector2i(int(floor(e[0] / CHUNK)), int(floor(e[2] / CHUNK)))
@@ -476,6 +498,8 @@ func _build_instances() -> void:
 			shapes += _add_prop_shapes(body, col, e)
 	stats["instances"] = total
 	stats["prop_shapes"] = shapes
+	stats["smashables"] = smashables
+	stats["soft_uprights"] = uprights
 
 
 func _add_prop_shapes(body: StaticBody3D, col: Dictionary, e: Array) -> int:

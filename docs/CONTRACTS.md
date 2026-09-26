@@ -92,7 +92,10 @@ their origin at the ground (tree base).
 `StringName`s used by physics, audio and VFX: `&"tarmac"`, `&"gravel"`, `&"dirt"`, `&"grass"`,
 `&"sand"`, `&"none"` (airborne). Static colliders carry `set_meta("surface", &"gravel")`; terrain may
 override per position through the track node (`Track.surface_at(position) -> StringName`).
-Physics layers: 1 world, 2 car, 3 props, 4 triggers.
+Physics layers: 1 world, 2 car, 3 props, 4 triggers, 5 debris (value 16: smashed dressing, collides
+with layer 1 only). Layer 3 holds only rigid things: walls (mapgen `Barriers`: guardrails, bridge
+rails, sign posts) and the `PropBody_x_y` bodies of RIGID props. Soft course dressing has no collider
+(see "Soft course" below).
 
 ## Car runtime API (`scenes/car/car.tscn`, root RigidBody3D, `scripts/vehicle/car.gd`)
 
@@ -253,6 +256,36 @@ never pushes and never touches `main`; the lead merges into `ep2`.
   `FINISHED`, results Continue) or liaison (`LIAISON`, `ARRIVED`) → `JOURNEY` … → after the
   last leg `JOURNEY` → `FINALE` → `MENU`. Music: `liaison` on the liaison drive, `menu` on the
   journey map, `results` on the finale; stingers `arrived`, `campaign_complete`.
+
+### Soft course (SoftCourse)
+
+- `scripts/world/soft_course.gd` (`SoftCourse`, `MapWorld.soft_course`) owns the list:
+  `SoftCourse.SMASHABLE` (prop name → speed share lost, sound, fling, chip colour). Mapgen keeps a
+  copy for its corridor rules in `tools/mapgen/lib/corridor.py`; keep the two in sync. Every prop
+  with a manifest collider that is not in that list is RIGID. Do not add fields to
+  `assets/models/props/manifest.json` for this: it is generated.
+- SMASHABLE instances get no static collider. Each physics tick SoftCourse tests every `Car` in the
+  tree (found through `SceneTree.node_added`, so the player car, the menu flyover car and tool cars
+  alike) against a spatial hash of their footprints (the manifest collider: a box, the span of a
+  multi-post cylinder, or a circle). A hit applies `car.apply_central_impulse(-v_horizontal ×
+  mass × loss)` (cone 1 %, tape 2 %, banner/flag 3 %, sign/fence 4 %, tyre stack 6 %, bales
+  8–12 %; hits within ~0.6 s share a 14 % budget), hides the MultiMesh instance, flings a pooled
+  debris body (at most 24 live, gone after 4.4–5.6 s), puffs dust and chips, and plays `thump` or
+  `impact_light` through `Sound.play_3d`. No torque, no lift and no `Car.impact` signal.
+  Signals: `smashed(prop, point, speed_before, loss)`, `upright_hit(point, speed_before, loss)`.
+- `start_arch` / `finish_arch` legs (`SoftCourse.SOFT_UPRIGHT_PROPS`) are soft uprights: 2.5 %
+  and the arch nods back; its visuals stay.
+- `checkpoint_gate` instances are skipped (`SoftCourse.SKIPPED_PROPS`); `FabricGate`
+  (`scripts/world/fabric_gate.gd`, banner shader `shaders/world/fabric_banner.gdshader`) stands at
+  every `map.checkpoints` entry of a closed stage except one within 20 m of a start/finish arch,
+  and at the final checkpoint (time control) of an open road. Uprights (soft, 2.5 %, wobble back)
+  stand at ±(track half width + verge + 1.5 m + 0.35 m) from the centre line; the banner spans
+  4.4–5.55 m above the road. It billows when a car crosses the gate line between the uprights, and
+  on `Game.checkpoint_passed` for its checkpoint. Mapgen keeps rigid props out of ±8 m along the
+  road and out to half width + verge + 4 m around every checkpoint.
+- The course comes back whole when a new car enters the tree (restart), when a car jumps farther
+  than one physics step could move it (`Car.reset_to()`, reset to the track), and on a map reload.
+- Probe: `tools/game/softcourse_probe.gd -- map=hanami [car=hayate]` (headless).
 
 ### Menu (Menu)
 
