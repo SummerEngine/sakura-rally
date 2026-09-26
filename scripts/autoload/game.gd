@@ -18,26 +18,28 @@ signal paused_changed(paused: bool)
 signal settings_changed
 signal notice(text: String) ## short transient message for the HUD ("Car reset", "Wrong way")
 signal menu_view_changed(view: String) ## "title" | "time_attack" | "garage" (Main parks the car in the garage)
-## Campaign (docs/CONTRACTS.md, "Session and campaign"). Main listens to the *_requested ones.
+## Campaign (docs/CONTRACTS.md, "Campaign in one world"). Main listens to the *_requested ones.
 signal campaign_requested
 signal campaign_continue_requested
 signal campaign_leg_started(index: int, leg: Dictionary)
-signal arrived ## the liaison car reached the arrival zone (re-emitted from RaceSession.arrived)
+signal arrived ## the liaison car reached Momiji's grid (re-emitted from RaceSession.arrived)
 signal campaign_finished(summary: Dictionary)
 
-## JOURNEY: the campaign's painted journey map, which is also its loading screen.
-## LIAISON: driving an untimed liaison road. ARRIVED: the arrival beat at its end.
-## FINALE: the rally classification and end card after the last stage.
-enum State { BOOT, MENU, LOADING, INTRO, COUNTDOWN, RACING, FINISHED, FREE_ROAM, JOURNEY, LIAISON, ARRIVED, FINALE }
+## LIAISON: the untimed drive from Hanami's finish on to Momiji's grid. ARRIVED: the short beat
+## as the car comes to rest there. FINALE: the rally classification and end card after the last
+## stage.
+enum State { BOOT, MENU, LOADING, INTRO, COUNTDOWN, RACING, FINISHED, FREE_ROAM, LIAISON, ARRIVED, FINALE }
 
 const MODE_TIME_TRIAL := "time_trial"
 const MODE_FREE_ROAM := "free_roam"
-## Untimed point-to-point drive between two campaign stages (open road, ends at an arrival zone).
+## Untimed drive between two campaign stages along the world's `liaison` route (open road, ends
+## at the next stage's grid).
 const MODE_LIAISON := "liaison"
 
 const SAVE_PATH := "user://sakura_rally.cfg"
 
-## Map catalogue. Medal times are in seconds for one lap in time trial, set against the
+## Stage catalogue: the two stage routes of the world (the ids are MapWorld route ids and the
+## keys of records and campaign results). Medal times are in seconds for one lap in time trial, set against the
 ## autopilot's clean reference lap in the default car, the Sakura (ep2 handling: hanami 113.3 s,
 ## momiji 99.5 s; tools/physics/run_tests.gd only=maps): gold 1.1x, silver 1.22x, bronze 1.42x,
 ## rounded to 0.5 s.
@@ -57,15 +59,6 @@ const MAPS: Array[Dictionary] = [
 		"tagline": "Autumn, golden hour. Loose dirt through the maples.",
 		"season": "autumn",
 		"medals": {"gold": 109.5, "silver": 121.5, "bronze": 141.5},
-	},
-	{
-		"id": "natsu",
-		"name": "Natsu Road",
-		"name_jp": "夏道",
-		"tagline": "Summer afternoon. The quiet road between the stages.",
-		"season": "summer",
-		## Liaison maps have an open road and no medals: stage pickers skip them (stage_maps()).
-		"liaison": true,
 	},
 ]
 
@@ -101,12 +94,13 @@ const CARS: Array[Dictionary] = [
 	},
 ]
 
-## The campaign: a rally through the seasons. Stages are timed ("SS"), liaisons are the untimed
-## drives between them ("L"). "kanji" is the season on the journey map's stamps. After the last
-## leg comes the finale (classification against RIVALS).
+## The campaign: one continuous drive through the world's seasons. "map" is the MapWorld route
+## the leg drives. Stages are timed ("SS"; "kanji" is the season on their stamps); the liaison is
+## the untimed road from one stage's finish to the next stage's grid, not a level of its own (no
+## code on screen). After the last leg comes the finale (classification against RIVALS).
 const CAMPAIGN: Array[Dictionary] = [
 	{"map": "hanami", "kind": "stage", "code": "SS1", "title": "Hanami Pass", "title_jp": "花見峠", "kanji": "春"},
-	{"map": "natsu", "kind": "liaison", "code": "L1", "title": "Natsu Road", "title_jp": "夏道", "kanji": "夏"},
+	{"map": "liaison", "kind": "liaison", "code": "L1", "title": "On to Momiji Valley", "title_jp": "紅葉谷", "kanji": "夏"},
 	{"map": "momiji", "kind": "stage", "code": "SS2", "title": "Momiji Valley", "title_jp": "紅葉谷", "kanji": "秋"},
 ]
 
@@ -314,7 +308,7 @@ func notify_finished(result: Dictionary) -> void:
 	race_finished.emit(result)
 
 
-## Called by the race session when the liaison car enters the arrival zone.
+## Called by the race session when the liaison car reaches the next stage's grid.
 func notify_arrived() -> void:
 	if campaign_current_leg().get("kind", "") == "liaison":
 		_campaign["leg"] = maxi(int(_campaign["leg"]), campaign_leg + 1)
@@ -328,8 +322,9 @@ func post_notice(text: String) -> void:
 
 # ---------------------------------------------------------------- campaign
 
-## Title: start the journey (fresh) or resume it at the start of the saved leg. A finished
-## campaign always starts afresh.
+## Title: start the journey (fresh) or resume it at the saved leg (SS1: Hanami grid; the liaison:
+## Hanami's finish stop with the branch open; SS2: Momiji grid). A finished campaign always
+## starts afresh.
 func request_campaign(fresh: bool) -> void:
 	if fresh or bool(_campaign["finished"]):
 		_campaign = {"leg": 0, "results": {}, "finished": false}
@@ -338,8 +333,8 @@ func request_campaign(fresh: bool) -> void:
 	campaign_requested.emit()
 
 
-## Results "Continue", the end of the arrival beat: on to the journey map for the next leg (or
-## the finale once every leg is done).
+## Results "Continue" and the end of the arrival beat: Main drives straight on into the next leg
+## from where the car stands (or into the finale once every leg is done).
 func request_campaign_continue() -> void:
 	set_paused(false)
 	campaign_active = true
@@ -366,7 +361,7 @@ func campaign_current_leg() -> Dictionary:
 	return CAMPAIGN[campaign_leg]
 
 
-## Main: the journey map is up and leg `index` is loading behind it.
+## Main: leg `index` starts (at the title's resume point or on from the previous leg).
 func notify_campaign_leg(index: int) -> void:
 	campaign_leg = index
 	campaign_leg_started.emit(index, CAMPAIGN[index])
@@ -472,15 +467,6 @@ func get_car(id: String) -> Dictionary:
 
 func current_car() -> Dictionary:
 	return get_car(str(get_setting("car_id")))
-
-
-## Maps with a timed stage (Time Trial pickers, "next map"); liaison roads are excluded.
-func stage_maps() -> Array[Dictionary]:
-	var out: Array[Dictionary] = []
-	for m in MAPS:
-		if not m.get("liaison", false):
-			out.append(m)
-	return out
 
 
 static func format_time(t: float) -> String:

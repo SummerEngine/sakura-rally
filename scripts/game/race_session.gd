@@ -1,8 +1,12 @@
 class_name RaceSession
 extends Node
-## Follows the player car along the loaded map's road: lap progress, checkpoint
-## splits, the lap timer, wrong-way and off-route notices, the reset point, and on a
-## liaison road the distance left and the arrival zone.
+## Follows the player car along the selected route of the world (MapWorld.select_route): lap
+## progress, checkpoint splits, the lap timer, wrong-way and off-route notices, the reset point,
+## and on the liaison the distance left and the arrival zone (the next stage's grid).
+##
+## `setup()` anchors on wherever the car stands, so Main calls it again on the same car when a
+## campaign leg carries on from the previous one (the liaison from a stage's finish stop, a stage
+## from its grid at the end of the liaison) without moving the car.
 ##
 ## Joins the "track" group for Car.reset_to_track(). In a time trial the car resets to
 ## the last point of the route it legitimately reached (no shortcuts by falling down a
@@ -69,7 +73,7 @@ func setup(new_map: MapWorld, new_car: Car, new_mode: String) -> void:
 	car = new_car
 	mode = new_mode
 	checkpoint_total = map.checkpoints.size()
-	best_time = _game().best_time(map.map_id) if _game() else INF
+	best_time = _game().best_time(map.route_id) if _game() else INF
 	_play_half = float(map.info.get("play_half", 600.0)) + 40.0
 	var water: Dictionary = map.info.get("water", {})
 	var lake: Dictionary = water.get("lake", {})
@@ -85,7 +89,7 @@ func setup(new_map: MapWorld, new_car: Car, new_mode: String) -> void:
 	reset_progress()
 
 
-## Re-anchor on the car's current position (after placing it at the spawn).
+## Re-anchor on the car's current position (after placing it, or where the last leg left it).
 func reset_progress() -> void:
 	running = false
 	has_arrived = false
@@ -230,11 +234,11 @@ func _finish(t: float) -> void:
 	}
 	if _game():
 		_game().notify_finished(result)
-		best_time = _game().best_time(map.map_id)
+		best_time = _game().best_time(map.route_id)
 	finished.emit(result)
 
 
-## Liaison: the arrival zone is the circle around the map's arrival point, or the last
+## Liaison: the arrival zone is the circle around the route's arrival point, or the last
 ## `arrival_radius` metres of the road for a car that reached them on the route.
 func _check_arrival(pos: Vector3, on_route: bool) -> void:
 	var r := map.arrival_radius

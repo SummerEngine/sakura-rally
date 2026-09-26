@@ -1,10 +1,10 @@
 class_name ArrivalStop
 extends Node
-## Brings the parent Car to rest at a liaison's time control. Main adds it once the car is
-## within braking distance of the arrival (the player lets go there), so it arrives at a
-## walking pace whatever speed it came in at: steers along the road toward `target` and brakes
-## on a constant-deceleration profile to rest at the target, or as soon as it can if it
-## somehow ran past.
+## Brings the parent Car to rest at a pose on the road: a stage's finish stop after the finish
+## line, the next stage's grid at the end of the liaison (Main adds it within braking distance,
+## the player lets go there). Whatever speed the car comes in at, it steers along the road
+## toward `target` and brakes on a constant-deceleration profile to rest there, or as soon as it
+## can if it ran past. Stays on the car holding it at rest until Main removes it.
 
 ## Deceleration of the stop (m/s^2): a firm but unhurried stop, no lock-up.
 const DECEL := 5.0
@@ -15,9 +15,9 @@ const MARGIN := 10.0
 
 var track: Track
 var target: Transform3D
-## Road distance (Track abs s) of the target.
-var target_s: float
 
+## Road distance (Track abs s) of the target.
+var _target_s := 0.0
 var _car: Car
 var _hint := -1
 var _cap := CREEP
@@ -32,6 +32,7 @@ func _ready() -> void:
 	_car = get_parent() as Car
 	process_physics_priority = -10
 	_cap = maxf(CREEP, _car.linear_velocity.length())
+	_target_s = track.abs_s(track.nearest(target.origin), target.origin)
 
 
 func _physics_process(_delta: float) -> void:
@@ -41,13 +42,16 @@ func _physics_process(_delta: float) -> void:
 	var fwd := -target.basis.z
 	var speed := _car.linear_velocity.length()
 	_hint = track.nearest(pos, _hint)
-	var s_car := track.abs_s(_hint, pos)
+	# Road metres to the target (across the lap seam on a loop).
+	var ahead := _target_s - track.abs_s(_hint, pos)
+	if track.closed:
+		ahead = wrapf(ahead, -track.length * 0.5, track.length * 0.5)
 	# Metres to go: along the road before the target, along its heading past it.
-	var left := target_s - s_car if s_car < target_s - 1.0 else (target.origin - pos).dot(fwd)
+	var left := ahead if ahead > 1.0 else (target.origin - pos).dot(fwd)
 	# Steer: pure pursuit on the road ahead, onto the target's heading past its road end.
 	var look := clampf(4.0 + speed * 0.5, 5.0, 14.0)
-	var s := s_car + look
-	var aim := track.position_at_abs(s) if s < target_s else target.origin + fwd * (s - target_s)
+	var aim := track.position_at_abs(_target_s - ahead + look) if look < ahead \
+			else target.origin + fwd * (look - ahead)
 	var local := _car.global_transform.affine_inverse() * aim
 	var alpha := atan2(local.x, -local.z)
 	var k := 2.0 * sin(alpha) / maxf(Vector2(local.x, local.z).length(), 1.0)
