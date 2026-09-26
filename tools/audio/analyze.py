@@ -59,18 +59,23 @@ def main(argv: list[str]) -> None:
             files.append(tgt)
     report = {}
     for p in files:
-        x, sr = al.read_wav(p)
+        import soundfile as sf
+        multi, sr = sf.read(str(p), dtype="float64", always_2d=True)
+        x = multi.mean(axis=1)  # mono fold for spectrogram / seam views
         rel = p.relative_to(al.ROOT) if p.is_relative_to(al.ROOT) else p
         sub = p.parent.name
         is_loop = any(fnmatch.fnmatch(p.stem, pat) or fnmatch.fnmatch(str(rel), pat) for pat in loops)
         entry = {
             "seconds": round(x.size / sr, 3),
-            "peak_dbfs": round(al.peak_db(x), 2),
-            "lufs": round(al.lufs(x, sr), 2),
+            "channels": int(multi.shape[1]),
+            "peak_dbfs": round(al.peak_db(multi), 2),
+            "lufs": round(al.lufs(multi if multi.shape[1] > 1 else x, sr), 2),
             "dc": round(float(np.mean(x)), 5),
         }
         if is_loop:
-            entry["seam"] = {k: round(v, 4) for k, v in al.seam_metrics(x).items()}
+            # worst channel: a click in either ear counts
+            per_ch = [al.seam_metrics(multi[:, c]) for c in range(multi.shape[1])]
+            entry["seam"] = {k: round(max(m[k] for m in per_ch), 4) for k in per_ch[0]}
             seam_png(x, sr, al.RENDERS / sub / f"{p.stem}_seam.png", f"{rel} loop wrap")
         al.spectrogram_png(x, al.RENDERS / sub / f"{p.stem}.png",
                            f"{rel}  peak {entry['peak_dbfs']} dBFS  {entry['lufs']} LUFS", sr=sr)

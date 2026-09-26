@@ -78,7 +78,6 @@ var _boost: float = 0.0
 var _prev_foot: float = 0.0
 var _shift_dip_until: float = -1.0
 var _limiter_until: float = -1.0
-var _last_limiter_pop: float = -1.0
 var _last_bov: float = -1.0
 var _roll_gain: Dictionary = {}
 var _slide_gain: Dictionary = {}
@@ -377,19 +376,15 @@ func _on_gear_changed(new_gear: int, old_gear: int) -> void:
 	_fire(shot, SHIFT_DB, 1.0)
 	if upshift and _boost > 0.3 and _t - _last_bov > 0.5:
 		_play_bov(_boost)
-	elif not upshift and _rpm > 3000.0 and randf() < 0.35:
-		_fire(_backfire, BACKFIRE_DB - 6.0, randf_range(0.95, 1.08))
 
 
 func _on_backfire() -> void:
 	_fire(_backfire, BACKFIRE_DB + randf_range(-4.0, 0.0), randf_range(0.92, 1.08))
 
 
+## Pops on shifts / limiter cuts come from the car's own `backfire` signal.
 func _on_rev_limiter() -> void:
 	_limiter_until = _t + 0.12
-	if _t - _last_limiter_pop > 0.35 and randf() < 0.3:
-		_last_limiter_pop = _t
-		_fire(_backfire, BACKFIRE_DB - 9.0, randf_range(1.0, 1.15))
 
 
 func _on_impact(strength: float, point: Vector3) -> void:

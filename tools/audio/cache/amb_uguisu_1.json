@@ -1,0 +1,17 @@
+{
+  "model": "fal-ai/elevenlabs/sound-effects/v2",
+  "params": {
+    "text": "Japanese bush warbler (uguisu) singing its famous call 'hoo-hokekyo' once in a quiet spring forest, clear single bird, natural, slightly distant, no other sounds",
+    "duration_seconds": 6,
+    "prompt_influence": 0.6,
+    "output_format": "mp3_44100_192"
+  },
+  "request_id": "01a0dc48-abc9-73e2-bffb-c67913e3256e",
+  "response": {},
+  "audio": {
+    "url": "https://v3b.fal.media/files/b/0aabefd6/w7WQh2w8uTqm0ulnyjCf9_sound_effect.mp3",
+    "content_type": "audio/mpeg",
+    "file_name": "sound_effect.mp3",
+    "file_size": 145493
+  }
+}

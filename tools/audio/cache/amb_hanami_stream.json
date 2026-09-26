@@ -1,0 +1,18 @@
+{
+  "model": "fal-ai/elevenlabs/sound-effects/v2",
+  "params": {
+    "text": "Distant small mountain stream gently babbling over rocks, soft continuous trickling water heard from far away, calm, no birds",
+    "loop": true,
+    "duration_seconds": 22,
+    "prompt_influence": 0.5,
+    "output_format": "mp3_44100_192"
+  },
+  "request_id": "01a0dc48-abc9-7472-a1e9-c3b938bc926e",
+  "response": {},
+  "audio": {
+    "url": "https://v3b.fal.media/files/b/0aabefd7/2KhgI8xXzj5G-OYDSyx0C_sound_effect.mp3",
+    "content_type": "audio/mpeg",
+    "file_name": "sound_effect.mp3",
+    "file_size": 529807
+  }
+}

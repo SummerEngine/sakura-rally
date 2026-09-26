@@ -1,0 +1,18 @@
+{
+  "model": "fal-ai/elevenlabs/sound-effects/v2",
+  "params": {
+    "text": "Gentle spring breeze softly rustling through leafy trees on a quiet mountainside, soft continuous wind in foliage, calm and airy, no birds, no people",
+    "loop": true,
+    "duration_seconds": 22,
+    "prompt_influence": 0.5,
+    "output_format": "mp3_44100_192"
+  },
+  "request_id": "01a0dc48-ab5c-7ba2-bfda-1cb1a3aa49f3",
+  "response": {},
+  "audio": {
+    "url": "https://v3b.fal.media/files/b/0aabefd7/myeLbGRtek5pFHqfHWgdX_sound_effect.mp3",
+    "content_type": "audio/mpeg",
+    "file_name": "sound_effect.mp3",
+    "file_size": 529807
+  }
+}

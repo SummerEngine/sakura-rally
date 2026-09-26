@@ -1,0 +1,220 @@
+[
+  {
+    "name": "amb_uguisu_1",
+    "model": "fal-ai/elevenlabs/sound-effects/v2",
+    "params": {
+      "text": "Japanese bush warbler (uguisu) singing its famous call 'hoo-hokekyo' once in a quiet spring forest, clear single bird, natural, slightly distant, no other sounds",
+      "duration_seconds": 6,
+      "prompt_influence": 0.6,
+      "output_format": "mp3_44100_192"
+    },
+    "request_id": "01a0dc48-abc9-73e2-bffb-c67913e3256e",
+    "output_file": "tools/audio/cache/amb_uguisu_1.mp3",
+    "response_extra": {},
+    "elapsed_s": 8.2,
+    "time": "2026-09-25T22:55:51"
+  },
+  {
+    "name": "amb_uguisu_2",
+    "model": "fal-ai/elevenlabs/sound-effects/v2",
+    "params": {
+      "text": "A single Japanese bush warbler calling 'hoo-hokekyo' from a nearby tree in spring, long rising whistle followed by a quick warble, clean recording, quiet background",
+      "duration_seconds": 6,
+      "prompt_influence": 0.6,
+      "output_format": "mp3_44100_192"
+    },
+    "request_id": "01a0dc48-abca-7623-af0f-f1863c016833",
+    "output_file": "tools/audio/cache/amb_uguisu_2.mp3",
+    "response_extra": {},
+    "elapsed_s": 8.2,
+    "time": "2026-09-25T22:55:51"
+  },
+  {
+    "name": "music_menu_sa3",
+    "model": "fal-ai/stable-audio-3/medium/text-to-audio",
+    "params": {
+      "prompt": "Calm, dreamy instrumental lo-fi city-pop with Japanese instrumentation for a video game main menu. 84 BPM, 4/4, key of D major. Warm Rhodes electric piano chords, gentle koto melody and plucked koto arpeggios, soft breathy shakuhachi flute phrases, round mellow bass, light brushed drum kit with soft kick and rim clicks, subtle tape warmth. Spring cherry blossom mood, peaceful and polished, studio quality mix. Short gentle intro, then a steady consistent groove at the same tempo throughout, no big ending, no fade out. Instrumental only, no vocals.",
+      "negative_prompt": "vocals, singing, voice, choir, speech, distortion, harsh, noisy, low quality, fade out",
+      "duration": 150,
+      "output_format": "wav",
+      "seed": 8401
+    },
+    "request_id": "01a0dc48-abcb-7413-bd8f-c591349d9c18",
+    "output_file": "tools/audio/cache/music_menu_sa3.wav",
+    "response_extra": {
+      "seed": 8401,
+      "prompt": "Calm, dreamy instrumental lo-fi city-pop with Japanese instrumentation for a video game main menu. 84 BPM, 4/4, key of D major. Warm Rhodes electric piano chords, gentle koto melody and plucked koto arpeggios, soft breathy shakuhachi flute phrases, round mellow bass, light brushed drum kit with soft kick and rim clicks, subtle tape warmth. Spring cherry blossom mood, peaceful and polished, studio quality mix. Short gentle intro, then a steady consistent groove at the same tempo throughout, no big ending, no fade out. Instrumental only, no vocals."
+    },
+    "elapsed_s": 10.8,
+    "time": "2026-09-25T22:55:54"
+  },
+  {
+    "name": "amb_hanami_stream",
+    "model": "fal-ai/elevenlabs/sound-effects/v2",
+    "params": {
+      "text": "Distant small mountain stream gently babbling over rocks, soft continuous trickling water heard from far away, calm, no birds",
+      "loop": true,
+      "duration_seconds": 22,
+      "prompt_influence": 0.5,
+      "output_format": "mp3_44100_192"
+    },
+    "request_id": "01a0dc48-abc9-7472-a1e9-c3b938bc926e",
+    "output_file": "tools/audio/cache/amb_hanami_stream.mp3",
+    "response_extra": {},
+    "elapsed_s": 11.8,
+    "time": "2026-09-25T22:55:55"
+  },
+  {
+    "name": "amb_hanami_breeze",
+    "model": "fal-ai/elevenlabs/sound-effects/v2",
+    "params": {
+      "text": "Gentle spring breeze softly rustling through leafy trees on a quiet mountainside, soft continuous wind in foliage, calm and airy, no birds, no people",
+      "loop": true,
+      "duration_seconds": 22,
+      "prompt_influence": 0.5,
+      "output_format": "mp3_44100_192"
+    },
+    "request_id": "01a0dc48-ab5c-7ba2-bfda-1cb1a3aa49f3",
+    "output_file": "tools/audio/cache/amb_hanami_breeze.mp3",
+    "response_extra": {},
+    "elapsed_s": 14.0,
+    "time": "2026-09-25T22:55:57"
+  },
+  {
+    "name": "amb_spring_birds",
+    "model": "fal-ai/elevenlabs/sound-effects/v2",
+    "params": {
+      "text": "Small songbirds chirping sparsely in spring trees on a mountain, distant, occasional soft tweets and short melodic calls, quiet, no wind, no water",
+      "duration_seconds": 15,
+      "prompt_influence": 0.5,
+      "output_format": "mp3_44100_192"
+    },
+    "request_id": "01a0dc48-c6a7-7170-87fc-437080be6dd4",
+    "output_file": "tools/audio/cache/amb_spring_birds.mp3",
+    "response_extra": {},
+    "elapsed_s": 5.9,
+    "time": "2026-09-25T22:55:57"
+  },
+  {
+    "name": "music_results_el",
+    "model": "elevenlabs/music/v2.5",
+    "params": {
+      "prompt": "Warm, celebratory but calm instrumental city-pop loop with Japanese instrumentation for a race results screen. 92 BPM, 4/4, key of D major. Sparkling Rhodes chords, joyful koto arpeggios, soft shakuhachi melody, gentle taiko accents and a light drum groove, warm round bass. Content, proud, relaxed feeling, polished studio mix. Consistent tempo throughout, no fade out, no ending. Instrumental only, no vocals.",
+      "music_length_ms": 70000,
+      "force_instrumental": true,
+      "output_format": "mp3_44100_192"
+    },
+    "request_id": "01a0dc48-abc3-7b30-825a-c364aee01b65",
+    "output_file": "tools/audio/cache/music_results_el.mp3",
+    "response_extra": {},
+    "elapsed_s": 15.0,
+    "time": "2026-09-25T22:55:58"
+  },
+  {
+    "name": "amb_crows_2",
+    "model": "fal-ai/elevenlabs/sound-effects/v2",
+    "params": {
+      "text": "A single crow cawing a few times in the distance over mountains in the evening, natural outdoor recording, quiet background",
+      "duration_seconds": 5,
+      "prompt_influence": 0.6,
+      "output_format": "mp3_44100_192"
+    },
+    "request_id": "01a0dc48-dd5b-78f0-8d0a-ad7cf307cfe2",
+    "output_file": "tools/audio/cache/amb_crows_2.mp3",
+    "response_extra": {},
+    "elapsed_s": 5.4,
+    "time": "2026-09-25T22:56:03"
+  },
+  {
+    "name": "amb_momiji_wind",
+    "model": "fal-ai/elevenlabs/sound-effects/v2",
+    "params": {
+      "text": "Soft autumn evening wind blowing through a valley of maple trees, gentle slow gusts with dry leaves rustling in the branches, continuous, calm, no birds",
+      "loop": true,
+      "duration_seconds": 22,
+      "prompt_influence": 0.5,
+      "output_format": "mp3_44100_192"
+    },
+    "request_id": "01a0dc48-c6a1-7351-9094-39249da59d59",
+    "output_file": "tools/audio/cache/amb_momiji_wind.mp3",
+    "response_extra": {},
+    "elapsed_s": 12.2,
+    "time": "2026-09-25T22:56:04"
+  },
+  {
+    "name": "amb_crows_1",
+    "model": "fal-ai/elevenlabs/sound-effects/v2",
+    "params": {
+      "text": "Two or three distant crows cawing far away across an autumn valley at sunset, spacious and echoing, quiet background",
+      "duration_seconds": 6,
+      "prompt_influence": 0.6,
+      "output_format": "mp3_44100_192"
+    },
+    "request_id": "01a0dc48-d4ce-7da1-a8a9-13ebb43729b0",
+    "output_file": "tools/audio/cache/amb_crows_1.mp3",
+    "response_extra": {},
+    "elapsed_s": 8.7,
+    "time": "2026-09-25T22:56:04"
+  },
+  {
+    "name": "music_menu_el",
+    "model": "elevenlabs/music/v2.5",
+    "params": {
+      "prompt": "Calm, dreamy instrumental lo-fi city-pop with Japanese instrumentation for a video game main menu. 84 BPM, 4/4, key of D major. Warm Rhodes electric piano chords, gentle koto melody and plucked koto arpeggios, soft breathy shakuhachi flute phrases, round mellow bass, light brushed drum kit with soft kick and rim clicks, subtle tape warmth. Spring cherry blossom mood, peaceful and polished, studio quality mix. Short gentle intro, then a steady consistent groove at the same tempo throughout, no big ending, no fade out. Instrumental only, no vocals.",
+      "music_length_ms": 150000,
+      "force_instrumental": true,
+      "output_format": "mp3_44100_192"
+    },
+    "request_id": "01a0dc48-abcb-7e82-b375-44e7f6276481",
+    "output_file": "tools/audio/cache/music_menu_el.mp3",
+    "response_extra": {},
+    "elapsed_s": 21.9,
+    "time": "2026-09-25T22:56:05"
+  },
+  {
+    "name": "music_drive_el",
+    "model": "elevenlabs/music/v2.5",
+    "params": {
+      "prompt": "Steady, sparse instrumental city-pop groove with Japanese instrumentation for a relaxed driving game, played underneath loud car engine sound. 104 BPM, 4/4, key of D major. Tight crisp drums with clean hi-hats and snappy rimshot, occasional taiko drum accents, clean funky electric guitar chops, bright koto hook melody, light shamisen fills, airy high synth pad. Keep the low-mids and bass light and clean: small tight bass, no thick pads, no muddy low end, lots of space in the arrangement. Upbeat but chill, polished modern mix. Consistent tempo and energy throughout, no fade out, no ending. Instrumental only, no vocals.",
+      "music_length_ms": 160000,
+      "force_instrumental": true,
+      "output_format": "mp3_44100_192"
+    },
+    "request_id": "01a0dc48-abcb-71d1-9808-48b0b945a628",
+    "output_file": "tools/audio/cache/music_drive_el.mp3",
+    "response_extra": {},
+    "elapsed_s": 21.9,
+    "time": "2026-09-25T22:56:05"
+  },
+  {
+    "name": "amb_leaves",
+    "model": "fal-ai/elevenlabs/sound-effects/v2",
+    "params": {
+      "text": "Dry autumn leaves rustling and skittering softly along the ground in a light gust of wind, then settling, gentle, no footsteps",
+      "duration_seconds": 5,
+      "prompt_influence": 0.5,
+      "output_format": "mp3_44100_192"
+    },
+    "request_id": "01a0dc48-ddc6-7342-a465-af6fb23346cb",
+    "output_file": "tools/audio/cache/amb_leaves.mp3",
+    "response_extra": {},
+    "elapsed_s": 8.8,
+    "time": "2026-09-25T22:56:06"
+  },
+  {
+    "name": "amb_suzumushi",
+    "model": "fal-ai/elevenlabs/sound-effects/v2",
+    "params": {
+      "text": "Japanese bell crickets (suzumushi) chirping at dusk in autumn grass, soft ringing insect chorus, continuous, calm, gentle and distant, no wind",
+      "loop": true,
+      "duration_seconds": 22,
+      "prompt_influence": 0.5,
+      "output_format": "mp3_44100_192"
+    },
+    "request_id": "01a0dc48-d0e8-7c41-9a1d-1f2af1dc94b6",
+    "output_file": "tools/audio/cache/amb_suzumushi.mp3",
+    "response_extra": {},
+    "elapsed_s": 12.6,
+    "time": "2026-09-25T22:56:07"
+  }
+]

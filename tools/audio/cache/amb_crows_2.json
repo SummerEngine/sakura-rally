@@ -1,0 +1,17 @@
+{
+  "model": "fal-ai/elevenlabs/sound-effects/v2",
+  "params": {
+    "text": "A single crow cawing a few times in the distance over mountains in the evening, natural outdoor recording, quiet background",
+    "duration_seconds": 5,
+    "prompt_influence": 0.6,
+    "output_format": "mp3_44100_192"
+  },
+  "request_id": "01a0dc48-dd5b-78f0-8d0a-ad7cf307cfe2",
+  "response": {},
+  "audio": {
+    "url": "https://v3b.fal.media/files/b/0aabefd8/BBsoEG6BRLD4qcO4y-Z0w_sound_effect.mp3",
+    "content_type": "audio/mpeg",
+    "file_name": "sound_effect.mp3",
+    "file_size": 121670
+  }
+}

@@ -382,14 +382,23 @@ def main() -> None:
     # Set each loop's loudness from the target curve, then one common gain for the set so
     # relative levels survive and the loudest peak sits at -1 dBFS.
     scaled = []
+    # Anti-alias low-pass before level setting: the runtime pitches loops by up to ~1.4x,
+    # which would fold content above ~15 kHz back down, and the strongest firing-pulse
+    # fronts otherwise read as isolated broadband ticks that repeat once per loop.
+    aa = al.sos_lp(12000.0, 4)
     for name, x, exact, load in loops:
+        x = al.filt_circular(aa, x)
         g = al.undb(target_rms_db(exact, load) - al.rms_db(x))
         scaled.append((name, x * g, exact, load))
     # Common gain from the steady (on/idle) loops; overrun crackle transients above the
     # ceiling are caught by a static soft limiter (sample-wise, so seams stay intact).
     common = al.undb(-1.0) / max(float(np.max(np.abs(s[1]))) for s in scaled if s[3] != "off")
     for name, x, exact, load in scaled:
-        y = al.soft_limit(x * common, -1.0, knee_db=1.5)
+        # The limiter's knee bends crackle peaks sample-wise; re-band-limit the result (a
+        # circular filter, so the seam stays exact) and trim any filter overshoot.
+        y = al.filt_circular(aa, al.soft_limit(x * common, -1.0, knee_db=1.5))
+        y = al.rotate_to_quiet_zero_crossing(y)
+        y *= min(1.0, al.undb(-1.0) / float(np.max(np.abs(y))))
         al.write_wav(OUT / f"{name}.wav", y)
         entry = {"file": f"{name}.wav", "rpm": round(exact, 3), "samples": int(y.size)}
         if load == "idle":

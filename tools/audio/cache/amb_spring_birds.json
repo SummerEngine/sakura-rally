@@ -1,0 +1,17 @@
+{
+  "model": "fal-ai/elevenlabs/sound-effects/v2",
+  "params": {
+    "text": "Small songbirds chirping sparsely in spring trees on a mountain, distant, occasional soft tweets and short melodic calls, quiet, no wind, no water",
+    "duration_seconds": 15,
+    "prompt_influence": 0.5,
+    "output_format": "mp3_44100_192"
+  },
+  "request_id": "01a0dc48-c6a7-7170-87fc-437080be6dd4",
+  "response": {},
+  "audio": {
+    "url": "https://v3b.fal.media/files/b/0aabefd7/tI7dhcud6XKAoq6QY6ctB_sound_effect.mp3",
+    "content_type": "audio/mpeg",
+    "file_name": "sound_effect.mp3",
+    "file_size": 361787
+  }
+}

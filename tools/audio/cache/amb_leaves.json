@@ -1,0 +1,17 @@
+{
+  "model": "fal-ai/elevenlabs/sound-effects/v2",
+  "params": {
+    "text": "Dry autumn leaves rustling and skittering softly along the ground in a light gust of wind, then settling, gentle, no footsteps",
+    "duration_seconds": 5,
+    "prompt_influence": 0.5,
+    "output_format": "mp3_44100_192"
+  },
+  "request_id": "01a0dc48-ddc6-7342-a465-af6fb23346cb",
+  "response": {},
+  "audio": {
+    "url": "https://v3b.fal.media/files/b/0aabefd8/IsSt8U2Xw7cA9LRWysc5u_sound_effect.mp3",
+    "content_type": "audio/mpeg",
+    "file_name": "sound_effect.mp3",
+    "file_size": 121670
+  }
+}

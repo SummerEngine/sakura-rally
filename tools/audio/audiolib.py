@@ -61,9 +61,10 @@ def rms_db(x: np.ndarray) -> float:
 
 def lufs(x: np.ndarray, sr: int = SR) -> float:
     """Integrated loudness (ITU-R BS.1770-4). Short clips are tiled to 3 s."""
-    if x.size < int(0.4 * sr) + 1:
-        reps = int(math.ceil(3.0 * sr / max(x.size, 1)))
-        x = np.tile(x, reps)
+    n = x.shape[0]
+    if n < int(0.4 * sr) + 1:
+        reps = int(math.ceil(3.0 * sr / max(n, 1)))
+        x = np.tile(x, (reps, 1) if x.ndim == 2 else reps)
     meter = pyloudnorm.Meter(sr)
     return float(meter.integrated_loudness(x))
 
