@@ -507,12 +507,18 @@ func _fill_card(res: Dictionary, m: Dictionary, accent: Color) -> void:
 	_medal_hint.visible = _medal_hint.text != ""
 	var campaign := bool(res.get("campaign", false))
 	_standing_value.get_parent().visible = campaign
+	# A campaign stage says it is complete in the season's colour, larger than the time trial's
+	# grey kicker: the lap is done and the rally goes on.
 	if campaign:
 		var leg: Dictionary = game.CAMPAIGN[int(res.get("leg", 0))]
 		_kind_label.text = "%s  ·  STAGE COMPLETE" % leg["code"]
+		_kind_label.label_settings.font_size = 18
+		_kind_label.label_settings.font_color = accent.darkened(0.15)
 		_standing_value.text = "P%d of %d" % [int(res.get("standing", 0)), int(res.get("field", 0))]
 	else:
 		_kind_label.text = "TIME TRIAL  ·  RESULT"
+		_kind_label.label_settings.font_size = 13
+		_kind_label.label_settings.font_color = Color(UITheme.INK, 0.5)
 	_continue.visible = campaign
 	_retry.text = "Retry stage" if campaign else "Retry"
 	_retry.theme_type_variation = &"" if campaign else &"PrimaryButton"
