@@ -557,7 +557,6 @@ func _over_label(r: Rect2) -> bool:
 				or Rect2(_stamps[i].position, _stamps[i].size).intersects(r):
 			return true
 	return false
-	return u.x > 0.33 and u.x < 0.67 and u.y < 0.27
 
 
 func _near_route(p: Vector2, dist: float) -> bool:
