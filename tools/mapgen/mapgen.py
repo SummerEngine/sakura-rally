@@ -469,8 +469,9 @@ def sign_posts(s: dict) -> dict:
 
 
 def place_signs(signs: list, placer: Placer, cor: Corridor) -> list[dict]:
-    """Resolve road signs (boards with painted text) and keep scatter away from them. Their
-    posts are rigid: a sign authored inside the road corridor steps out until they clear it."""
+    """Resolve road signs (boards with painted text) and keep scatter away from them. They
+    break at runtime like the kit's signs, but still stand clear of the rigid road corridor:
+    a sign authored inside it steps out until its posts clear it."""
     out = []
     for f in signs:
         f = dict(f)
@@ -481,6 +482,7 @@ def place_signs(signs: list, placer: Placer, cor: Corridor) -> list[dict]:
             f["lateral"] = f.get("lateral", 0.0) + side * 0.25
             x, y, z, yaw = _feature_frame(f, placer)
         placer.occ.add(x, z, f["board"][0] * 0.5 + 0.5)
+        placer.reserved.append((x, z, f["board"][0] * 0.5))
         out.append(dict(f, x=x, y=y, z=z, yaw=yaw))
     return out
 
@@ -494,42 +496,46 @@ def place_parked(cars: list, placer: Placer) -> list[dict]:
         yaw = placer.resolve_yaw(f.get("face", "along"), x, z, i) + math.radians(f.get("yaw_add", 0.0))
         y = placer.ground_at(x, z)
         placer.occ.add(x, z, 2.4)
-        placer.parked_spots.append((x, z))
+        placer.reserved.append((x, z, 2.4))
         out.append({"pos": [round(x, 3), round(y, 3), round(z, 3)], "yaw": round(yaw % (2 * math.pi), 4),
                     "car": f["car"], "livery": int(f["livery"])})
     return out
 
 
-def build_signs(signs: list, mb: MeshBuilder, boxes: list) -> list[dict]:
-    """Sign boards on posts in the dressing mesh; their text goes to map.json for Label3Ds.
-    Board front = local +Z; text offsets are metres on the board face from its centre."""
+def build_signs(signs: list, pack: MeshPack) -> list[dict]:
+    """Sign boards on posts, one mesh each in `pack` (named sign_<k>, "local": true) in the
+    sign's own frame: origin at the base centre on the ground, board front = local +Z, yaw 0.
+    The runtime places it at `base` turned by `yaw`, and breaks it like a smashable prop
+    (`collider`, sign-local). Text goes to map.json for Label3Ds: `pos` is the board face
+    centre in the world, line offsets are metres on the face from its centre."""
     out = []
-    for s in signs:
+    for k, s in enumerate(signs):
         w, h = s["board"]
         bottom = s.get("bottom", 1.6)
         rot = rotation(s["yaw"])
         origin = np.array([s["x"], s["y"], s["z"]])
-
-        def world(lx, ly, lz):
-            return origin + rot @ np.array([lx, ly, lz])
-
+        mb = MeshBuilder()
         post_col = lin(s.get("post_color", "9aa4ae"))
         posts = (0.0,) if s.get("posts", 2) == 1 else (-w * 0.34, w * 0.34)
         for px_ in posts:
-            a, b = world(px_, -0.3, -0.07), world(px_, bottom + h - 0.08, -0.07)
-            mb.prism(a, b, 0.055, 8, post_col)
-            c = (a + b) / 2
-            boxes.append([round(float(c[0]), 3), round(float(c[1]), 3), round(float(c[2]), 3),
-                          0.16, round(float(b[1] - a[1]), 3), 0.16, round(float(s["yaw"]), 4)])
+            mb.prism((px_, -0.3, -0.07), (px_, bottom + h - 0.08, -0.07), 0.055, 8, post_col)
         cy = bottom + h / 2
-        mb.box(world(0.0, cy, 0.0), (w, h, 0.07), s["yaw"], lin(s.get("color", "2f67b1")))
+        mb.box((0.0, cy, 0.0), (w, h, 0.07), 0.0, lin(s.get("color", "2f67b1")))
         trim = lin(s.get("trim", "f4f1ea"))
         inset, tw, tz = 0.07, 0.045, 0.041
         for (lx, ly, sx, sy) in ((0.0, h / 2 - inset, w - 2 * inset, tw), (0.0, -h / 2 + inset, w - 2 * inset, tw),
                                  (w / 2 - inset, 0.0, tw, h - 2 * inset), (-w / 2 + inset, 0.0, tw, h - 2 * inset)):
-            mb.box(world(lx, cy + ly, tz), (sx, sy, 0.012), s["yaw"], trim)
-        face = world(0.0, cy, 0.05)
+            mb.box((lx, cy + ly, tz), (sx, sy, 0.012), 0.0, trim)
+        name = f"sign_{k}"
+        p, nr, c, idx = mb.flat()
+        pack.add(name, p, idx, col=c, nrm=nr, material="props_vc", collide="none", local=True)
+        top = bottom + h
+        face = origin + rot @ np.array([0.0, cy, 0.05])
         out.append({"pos": [round(float(v), 3) for v in face], "yaw": round(float(s["yaw"]), 4),
+                    "base": [round(float(v), 3) for v in origin], "mesh": name,
+                    # posts (z -0.125) to the trim (z +0.047), ground to the top of the board
+                    "collider": {"type": "box", "size": [round(float(w), 3), round(float(top), 3), 0.26],
+                                 "center": [0.0, round(float(top / 2), 3), 0.0]},
                     "lines": [{"text": ln["text"], "font": ln.get("font", "latin"), "size": ln["size"],
                                "offset": list(ln.get("at", (0.0, 0.0))), "color": ln.get("color", "f7f4ec")}
                               for ln in s["lines"]]})
@@ -582,8 +588,7 @@ def build(map_id: str) -> None:
     print(f"[{map_id}] scatter {counts}")
     if placer.missing:
         print(f"[{map_id}] WARN missing props (skipped): {sorted(placer.missing)}")
-    posts = [("other", sign_posts(s), s["x"], s["z"], s["yaw"], 1.0) for s in signs]
-    before = survey(cor, placer.out, manifest, posts)
+    before = survey(cor, placer.out, manifest)
 
     # roadside dressing
     pal = spec["palette"]
@@ -617,11 +622,10 @@ def build(map_id: str) -> None:
             s_off = 0.0 if road.closed else start_s
             bridge_info.append({"from": float(road.dist[i] - s_off), "to": float(road.dist[(j - 1) % n] - s_off),
                                 "style": br[i]})
-    sign_info = build_signs(signs, dress, boxes)
 
     # nothing rigid in the road corridor: offenders move out (or go), smashables leave the tarmac
     res = enforce(cor, placer, manifest, boxes)
-    after = survey(cor, placer.out, manifest, posts)
+    after = survey(cor, placer.out, manifest)
     print(f"[{map_id}] corridor before: {format_survey(before)}")
     print(f"[{map_id}] corridor moved {res['moved']}, dropped {res['dropped']}: "
           + ", ".join(f"{k} {v[0]}/{v[1]}" for k, v in sorted(res["by_name"].items())))
@@ -641,6 +645,7 @@ def build(map_id: str) -> None:
     p, nr, c, idx = dress.flat()
     if len(idx):
         pack.add("dressing", p, idx, col=c, nrm=nr, material="props_vc", collide="none")
+    sign_info = build_signs(signs, pack)
 
     # track samples for the runtime (2 m); an open road measures distance from the start line
     step = 2
