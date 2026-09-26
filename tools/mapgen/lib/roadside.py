@@ -26,13 +26,16 @@ reached by braking at least BRAKE_DROP from the speed before it is a corner. Its
 where the curvature stays above a share of its peak; severity comes from its speed and how
 far it turns: 1 fast (brake, curve arrow), 2 sharp (90 degree arrow), 3 hairpin (U arrow).
 
-Rails. The v1 rule stays (ground more than 2.6 m below the road 5 m past the verge), and
+Rails. Where the edge drops (ground more than 2.6 m below the road 5 m past the verge, the v1
+rule, or 3.5 m below it 12 m past the verge: an embankment a car rolls down), and
 every corner casts miss lines: a car that stops turning anywhere between just before
 turn-in and the apex runs straight on along the tangent, coasting, at 1.2 x the speed it
 arrived with. If a line leaves the road where, before the car would stop, the ground is more
 than DROP m below the road, water, or outside the play area, the outside of the corner gets a
-rail from before turn-in to past where the lines cross the edge. Runs merge across short gaps
-and end in a flared, buried end, or taper into a bridge parapet.
+rail from before turn-in to past where the lines cross the edge, and on as far as a car
+scraping along it would leave it badly at its end. Runs merge across short gaps; the leading
+end flares away and is buried, the trailing end dips into the ground, and an end at a bridge
+tapers into its parapet.
 """
 from __future__ import annotations
 
@@ -42,7 +45,8 @@ from typing import Callable
 
 import numpy as np
 
-from .road import RAIL_FACE, SURFACES, RailRun, Road, road_height_at
+from .corridor import SMASHABLE, WALLS
+from .road import RAIL_BURY, RAIL_FACE, SURFACES, RailRun, Road, road_height_at
 
 G = 9.81
 
@@ -59,9 +63,12 @@ DEFAULTS = {
     "min_angle": 12.0,     # degrees: a bend that turns less is a kink, whatever the braking
     "over_speed": 1.2,     # miss lines run at this multiple of the approach speed
     "coast": 0.6,          # m/s^2 lost coasting on the road
+    "catch": 12.0,         # m/s: another stretch of road reached slower than this catches the car
+    "scrape": 1.0,         # m/s^2 lost scraping along a rail (flyoff_probe: 106 -> 90 km/h in 4.5 s)
     "off_road": 2.2,       # m/s^2 lost rolling off the road (grass, gravel run-off), before slope
     "drop": 3.0,           # m below the road a missed corner must not end up
     "verge_drop": 2.6,     # v1 rule: ground this far below the road 5 m past the verge -> rail
+    "bank_drop": 3.5,      # embankment: ground this far below the road 12 m past the verge -> rail
     "rail_gap": 20,        # m: rail runs closer than this merge
     "rail_min": 24,        # m: shortest rail run
     "flare": 8,            # m of flared end at a free rail end
@@ -77,11 +84,11 @@ MOUNTED_PROPS = tuple(f"{CHEVRON_RAIL}_{d}" for d in ("left", "right"))
 KINDS = {1: "fast", 2: "sharp", 3: "hairpin"}
 
 WARN_CENTRE = 3.05     # board centre height of a warning sign at scale 1 (m)
-WARN_LATERAL = 1.3     # m past the verge (posts at +-0.55 m around it)
-CHEVRON_LATERAL = 1.0  # m past the verge
+WARN_LATERAL = 1.3     # m past the verge at scale 1 (posts at +-0.55 m around it), times the scale
+CHEVRON_LATERAL = 1.0  # m past the verge at scale 1, times the scale
 CHEVRON_CENTRE = 1.65  # board centre height of a free-standing chevron at scale 1
 # severity -> (chevron spacing m, minimum count, chevron scale, warning scale)
-CHEVRON_SET = {1: (22.0, 3, 1.0, 1.0), 2: (15.0, 4, 1.15, 1.1), 3: (10.0, 5, 1.3, 1.2)}
+CHEVRON_SET = {1: (22.0, 3, 1.2, 1.4), 2: (15.0, 4, 1.35, 1.55), 3: (10.0, 5, 1.5, 1.7)}
 EYE_HEIGHT = 1.2
 SIGHT_DISTANCES = (220.0, 180.0, 150.0, 120.0, 90.0, 60.0)
 SIGHT_CLEAR = 1.2      # m either side of a sightline kept free of rigid and leafy props
@@ -299,14 +306,16 @@ def find_corners(road: Road, opts: dict | None = None) -> list[Corner]:
 
 # ------------------------------------------------------------------ rails
 
-def _miss_line(road: Road, ground: Ground, k: int, v0: float, bounds, o: dict) -> tuple[bool, int, int, float]:
-    """A car at the centre of sample k runs straight on along the tangent at v0, coasting.
-    Returns (danger, sample where it crosses the rail line, side it leaves by, drop m)."""
-    n = len(road.pos)
+def _miss_line(road: Road, ground: Ground, k: int, v0: float, bounds, o: dict,
+               lat0: float = 0.0) -> tuple[bool, int, int, float, float]:
+    """A car at sample k, lat0 m right of the centreline, runs straight on along the tangent at
+    v0, coasting. Returns (danger, sample where it crosses the rail line, side it leaves by,
+    drop m below the road, speed m/s at the crossing)."""
     reach = 260.0
     t = np.arange(1.0, reach, 1.0)
-    px, py, pz = road.pos[k]
     fx, fz = road.fwd[k]
+    px = road.pos[k, 0] + road.right[k, 0] * lat0
+    pz = road.pos[k, 2] + road.right[k, 1] * lat0
     X, Z = px + fx * t, pz + fz * t
     win = _span(road, k, _idx(road, k + int(reach) + 60))
     wp = road.pos[win][:, [0, 2]]
@@ -317,12 +326,13 @@ def _miss_line(road: Road, ground: Ground, k: int, v0: float, bounds, o: dict) -
     edge = road.half_width[j] + road.verge + RAIL_FACE
     off = np.nonzero(np.abs(lat) > edge)[0]
     if len(off) == 0:
-        return False, -1, 0, 0.0
+        return False, -1, 0, 0.0, 0.0
     e = int(off[0])
     je = int(j[e])
     side = 1 if lat[e] > 0 else -1
     y_edge = float(road_height_at(road, np.array([je]), np.array([lat[e]]))[0])
     v2 = v0 * v0 - 2.0 * o["coast"] * t[e]
+    v_edge = math.sqrt(max(v2, 0.0))
     H = ground.height(X[e:], Z[e:])
     dist = t[e:] - t[e]
     v2 = v2 - 2.0 * o["off_road"] * dist + 2.0 * G * (y_edge - H)
@@ -334,20 +344,48 @@ def _miss_line(road: Road, ground: Ground, k: int, v0: float, bounds, o: dict) -
     wall = np.nonzero((rise > 1.0) & (slope > 0.6))[0]
     if len(wall):
         last = min(last, int(wall[0]))
-    # another stretch of road at about this height catches it
+    # another stretch of road at about this height catches a slow car; a fast one crosses it
+    # (and flies off beyond, or into the traffic there): that is a miss to prevent
+    crossing = False
     if ground.road_dist is not None:
         rd = ground.road_dist(X[e:], Z[e:])
         back = np.nonzero((rd < road.half_width.max()) & (np.abs(rise) < 2.0) & (dist > 6.0))[0]
-        if len(back):
-            last = min(last, int(back[0]))
+        if len(back) and int(back[0]) < last:
+            crossing = v2[int(back[0])] > o["catch"] ** 2
+            last = int(back[0])
     seg = slice(0, max(last, 1))
-    drop = float(np.max(y_edge - H[seg]))
-    danger = drop > o["drop"]
+    # below the nearest stretch of this road (a car rolling down beside a descending road is
+    # not falling off it)
+    drop = float(np.max(road.pos[j[e:], 1][seg] - H[seg]))
+    danger = drop > o["drop"] or crossing
     if not danger:
         inside = _in_bounds(bounds, X[e:][seg], Z[e:][seg])
         wet = ground.wet(X[e:][seg], Z[e:][seg]) if ground.wet is not None else np.zeros(1, dtype=bool)
         danger = bool((~np.asarray(inside)).any() or np.asarray(wet).any())
-    return danger, je, side, drop
+    return danger, je, side, drop, v_edge
+
+
+def _scrape_along(road: Road, ground: Ground, want: np.ndarray, j: int, side: int, v: float, bounds,
+                  o: dict) -> None:
+    """A car that hit the rail at sample j at v scrapes along it (the wall keeps it aligned) and
+    leaves it where the rail ends, straight on along the tangent there: extend the rail
+    (want[:, col]) until that exit is safe or the car has stopped."""
+    col = 0 if side < 0 else 1
+    n = len(road.pos)
+    for _ in range(600):
+        if not road.closed and j >= n - 1:
+            return
+        j = _idx(road, j + 1)
+        v = math.sqrt(max(v * v - 2.0 * o["scrape"], 0.0))
+        if v < 4.0:
+            return
+        if want[j, col]:
+            continue
+        lat0 = side * (road.half_width[j] + road.verge + RAIL_FACE - 1.0)
+        danger, _, s2, _, _ = _miss_line(road, ground, j, v, bounds, o, lat0)
+        if not (danger and s2 == side):
+            return
+        want[j, col] = True
 
 
 def _runs_from_mask(road: Road, want: np.ndarray, gap: int, min_len: int) -> list[tuple[int, int]]:
@@ -394,21 +432,28 @@ def rail_runs(road: Road, ground: Ground, corners: list[Corner], bounds, opts: d
         gx = road.pos[:, 0] + road.right[:, 0] * lat
         gz = road.pos[:, 2] + road.right[:, 1] * lat
         want[:, c] |= (road.pos[:, 1] - ground.height(gx, gz)) > o["verge_drop"]
+        lat = side * (road.half_width + road.verge + 12.0)
+        gx = road.pos[:, 0] + road.right[:, 0] * lat
+        gz = road.pos[:, 2] + road.right[:, 1] * lat
+        want[:, c] |= (road.pos[:, 1] - ground.height(gx, gz)) > o["bank_drop"]
     for cn in corners:
         v0 = min(o["v_top"], cn.v_approach * o["over_speed"])
         hits = []
         for k in _span(road, _idx(road, cn.turn_in - 10), cn.apex)[::3]:
-            danger, je, side, _ = _miss_line(road, ground, int(k), v0, bounds, o)
+            danger, je, side, _, v_edge = _miss_line(road, ground, int(k), v0, bounds, o)
             if danger:
-                hits.append((je, side))
+                hits.append((je, side, v_edge))
         for side in (-1, 1):
-            js = [je for je, s in hits if s == side]
+            js = [(je, ve) for je, s, ve in hits if s == side]
             if not js:
                 continue
-            # from before turn-in to past the farthest crossing (or the exit)
-            far = max(js + [cn.exit], key=lambda j: _ahead(road, cn.turn_in, j) % n)
+            # from before turn-in to past the farthest crossing (or the exit), then as far as a car
+            # scraping along it needs
+            jf, vf = max(js, key=lambda h: _ahead(road, cn.turn_in, h[0]) % n)
+            far = max(jf, cn.exit, key=lambda j: _ahead(road, cn.turn_in, j) % n)
             span = _span(road, _idx(road, cn.turn_in - 15), _idx(road, far + 15))
             want[span, 0 if side < 0 else 1] = True
+            _scrape_along(road, ground, want, jf, side, vf, bounds, o)
     ok = (road.bridge == "") & ~road.ford
     if road.on_lot is not None:
         ok &= road.on_lot < 0.5
@@ -419,13 +464,15 @@ def rail_runs(road: Road, ground: Ground, corners: list[Corner], bounds, opts: d
             w &= ~keep_clear[:, c]
         for a, b in _runs_from_mask(road, w, o["rail_gap"], o["rail_min"]):
             ends = []
-            for end, step in ((a, -1), (b, 1)):
-                # a run that stops at a bridge tapers into its parapet; else a flared end
+            for end, step, free in ((a, -1, "flare"), (b, 1, "trail")):
+                # a run that stops at a bridge tapers into its parapet; the leading end flares
+                # away and is buried, the trailing end (cars pass it, never meet it) runs on
+                # straight and dips into the ground so a car scraping along leaves it parallel
                 near = [_idx(road, end + step * k) for k in range(1, 4)]
-                ends.append("bridge" if any(road.bridge[i] != "" for i in near) else "flare")
+                ends.append("bridge" if any(road.bridge[i] != "" for i in near) else free)
             fl = o["flare"]
             a2 = _idx(road, a - (fl if ends[0] == "flare" else 3))
-            b2 = _idx(road, b + (fl if ends[1] == "flare" else 3))
+            b2 = _idx(road, b + (int(RAIL_BURY) if ends[1] == "trail" else 3))
             if road.closed and _ahead(road, a2, b2) >= n - 2 * fl:
                 a2, b2, ends = a, _idx(road, a - 1), ["loop", "loop"]
             out.append(RailRun(a=a2, b=b2, side=side, a_end=ends[0], b_end=ends[1], flare=fl))
@@ -438,7 +485,7 @@ def rail_mask(road: Road, runs: list[RailRun]) -> np.ndarray:
     m = np.zeros((n, 2), dtype=bool)
     for r in runs:
         a = _idx(road, r.a + (r.flare if r.a_end == "flare" else 3)) if r.a_end != "loop" else r.a
-        b = _idx(road, r.b - (r.flare if r.b_end == "flare" else 3)) if r.b_end != "loop" else r.b
+        b = _idx(road, r.b - (int(RAIL_BURY) if r.b_end == "trail" else 3)) if r.b_end != "loop" else r.b
         m[_span(road, a, b), 0 if r.side < 0 else 1] = True
     return m
 
@@ -504,6 +551,7 @@ def place_corner_signs(road: Road, ground: Ground, corners: list[Corner], runs: 
     for r in runs:  # no marker posts along a rail
         res.marker_skip[_span(road, r.a, r.b), 0 if r.side < 0 else 1] = True
     warn_spots: list[tuple[float, float]] = []
+    never_hide = set(SIGN_PROPS) | set(MOUNTED_PROPS) | SMASHABLE | WALLS
 
     def emit(name: str, x: float, z: float, yaw: float, sc: float, y: float | None = None) -> None:
         if placer.emit(name, x, z, yaw, sc, sink=0.05, y=y, radius=0.9):
@@ -557,7 +605,7 @@ def place_corner_signs(road: Road, ground: Ground, corners: list[Corner], runs: 
                     continue
                 i = _idx(road, cn.turn_in - int(round(d)))
                 for side in (cn.outside, -cn.outside):
-                    lat = side * (road.half_width[i] + road.verge + WARN_LATERAL)
+                    lat = side * (road.half_width[i] + road.verge + WARN_LATERAL * w_scale)
                     x, z = _point(road, i, lat)
                     if not _free_ground(road, ground, i, x, z, lat, keep_clear):
                         continue
@@ -565,7 +613,11 @@ def place_corner_signs(road: Road, ground: Ground, corners: list[Corner], runs: 
                         continue
                     y = float(ground.height(np.array([x]), np.array([z]))[0]) + WARN_CENTRE * w_scale
                     vis = _sight_distance(road, ground, i, x, y, z)
-                    score = vis - (25.0 if side != cn.outside else 0.0) - 0.4 * abs(off) \
+                    lines = [(float(road.pos[_idx(road, i - D), 0]), float(road.pos[_idx(road, i - D), 2]), x, z)
+                             for D in (150, 100, 50) if road.closed or i - D >= 0]
+                    hidden = sum(int(h.sum()) for nm, mm, h in _sight_hits(placer, placer.manifest, lines, never_hide)
+                                 if mm.get("category") not in MOVABLE_CATEGORIES)
+                    score = vis - (25.0 if side != cn.outside else 0.0) - 0.4 * abs(off) - 60.0 * hidden \
                         - (15.0 if not placer.occ.free(x, z, 1.0) else 0.0)
                     if best is None or score > best[0]:
                         best = (score, i, side, x, z, vis)
@@ -573,7 +625,7 @@ def place_corner_signs(road: Road, ground: Ground, corners: list[Corner], runs: 
             _, i, side, x, z, vis = best
             sides = (side, -side) if cn.severity == 3 or prop.startswith(WARN_SERIES) else (side,)
             for sd in sides:
-                lat = sd * (road.half_width[i] + road.verge + WARN_LATERAL)
+                lat = sd * (road.half_width[i] + road.verge + WARN_LATERAL * w_scale)
                 x, z = _point(road, i, lat)
                 if sd != side and not _free_ground(road, ground, i, x, z, lat, keep_clear):
                     continue
@@ -603,9 +655,9 @@ def place_corner_signs(road: Road, ground: Ground, corners: list[Corner], runs: 
                 lat = cn.outside * (road.half_width[i] + road.verge + RAIL_FACE)
                 x, z = _point(road, i, lat)
                 y = float(road_height_at(road, np.array([i]), np.array([lat]))[0]) - 0.12
-                emit(f"{CHEVRON_RAIL}_{hand}", x, z, face(x, z, eye), 1.0, y=y)
+                emit(f"{CHEVRON_RAIL}_{hand}", x, z, face(x, z, eye), ch_scale, y=y)
             else:
-                lat = cn.outside * (road.half_width[i] + road.verge + CHEVRON_LATERAL)
+                lat = cn.outside * (road.half_width[i] + road.verge + CHEVRON_LATERAL * ch_scale)
                 x, z = _point(road, i, lat)
                 if not _free_ground(road, ground, i, x, z, lat, keep_clear):
                     continue
@@ -616,35 +668,27 @@ def place_corner_signs(road: Road, ground: Ground, corners: list[Corner], runs: 
     return res
 
 
-def clear_sightlines(placer, manifest: dict, sightlines: list, smashable=frozenset(),
-                     walls=frozenset(), authored: dict | None = None) -> dict:
-    """Remove scattered rigid and leafy props standing within SIGHT_CLEAR of a sightline
-    (tarmac to board). Authored props stay and are reported as blocking: buildings
-    (KEEP_CATEGORIES) and the first authored[name] instances of each prop (placer.out lists
-    grow in placement order: snapshot the counts after the features, before the scatter).
-    Returns {"removed": {name: n}, "blocking": {name: n}}."""
-    if not sightlines:
-        return {"removed": {}, "blocking": {}}
-    seg = np.array(sightlines, dtype=np.float64)
+def _sight_hits(placer, manifest: dict, sightlines: list, skip=frozenset()):
+    """Per prop name that can hide a board (rigid or leafy, tall, not a thin post): a bool
+    array over its placed instances, True within SIGHT_CLEAR of one of the sightlines
+    (x0, z0, x1, z1), the board's own last 1.5 m excepted. Yields (name, manifest entry, hit)."""
+    seg = np.array(sightlines, dtype=np.float64).reshape(-1, 4)
     ax, az, bx, bz = seg[:, 0], seg[:, 1], seg[:, 2], seg[:, 3]
     dx, dz = bx - ax, bz - az
     L2 = np.maximum(dx * dx + dz * dz, 1e-6)
-    removed: dict[str, int] = {}
-    blocking: dict[str, int] = {}
-    keep_names = set(SIGN_PROPS) | set(MOUNTED_PROPS) | set(smashable) | set(walls)
+    lo = np.minimum(ax, bx) - 8.0, np.minimum(az, bz) - 8.0
+    hi = np.maximum(ax, bx) + 8.0, np.maximum(az, bz) + 8.0
     for name in list(placer.out.keys()):
-        if name in keep_names:
+        if name in skip:
             continue
         m = manifest.get(name, {})
         cat = m.get("category", "")
         col = m.get("collision", {})
         rigid = col.get("type", "none") != "none"
         leafy = cat in ("tree", "vegetation") and m.get("footprint_radius", 0.0) >= 0.8
-        if not (rigid or leafy) or cat == "ground_cover":
+        if not (rigid or leafy) or cat == "ground_cover" or not placer.out[name]:
             continue
         inst = np.array(placer.out[name], dtype=np.float64)
-        if len(inst) == 0:
-            continue
         px, pz, sc = inst[:, 0], inst[:, 2], inst[:, 4]
         rad = m.get("footprint_radius", 1.0) * 0.6 * sc
         tall = float(m.get("size", [0.0, 9.0, 0.0])[1]) * sc >= LOW_PROP
@@ -652,18 +696,35 @@ def clear_sightlines(placer, manifest: dict, sightlines: list, smashable=frozens
             tall &= float(col.get("radius", 1.0)) * sc >= THIN_PROP
         hit = np.zeros(len(inst), dtype=bool)
         for k in range(len(seg)):
+            near = (px > lo[0][k]) & (px < hi[0][k]) & (pz > lo[1][k]) & (pz < hi[1][k]) & tall
+            if not near.any():
+                continue
             t = np.clip(((px - ax[k]) * dx[k] + (pz - az[k]) * dz[k]) / L2[k], 0.0, 1.0)
-            # the last 1.5 m before the board is the sign's own footprint
             t = np.minimum(t, 1.0 - 1.5 / math.sqrt(L2[k]))
             d = np.hypot(px - (ax[k] + dx[k] * t), pz - (az[k] + dz[k] * t))
-            hit |= d < SIGHT_CLEAR + rad
-        hit &= tall
-        if not hit.any():
-            continue
-        keep = len(inst) if cat in KEEP_CATEGORIES else \
-            0 if cat in MOVABLE_CATEGORIES else min((authored or {}).get(name, 0), len(inst))
+            hit |= near & (d < SIGHT_CLEAR + rad)
+        if hit.any():
+            yield name, m, hit
+
+
+def clear_sightlines(placer, manifest: dict, sightlines: list, smashable=frozenset(),
+                     walls=frozenset(), authored: dict | None = None) -> dict:
+    """Remove scattered rigid and leafy props standing within SIGHT_CLEAR of a sightline
+    (tarmac to board). Authored props stay and are reported as blocking: buildings
+    (KEEP_CATEGORIES) and the first authored[name] instances of each prop (placer.out lists
+    grow in placement order: snapshot the counts after the features, before the scatter).
+    Returns {"removed": {name: n}, "blocking": {name: [(x, z), ...]}}."""
+    removed: dict[str, int] = {}
+    blocking: dict[str, list] = {}
+    if not sightlines:
+        return {"removed": removed, "blocking": blocking}
+    skip = set(SIGN_PROPS) | set(MOUNTED_PROPS) | set(smashable) | set(walls)
+    for name, m, hit in list(_sight_hits(placer, manifest, sightlines, skip)):
+        cat = m.get("category", "")
+        keep = len(hit) if cat in KEEP_CATEGORIES else \
+            0 if cat in MOVABLE_CATEGORIES else min((authored or {}).get(name, 0), len(hit))
         if hit[:keep].any():
-            blocking[name] = int(hit[:keep].sum())
+            blocking[name] = [(round(v[0]), round(v[2])) for v, h in zip(placer.out[name][:keep], hit[:keep]) if h]
         hit[:keep] = False
         if not hit.any():
             continue

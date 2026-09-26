@@ -282,13 +282,15 @@ def phys_surface(s: int) -> str:
 @dataclass
 class RailRun:
     """One continuous guardrail on one side of a road, sample a to sample b (forward, wrapping
-    on a loop). Ends: "flare" (the last `flare` m bend away from the road and the beam dips into
-    the ground), "bridge" (tapers in to meet the bridge parapet) or "loop" (a rail all round)."""
+    on a loop). Ends: "flare" (leading end: the first `flare` m bend away from the road and the
+    beam dips into the ground), "trail" (trailing end: straight on, the beam dips into the
+    ground over RAIL_BURY m), "bridge" (tapers in to meet the bridge parapet) or "loop" (a rail
+    all round)."""
     a: int
     b: int
     side: int      # -1 left, +1 right of the driving direction
     a_end: str = "flare"
-    b_end: str = "flare"
+    b_end: str = "trail"
     flare: int = 8
 
 
@@ -323,8 +325,8 @@ def build_guardrails(road: Road, runs: list[RailRun], mb: MeshBuilder, boxes: li
                 if kind == "flare" and d < r.flare:
                     u = 1.0 - d / r.flare
                     lat = max(lat, base + RAIL_FLARE_OUT * u * u)
-                    if d < RAIL_BURY:
-                        h = min(h, 0.15 + 0.85 * d / RAIL_BURY)
+                if kind in ("flare", "trail") and d < RAIL_BURY:
+                    h = min(h, 0.15 + 0.85 * d / RAIL_BURY)
                 elif kind == "bridge" and d < 6:
                     lat = min(lat, road.half_width[i] + 0.35 + (base - road.half_width[i] - 0.35) * d / 6.0)
             lat *= r.side

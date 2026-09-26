@@ -511,6 +511,18 @@ rates measured during ep3 work are noisy: report them, the lead re-measures at i
   `tools/physics/flyoff_probe.gd` proves it corner by corner.
 - The code is functions of one road and the terrain (`tools/mapgen/lib/roadside.py`,
   `road.py`); WorldGen calls them for every road of the world.
+- Props (`tools/blender/props/corner.py`, category `corner_sign`, `CATEGORY_VIEW` 1000 m):
+  `corner_warn_{curve,sharp,hairpin,series}_{left,right}` (3.1 m yellow diamonds on two posts,
+  board centre 3.05 m up at scale 1, placed at 1.4-1.7 with severity; `series` = linked bends, the first to
+  that side), `corner_chevron_{left,right}` (1.2 x 1.5 m boards, placed at 1.2-1.5) and
+  `corner_chevron_rail_{left,right}` (0.9 x 1.1 m on a rail post, same scale, no collider, not smashable). The old
+  `chevron_*` and `sign_curve_*` props are gone.
+- `map.json` `corners` (one list per road): `dir`, `severity` (1 fast, 2 sharp, 3 hairpin),
+  `kind`, `radius`, `angle`, speeds `v_approach`/`v_entry`/`v_min` (km/h, the plausible profile),
+  poses `brake`/`turn_in`/`mid`/`apex`/`exit` (`pos`, `yaw`, `s` in Track distance), `warning`
+  (`pos`, `yaw`, `s` of the road beside it, `prop`, `visible_m`; null when the corner before
+  announces it) and `path` (centreline `[x, y, z, half_width]` every 4 m from 20 m before
+  turn-in to 150 m past the exit).
 
 ### Camera (Camera)
 
