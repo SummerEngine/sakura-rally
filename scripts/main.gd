@@ -204,7 +204,8 @@ func _on_settings_changed() -> void:
 	_apply_quality()
 
 
-## Title hub pages: the garage parks the menu car under a showroom orbit (MenuStage).
+## Title hub pages: the garage parks the menu car on the workshop's display spot under a showroom
+## orbit (MenuStage; the car switch drives cars off and in there).
 func _on_menu_view_changed(view: String) -> void:
 	if Game.state == Game.State.MENU:
 		menu_stage.set_view(view)

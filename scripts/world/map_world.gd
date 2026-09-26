@@ -100,6 +100,7 @@ var finish_stop: Transform3D
 var checkpoints: Array[Dictionary] = []
 ## Gate id -> RoadGate (closed at build).
 var gates: Dictionary = {}
+## The garage display spot (map.json "garage": pos on the ground, yaw); identity when absent.
 var garage: Transform3D = Transform3D.IDENTITY
 var soft_course: SoftCourse
 var terrain_body: StaticBody3D
@@ -175,6 +176,8 @@ func build(yield_frames: bool = false) -> void:
 	var g: Dictionary = info.get("garage", {})
 	if g.has("pos"):
 		garage = Transform3D(Basis(Vector3.UP, float(g.get("yaw", 0.0))), _vec3(g["pos"]))
+	if info.has("garage"):
+		add_child(GarageSet.new().setup(self, info["garage"]))
 	sky_rig = Node3D.new()
 	sky_rig.set_script(SkyRigScript)
 	sky_rig.name = "SkyRig"

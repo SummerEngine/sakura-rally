@@ -142,8 +142,8 @@ func _garage() -> void:
 		await _seconds(2.0)
 	else:
 		_log("NOTE one car scene in the project: car selector switch skipped")
-	await _key(KEY_DOWN)
-	await _check_focus(panel.livery_picker, "Down: livery picker")
+	await _key(KEY_UP)
+	await _check_focus(panel.livery_picker, "Up: livery picker")
 	var c0 := int(game.get_setting("car_color"))
 	await _key(KEY_RIGHT)
 	_check(int(game.get_setting("car_color")) == c0 + 1, "Right on the livery picker picks paint %d (%s)" % [c0 + 1, game.get_setting("car_color")])
