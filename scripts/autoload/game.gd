@@ -78,18 +78,18 @@ const CARS: Array[Dictionary] = [
 		"name": "Sakura",
 		"name_jp": "桜",
 		"tagline": "Turbo four, all-wheel drive. Grips, forgives, flies.",
-		"spec": "2.0 turbo · AWD · 1250 kg",
+		"spec": "2.0 turbo · AWD · 0-100 3.5 s · 189 km/h",
 		"scene": "res://scenes/car/car.tscn",
-		"stats": {"speed": 0.8, "acceleration": 0.85, "grip": 0.85, "drift": 0.5},
+		"stats": {"speed": 0.78, "acceleration": 0.89, "grip": 0.88, "drift": 0.81},
 	},
 	{
 		"id": "hayate",
 		"name": "Hayate",
 		"name_jp": "疾風",
 		"tagline": "Rev-happy coupe, rear-wheel drive. Slides when you ask it to.",
-		"spec": "1.6 twin-cam · RWD · 1050 kg",
+		"spec": "1.6 twin-cam · RWD · 0-100 5.0 s · 188 km/h",
 		"scene": "res://scenes/car/car_hayate.tscn",
-		"stats": {"speed": 0.75, "acceleration": 0.6, "grip": 0.65, "drift": 0.9},
+		"stats": {"speed": 0.76, "acceleration": 0.6, "grip": 0.9, "drift": 0.9},
 	},
 ]
 
