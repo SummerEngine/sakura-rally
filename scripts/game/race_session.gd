@@ -57,8 +57,9 @@ var _off_route_shown: bool = false
 var _water_time: float = 0.0
 var _lake_poly: PackedVector2Array
 var _lake_level: float = -INF
-var _river: PackedVector3Array
-var _river_half: float = 0.0
+## The world's rivers (pack `water.rivers`): per river its centreline and half width.
+var _rivers: Array[PackedVector3Array] = []
+var _river_halves := PackedFloat32Array()
 var _play_half: float = 600.0
 var _tick: int = 0
 
@@ -81,11 +82,15 @@ func setup(new_map: MapWorld, new_car: Car, new_mode: String) -> void:
 	for p in lake.get("poly", []):
 		_lake_poly.append(Vector2(p[0], p[1]))
 	_lake_level = float(lake.get("level", -INF))
-	var river: Dictionary = water.get("river", {})
-	_river = PackedVector3Array()
-	for p in river.get("points", []):
-		_river.append(Vector3(p[0], p[1], p[2]))
-	_river_half = float(river.get("width", 0.0)) * 0.5
+	_rivers.clear()
+	_river_halves = PackedFloat32Array()
+	for river: Dictionary in water.get("rivers", []):
+		var pts := PackedVector3Array()
+		for p in river.get("points", []):
+			pts.append(Vector3(p[0], p[1], p[2]))
+		if pts.size() >= 2:
+			_rivers.append(pts)
+			_river_halves.append(float(river.get("width", 0.0)) * 0.5)
 	reset_progress()
 
 
@@ -285,20 +290,27 @@ func _water_height(pos: Vector3) -> float:
 	var p2 := Vector2(pos.x, pos.z)
 	if pos.y < _lake_level + 2.0 and not _lake_poly.is_empty() and Geometry2D.is_point_in_polygon(p2, _lake_poly):
 		return _lake_level
-	if _river.size() < 2:
-		return -INF
+	for r in _rivers.size():
+		var h := _river_height(_rivers[r], _river_halves[r], p2)
+		if h > -INF:
+			return h
+	return -INF
+
+
+## Surface height of one river under p2, or -INF outside it.
+func _river_height(river: PackedVector3Array, half: float, p2: Vector2) -> float:
 	var best := INF
 	var h := -INF
-	for k in range(0, _river.size() - 1, 2):
-		var a := _river[k]
-		var b := _river[mini(k + 2, _river.size() - 1)]
+	for k in range(0, river.size() - 1, 2):
+		var a := river[k]
+		var b := river[mini(k + 2, river.size() - 1)]
 		var ab := Vector2(b.x - a.x, b.z - a.z)
 		var t := clampf((p2 - Vector2(a.x, a.z)).dot(ab) / maxf(ab.length_squared(), 1e-4), 0.0, 1.0)
 		var d := p2.distance_squared_to(Vector2(a.x, a.z) + ab * t)
 		if d < best:
 			best = d
 			h = lerpf(a.y, b.y, t)
-	return h if best < _river_half * _river_half else -INF
+	return h if best < half * half else -INF
 
 
 func _notice(text: String) -> void:
