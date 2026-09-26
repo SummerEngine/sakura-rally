@@ -56,7 +56,8 @@ func _start_recording() -> void:
 		var sound := get_node("/root/Sound")
 		var liaison := "--liaison" in OS.get_cmdline_user_args()
 		sound.play_music(&"liaison" if liaison else &"drive", 0.5)
-		sound.play_ambience("natsu" if liaison else "hanami", 0.5)
+		sound.set_ambience_mix(Vector3(0.0, 1.0, 0.0) if liaison else Vector3(1.0, 0.0, 0.0))
+		sound.play_ambience(0.5)
 
 
 ## Step: when `cond` is true (checked every frame, after `delay` s since the previous

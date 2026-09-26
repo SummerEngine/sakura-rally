@@ -77,8 +77,14 @@ func _run() -> void:
 	ground = null
 	await physics_frame
 	if _want("maps"):
-		for map_id in str(options.get("maps", "hanami,momiji")).split(","):
-			await test_map(map_id, cars)
+		var routes := str(options.get("maps", "hanami,momiji,liaison")).split(",")
+		var map: MapWorld = await MapLapRunner.build_map(self, routes[0])
+		car_id = ""
+		_record("world build", "%d ms" % map.stats["build_ms"], "loads", map.is_built)
+		for route_id in routes:
+			await test_map(map, route_id, cars)
+		map.queue_free()
+		await physics_frame
 	_print_report()
 	game.request_quit()
 
@@ -1278,27 +1284,29 @@ func test_soak(seconds: float) -> void:
 
 # ---------------------------------------------------------------- real maps
 
-## Timed standing-start laps of a real map: the analog autopilot (reference) and the keyboard
-## bot (the "can a keyboard player drive it" proxy) for each car.
-func test_map(map_id: String, cars: Array[String]) -> void:
-	var map: MapWorld = await MapLapRunner.build_map(self, map_id)
+## Timed standing-start laps of a route of the world: the analog autopilot (reference) and the
+## keyboard bot (the "can a keyboard player drive it" proxy) for each car. Stage laps give the
+## medal references; the liaison runs from Hanami's finish stop through the open gates to
+## Momiji's grid.
+func test_map(map: MapWorld, route_id: String, cars: Array[String]) -> void:
+	map.select_route(route_id)
 	var runner := MapLapRunner.new()
+	var what := "lap" if map.closed else "run"
 	for id in cars:
 		await _spawn_car(id)
 		var ref: Dictionary = await runner.lap(self, map, car, false)
-		reference_laps["%s/%s" % [map_id, id]] = ref["time"]
-		_record("%s analog lap" % map_id, "%.2f s, %d resets, %d hard, off %.1f s" % [ref["time"], ref["resets"], ref["hard_impacts"], ref["off_road_s"]],
+		if map.closed:
+			reference_laps["%s/%s" % [route_id, id]] = ref["time"]
+		_record("%s analog %s" % [route_id, what], "%.2f s, %d resets, %d hard, off %.1f s" % [ref["time"], ref["resets"], ref["hard_impacts"], ref["off_road_s"]],
 				"clean", ref["finished"] and ref["resets"] == 0 and ref["hard_impacts"] == 0)
 		var kb: Dictionary = await runner.lap(self, map, car, true)
 		var ratio: float = kb["time"] / maxf(ref["time"], 1e-3)
-		_record("%s keyboard-bot lap" % map_id,
+		_record("%s keyboard-bot %s" % [route_id, what],
 				"%.2f s (x%.3f), %d resets, %d hard, slip %.0f°" % [kb["time"], ratio, kb["resets"], kb["hard_impacts"], kb["max_slip_deg"]],
 				"clean, slip < 25°, <= x1.12",
 				kb["finished"] and kb["resets"] == 0 and kb["hard_impacts"] == 0 and kb["max_slip_deg"] < 25.0 and ratio <= 1.12)
 		await _drop_car()
 	car_id = ""
-	map.queue_free()
-	await physics_frame
 
 
 func _print_report() -> void:

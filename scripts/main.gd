@@ -180,7 +180,7 @@ func _enter_menu(map_id: String, run: int) -> void:
 	if run != _run:
 		return
 	Sound.play_music(&"menu")
-	Sound.play_ambience(map.map_id)
+	Sound.play_ambience()
 	Sound.set_backdrop_mix(true, 0.01)
 	Game.set_state(Game.State.MENU)
 	_busy = false
@@ -252,7 +252,7 @@ func _start_race(map_id: String, mode: String, run: int) -> void:
 	Game.notify_session_started(map_id, mode)
 	Sound.set_backdrop_mix(false, 0.01)
 	Sound.play_music(&"liaison" if liaison else &"drive", 3.0 if liaison else 2.5)
-	Sound.play_ambience(map_id)
+	Sound.play_ambience()
 	Game.set_state(Game.State.INTRO)
 	post.letterbox_target = 1.0
 	post.snap()
@@ -339,7 +339,7 @@ func _finale(run: int) -> void:
 	if run != _run:
 		return
 	Sound.play_music(&"results", 2.0)
-	Sound.play_ambience(map.map_id)
+	Sound.play_ambience()
 	Sound.set_backdrop_mix(true, 0.01)
 	Game.set_state(Game.State.FINALE)
 	Game.notify_campaign_finished()

@@ -3,6 +3,8 @@ extends Node3D
 ## Screen passes: depth-curvature ink lines (a full-screen quad drawn first in the
 ## transparent pass) and the anime colour grade (a CanvasLayer under the UI).
 ## Also owns speed lines, letterbox, fades and the painted sun glow position.
+## The grade and the sun follow the Atmosphere in the scene (group "atmosphere") whenever its
+## preset changes, so the season blend at the camera reaches the grade without a caller.
 
 const INK_SHADER := preload("res://shaders/post_ink.gdshader")
 const GRADE_SHADER := preload("res://shaders/post_grade.gdshader")
@@ -24,6 +26,8 @@ var _speed: float = 0.0
 var _letterbox: float = 0.0
 var _fade: float = 0.0
 var _sun_vis: float = 0.0
+var _atmosphere: Atmosphere
+var _atmosphere_seen: int = -1
 
 
 func _ready() -> void:
@@ -67,6 +71,17 @@ func apply_preset(preset: Dictionary, sun_direction: Vector3) -> void:
 		grade_material.set_shader_parameter("grain_amount", g["grain"])
 
 
+func _follow_atmosphere() -> void:
+	if not is_instance_valid(_atmosphere) or not _atmosphere.is_inside_tree():
+		_atmosphere = get_tree().get_first_node_in_group(&"atmosphere") as Atmosphere
+		_atmosphere_seen = -1
+		if _atmosphere == null:
+			return
+	if _atmosphere.changed != _atmosphere_seen and _atmosphere.sun != null:
+		_atmosphere_seen = _atmosphere.changed
+		apply_preset(_atmosphere.preset, _atmosphere.sun_direction())
+
+
 func apply_quality(q: String) -> void:
 	# The ink is part of the look on every preset; low only thins it.
 	ink_material.set_shader_parameter("thickness", 1.0 if q == "low" else 1.25)
@@ -92,6 +107,7 @@ func _process(delta: float) -> void:
 	grade_material.set_shader_parameter("speed", _speed)
 	grade_material.set_shader_parameter("letterbox", _letterbox)
 	grade_material.set_shader_parameter("fade", _fade)
+	_follow_atmosphere()
 	var cam := get_viewport().get_camera_3d()
 	if cam == null:
 		return

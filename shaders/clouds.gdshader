@@ -1,5 +1,6 @@
 // Cumulus cards (atlas from tools/build/gen_clouds.py: R lit, G underside, A cover).
 // Colours come from the time of day, never from the texture. COLOR.r = haze.
+// CUSTOM0 = the card corner as a summer tower; `tower` mixes towards it.
 shader_type spatial;
 render_mode unshaded, cull_disabled, depth_draw_never, blend_mix, fog_disabled, shadows_disabled;
 
@@ -9,6 +10,11 @@ uniform vec4 shade : source_color = vec4(0.66, 0.71, 0.85, 1.0);
 uniform vec4 deep_shade : source_color = vec4(0.55, 0.58, 0.77, 1.0);
 uniform vec4 haze : source_color = vec4(0.93, 0.95, 0.94, 1.0);
 uniform float opacity = 1.0;
+uniform float tower = 0.0;
+
+void vertex() {
+	VERTEX = mix(VERTEX, CUSTOM0.xyz, tower);
+}
 
 void fragment() {
 	vec4 t = texture(atlas, UV);

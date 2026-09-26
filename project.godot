@@ -70,3 +70,11 @@ sr_grain={
 "type": "sampler2D",
 "value": "res://assets/textures/grain.png"
 }
+sr_season={
+"type": "sampler2D",
+"value": ""
+}
+sr_season_rect={
+"type": "vec4",
+"value": Vector4(0, 0, 1, 1)
+}
