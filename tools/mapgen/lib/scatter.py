@@ -3,6 +3,7 @@ followed by masked random scatter rules. Every placed prop registers its footpri
 so later props never overlap earlier ones."""
 from __future__ import annotations
 
+import copy
 import math
 
 import numpy as np
@@ -10,6 +11,11 @@ import numpy as np
 from . import geom, noise
 from .road import LOT_DROP, Road, road_index
 from .terrain import Terrain
+
+# The spectator kit and how often each one turns up in a crowd (the world's branch-road crowds
+# use these; the region specs carry their own lists).
+SPECTATORS = ["spectator_a", "spectator_b", "spectator_c", "spectator_d", "spectator_e", "spectator_f"]
+SPECTATOR_WEIGHTS = [1.0, 1.0, 0.8, 1.0, 0.7, 0.7]
 
 
 class Occupancy:
@@ -52,6 +58,29 @@ class Placer:
         self.route = road.length  # start line to finish (the lap, or start to arrival on an open road)
         # (x, z, radius) of scene instances that are not props (parked cars, sign boards)
         self.reserved: list[tuple[float, float, float]] = []
+        self.lots = list(road.lots)  # paved lots of every road (ground_at stands props on them)
+        # scatter over a region of a world: the rules sample `box` (x0, z0, x1, z1) and their
+        # density is multiplied by `weight` (a terrain grid: the region's season weight)
+        self.weight: np.ndarray | None = None
+        self.box: tuple[float, float, float, float] | None = None
+
+    def for_road(self, road: Road, season: str, weight: np.ndarray | None = None) -> "Placer":
+        """A placer for another road (and region) sharing this one's instances, occupancy,
+        reservations and random stream: road-relative features follow `road`."""
+        p = copy.copy(self)
+        p.road = road
+        p.season = season
+        p.weight = weight
+        p.start_s = 0.0
+        p.route = road.length
+        p.box = None
+        if weight is not None:
+            ter = self.ter
+            jj, ii = np.nonzero(weight > 1e-3)
+            if len(ii):
+                p.box = (ter.ox + ii.min() * ter.cell, ter.oz + jj.min() * ter.cell,
+                         ter.ox + ii.max() * ter.cell, ter.oz + jj.max() * ter.cell)
+        return p
 
     # ---------------------------------------------------------------- helpers
     def footprint(self, name: str) -> float:
@@ -79,7 +108,7 @@ class Placer:
     def ground_at(self, x: float, z: float) -> float:
         """Walkable height: the terrain, or a paved lot's surface where one covers it."""
         y = float(self.ter.height_at(x, z))
-        for lot in self.road.lots:
+        for lot in self.lots:
             if float(lot.sdf(x, z)) < 0.2:
                 y = max(y, lot.y - LOT_DROP)
         return y
@@ -312,14 +341,18 @@ class Placer:
         weights = np.array([r.get("weights", {}).get(p, 1.0) for p in props], dtype=np.float64)
         weights /= weights.sum()
         spacing = r["spacing"]
-        half = r.get("bounds", self.play_half + 60.0)
-        g = np.arange(-half, half, spacing)
-        GX, GZ = np.meshgrid(g, g)
+        ter = self.ter
+        bx0, bz0, bx1, bz1 = self.box if self.box is not None else \
+            (ter.ox, ter.oz, ter.ox + (ter.nx - 1) * ter.cell, ter.oz + (ter.nz - 1) * ter.cell)
+        GX, GZ = np.meshgrid(np.arange(bx0, bx1, spacing), np.arange(bz0, bz1, spacing))
         x = GX.ravel() + self.rng.uniform(-0.48, 0.48, GX.size) * spacing
         z = GZ.ravel() + self.rng.uniform(-0.48, 0.48, GZ.size) * spacing
-        ter = self.ter
+        # the region's share of the world (its season weight)
+        wr = ter.sample(self.weight, x, z) if self.weight is not None else np.ones(x.shape)
+        inside = wr > 1e-3
+        x, z, wr = x[inside], z[inside], wr[inside]
         D = ter.sample(ter.road_dist, x, z)
-        prob = np.full(x.shape, r.get("density", 1.0))
+        prob = r.get("density", 1.0) * wr
         prob *= (D >= r.get("road_min", 0.0)) & (D <= r.get("road_max", 1e9))
         prob *= ter.sample(ter.lot_sd, x, z) > r.get("lot_clear", 4.0)
         if "road_peak" in r:  # denser close to the road, thinning out
@@ -356,8 +389,11 @@ class Placer:
                 prob *= (x - cx) ** 2 + (z - cz) ** 2 >= rad * rad
         for poly in r.get("exclude_poly", []):
             prob *= ~geom.point_in_polygon(x, z, np.array(poly, dtype=np.float64))
-        edge = np.maximum(np.abs(x), np.abs(z))
-        prob *= (edge < r.get("edge_max", 790.0)) & (edge >= r.get("edge_min", 0.0))
+        # the play area (rule `bounds`, else play_half + 60 m) and the rim band, both measured by
+        # the rim metric (lib/terrain.py: the edge of the world's interior)
+        edge = ter.sample(ter.edge, x, z)
+        limit = min(r.get("bounds", self.play_half + 60.0), r.get("edge_max", 790.0))
+        prob *= (edge < limit) & (edge >= r.get("edge_min", 0.0))
         keep = self.rng.random(x.shape) < prob
         idx = np.nonzero(keep)[0]
         self.rng.shuffle(idx)

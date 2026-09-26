@@ -100,14 +100,15 @@ def frames(p: np.ndarray, closed: bool) -> tuple[np.ndarray, np.ndarray, np.ndar
         curv = np.gradient(ang) / np.maximum(np.gradient(np.concatenate([[0.0], np.cumsum(seg)])), 1e-6)
     return fwd, right, curv
 
-
 class RoadField:
     """Nearest-road-point queries over a regular (jittered) vertex grid, computed per
-    segment inside a bounded window so it stays cheap for big maps."""
+    segment inside a bounded window so it stays cheap for big maps. `origin` is the grid's
+    (x, z) corner (a scalar means the same for both)."""
 
-    def __init__(self, vx: np.ndarray, vz: np.ndarray, origin: float, cell: float):
+    def __init__(self, vx: np.ndarray, vz: np.ndarray, origin, cell: float):
         self.vx, self.vz = vx, vz
-        self.origin, self.cell = origin, cell
+        self.ox, self.oz = (origin, origin) if np.isscalar(origin) else origin
+        self.cell = cell
         shape = vx.shape
         self.dist = np.full(shape, np.inf)
         self.y = np.zeros(shape)
@@ -129,10 +130,10 @@ class RoadField:
             if L2 < 1e-12:
                 continue
             L = np.sqrt(L2)
-            i0 = max(0, int(np.floor((min(a[0], b[0]) - radius - self.origin) / self.cell)) - 1)
-            i1 = min(nx, int(np.ceil((max(a[0], b[0]) + radius - self.origin) / self.cell)) + 2)
-            j0 = max(0, int(np.floor((min(a[2], b[2]) - radius - self.origin) / self.cell)) - 1)
-            j1 = min(nz, int(np.ceil((max(a[2], b[2]) + radius - self.origin) / self.cell)) + 2)
+            i0 = max(0, int(np.floor((min(a[0], b[0]) - radius - self.ox) / self.cell)) - 1)
+            i1 = min(nx, int(np.ceil((max(a[0], b[0]) + radius - self.ox) / self.cell)) + 2)
+            j0 = max(0, int(np.floor((min(a[2], b[2]) - radius - self.oz) / self.cell)) - 1)
+            j1 = min(nz, int(np.ceil((max(a[2], b[2]) + radius - self.oz) / self.cell)) + 2)
             if i0 >= i1 or j0 >= j1:
                 continue
             wx = self.vx[j0:j1, i0:i1]
@@ -183,11 +184,13 @@ def polyline_distance(px: np.ndarray, pz: np.ndarray, poly: np.ndarray, closed: 
     return best, idx
 
 
-def bilinear(grid: np.ndarray, origin: float, cell: float, x: np.ndarray, z: np.ndarray) -> np.ndarray:
-    """Sample a (nz, nx) grid laid out from `origin` with spacing `cell`."""
-    nz, nx = grid.shape
-    fx = np.clip((x - origin) / cell, 0, nx - 1.001)
-    fz = np.clip((z - origin) / cell, 0, nz - 1.001)
+def bilinear(grid: np.ndarray, origin, cell: float, x: np.ndarray, z: np.ndarray) -> np.ndarray:
+    """Sample a (nz, nx) grid laid out from `origin` (its (x, z) corner; a scalar means the
+    same for both) with spacing `cell`."""
+    ox, oz = (origin, origin) if np.isscalar(origin) else origin
+    nz, nx = grid.shape[:2]
+    fx = np.clip((x - ox) / cell, 0, nx - 1.001)
+    fz = np.clip((z - oz) / cell, 0, nz - 1.001)
     i = np.floor(fx).astype(np.int64)
     j = np.floor(fz).astype(np.int64)
     u = fx - i
@@ -202,6 +205,12 @@ def bilinear(grid: np.ndarray, origin: float, cell: float, x: np.ndarray, z: np.
 def smoothstep(e0, e1, x):
     t = np.clip((np.asarray(x, dtype=np.float64) - e0) / (e1 - e0), 0.0, 1.0)
     return t * t * (3.0 - 2.0 * t)
+
+
+def smooth_min(a, b, k: float):
+    """Polynomial smooth minimum: min(a, b) rounded over a blend of width k."""
+    h = np.clip(0.5 + 0.5 * (b - a) / k, 0.0, 1.0)
+    return b + (a - b) * h - k * h * (1.0 - h)
 
 
 def point_in_polygon(px: np.ndarray, pz: np.ndarray, poly: np.ndarray) -> np.ndarray:
