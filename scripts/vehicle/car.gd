@@ -154,9 +154,12 @@ var livery_secondary: Color = Color("e8517c")
 @export var handbrake_slip_deg: float = 85.0
 @export var drift_exit_rate: float = 3.0
 ## Drift hold on throttle: yaw torque (Nm per rad) towards a slip angle set by the steering,
-## from `drift_hold` * allowance (full countersteer) to the full allowance (steering into it).
+## from `drift_hold` * allowance (full countersteer) to the full allowance (steering into it),
+## plus damping of slip changes (Nm per rad/s) so keyboard steering swings the slide smoothly
+## between those angles instead of snapping it straight or past the target.
 @export var drift_gain: float = 12000.0
-@export var drift_hold: float = 0.55
+@export var drift_hold: float = 0.7
+@export var drift_damping: float = 5000.0
 ## Traction control: allowed driven slip as a multiple of the surface's peak slip ratio.
 @export var tc_slip_multiple: float = 1.5
 @export var air_level_torque: float = 5500.0
@@ -673,7 +676,8 @@ func _update_tyres(state: PhysicsDirectBodyState3D, xf: Transform3D, com: Vector
 	for w: WheelState in wheels:
 		if w.contact and w.slip_long > 0.0:
 			var surf := TyreModel.get_surface(w.surface)
-			worst = maxf(worst, w.slip_long / (surf.long_peak * tc_slip_multiple))
+			# Holding a drift the driven wheels may spin further: throttle is what keeps it going.
+			worst = maxf(worst, w.slip_long / (surf.long_peak * tc_slip_multiple * (1.0 + 2.0 * drift_intent)))
 	if worst > 1.0:
 		_tc_scale = maxf(_tc_scale - dt * 3.0 * (worst - 0.9), 0.5)
 	else:
@@ -722,7 +726,7 @@ func _update_assists(state: PhysicsDirectBodyState3D, xf: Transform3D, ang: Vect
 	if drift_intent > 0.05 and thr > 0.5 and mag > deg_to_rad(4.0):
 		var into := -s * dir
 		var wanted := _drift_allowance(kmh) * lerpf(drift_hold, 1.0, (into + 1.0) * 0.5)
-		gov += dir * (wanted - mag) * drift_gain * drift_intent
+		gov += (dir * (wanted - mag) * drift_gain - slip_rate * drift_damping) * drift_intent
 	gov = clampf(gov, -slip_governor_max, slip_governor_max)
 
 	state.apply_torque(up * ((yaw_torque + gov) * float(grounded_wheels) / 4.0))

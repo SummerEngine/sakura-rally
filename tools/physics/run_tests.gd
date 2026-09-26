@@ -388,6 +388,7 @@ func test_skidpad(surface: String) -> void:
 	var window: Array[float] = []
 	var best := 0.0
 	var t := 0.0
+	var course := NAN
 	while t < 60.0:
 		var pos := car.global_position
 		var rel := Vector2(pos.x - centre.x, pos.z - centre.z)
@@ -406,8 +407,12 @@ func test_skidpad(surface: String) -> void:
 		_controls(clampf(0.25 + err * 0.4, 0.0, 1.0), 0.0, clampf(steer, -1.0, 1.0))
 		await _tick()
 		t += DT
-		var yaw_rate := car.angular_velocity.dot(car.global_transform.basis.y)
-		var a_lat := absf(speed * yaw_rate) / 9.81
+		# Lateral acceleration from the turn rate of the velocity itself (not the body's yaw rate,
+		# which also counts changes of body slip while the car slides in or out of the circle).
+		var v_flat := Vector2(car.linear_velocity.x, car.linear_velocity.z)
+		var now_course := v_flat.angle()
+		var a_lat := 0.0 if is_nan(course) else absf(speed * angle_difference(course, now_course) / DT) / 9.81
+		course = now_course
 		if absf(r - radius) < 2.0 and t > 4.0:
 			window.append(a_lat)
 			if window.size() > 120:
