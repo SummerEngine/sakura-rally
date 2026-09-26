@@ -7,15 +7,16 @@ extends SceneTree
 ## lineup Every people model (two dyes of each) lined up on the road ahead of the start, close
 ##        up, through the same materials, custom data and motion as in a crowd;
 ##        `focus=spectator_b,...` adds a close-up of each named model (front, three-quarter).
-## knock  Drives a car straight into a spectator twice (the flattest open approach on the
-##        map). The first drive (the session's first knocks, nothing saved) logs every frame:
-##        frame time, physics steps and the growth of pipeline compilations, nodes and
-##        resources; it prints the worst frames within 1 s of
-##        the first and second knock (FRAMES lines) and the car's speed loss per knock, and
-##        fails on a compilation, a node or resource created at hit time, or a frame there over
-##        25 ms (or 3x the drive's median frame on a busy machine). A reset must bring the
-##        whole crowd back. The second drive saves a frame every 0.1 s from a fixed camera
-##        (knock_NNN): tumble, lie, get-up, walk back.
+## knock  Drives a car straight into a spectator (the flattest open approach on the map),
+##        first with nobody to knock (it builds the pipelines the car and the map need on that
+##        line), then for real. That drive (the session's first knocks, nothing saved) logs
+##        every frame: frame time, physics steps and the growth of pipeline compilations,
+##        nodes and resources; it prints every compilation of the drive (COMPILES), the frames
+##        around the first and second knock and the worst within 1 s of them (FRAMES), and the
+##        car's speed loss per knock. It fails on a compilation, a node or resource created
+##        within 1 s of a knock, or a frame there over 25 ms (or 3x the drive's median frame on
+##        a busy machine). A reset must bring the whole crowd back. A last drive saves a frame
+##        every 0.1 s from a fixed camera (knock_NNN): tumble, lie, get-up, walk back.
 ##
 ##   timeout 300 nice -n 5 $S --summer-offscreen --audio-driver Dummy --disable-crash-handler \
 ##       --path . -s res://tools/crowd/crowd_probe.gd -- map=hanami mode=all dir=/tmp/ep3/people/new
@@ -335,6 +336,14 @@ func _knock(_spot: Dictionary) -> void:
 	cam.fov = 55.0
 	cam.global_position = run["eye"]
 	cam.look_at(target + Vector3.UP * 0.7 - face * 2.5)
+	# pass 0: the same drive with nobody to knock (the crowd's hash emptied for it), so the
+	# pipelines the car and the map need along the line (tyre dust, shadow splits) are built
+	# before the timed pass and every compilation left there belongs to the knocks
+	var cells: Dictionary = crowd._cells
+	crowd._cells = {}
+	await _drive(target, face, 7.5, false)
+	crowd._cells = cells
+	await _reset(heading, start)
 	# pass 1, timed: the first knocks of the session, nothing saved
 	_logging = true
 	await _drive(target, face, 7.5, false)
@@ -452,6 +461,19 @@ func _report_frames() -> void:
 		budget = maxf(FRAME_BUDGET_MS, all[all.size() / 2] * 3.0)
 		print("FRAMES whole knock run: %d frames  median %.1f ms  p95 %.1f ms  worst %.1f ms  (hit budget %.1f ms)" % [
 			all.size(), all[all.size() / 2], all[int(all.size() * 0.95)], all[all.size() - 1], budget])
+	# every compilation of the drive, against the drive's start and the first knock
+	if not _f_usec.is_empty():
+		var at: Array[String] = []
+		for i in range(1, _f_usec.size()):
+			var d := 0
+			for k in 3:
+				d += maxi(_f_perf[k][i] - _f_perf[k][i - 1], 0)
+			if d > 0:
+				at.append("+%d at %d ms" % [d, (_f_usec[i] - _f_usec[0]) / 1000])
+		var first_knock := "none"
+		if not _knocks.is_empty():
+			first_knock = "%d ms" % ((int(_knocks[0]["usec"]) - _f_usec[0]) / 1000)
+		print("COMPILES during the drive: %s  (first knock at %s)" % [", ".join(at) if at else "none", first_knock])
 	for m in _marks:
 		var t0: int = m["usec"]
 		var worst := 0.0
