@@ -26,6 +26,10 @@ const LONG_SPEED_FLOOR := 1.5
 const CAST_MARGIN := 0.3
 ## Upper limit of spring + bump-stop force per wheel (N).
 const MAX_ELASTIC_LOAD := 26000.0
+## Brake torque (Nm, all four wheels) that settles a coasting car at walking pace.
+const CREEP_BRAKE_TORQUE := 470.0
+## Below this wheel speed (m/s) the ABS lets the wheels lock (final stop).
+const ABS_MIN_SPEED := 3.0
 
 # ---------------------------------------------------------------- contract: read-only state
 var rpm: float = 900.0
@@ -93,31 +97,74 @@ var livery_secondary: Color = Color("e8517c")
 @export var roll_centre_rear: float = 0.14
 
 @export_group("Brakes")
-@export var brake_torque_front: float = 1250.0
-@export var brake_torque_rear: float = 700.0
+## Enough torque to lock any surface: the ABS below decides how much reaches the road.
+@export var brake_torque_front: float = 2800.0
+@export var brake_torque_rear: float = 2000.0
 @export var handbrake_torque: float = 3200.0
+## ABS holds each braked wheel at this fraction of the surface's peak slip ratio: near the
+## peak in a straight line, lower at full lock so the fronts keep lateral grip (trail braking).
+@export var abs_slip_ratio: float = 0.95
+@export var abs_slip_ratio_steer: float = 0.6
+## Arcade braking grip: the longitudinal tyre force is multiplied by this while braking.
+@export var brake_grip_bonus: float = 1.0
 
 @export_group("Steering")
-@export var steer_lock_low_deg: float = 32.0
-@export var steer_lock_high_deg: float = 8.0
-## Lock = low / (1 + kmh / ref), clamped to the high-speed lock.
-@export var steer_lock_speed_ref: float = 55.0
+## Lock at walking pace (deg). At speed the lock is what the front tyres can use on the surface
+## under them: the kinematic angle for the grip-limited radius plus the surface's peak slip angle.
+@export var steer_lock_deg: float = 32.0
+## Grip fraction assumed for the kinematic part of the lock.
+@export var steer_grip_margin: float = 1.0
+## Multiple of the surface's peak slip angle added to the kinematic angle.
+@export var steer_slip_factor: float = 1.3
 @export var ackermann: float = 0.6
 ## Front wheels turn towards the direction of travel by this fraction of the body slip angle
-## beyond `countersteer_deadzone_deg`: it catches slides without dulling grip cornering, where
-## a few degrees of body slip are normal (at 150 km/h it would cancel half the steering).
+## beyond `countersteer_deadzone_deg`, so a slide is caught by centring the wheel.
 @export var countersteer_gain: float = 0.55
 @export var countersteer_deadzone_deg: float = 4.0
 
 @export_group("Assists")
-## Yaw torque (Nm per rad/s) that resists rotation beyond what the steering asks for.
-@export var yaw_assist: float = 2200.0
-## Extra yaw damping at speed with the wheel centred (Nm per rad/s at 150 km/h).
-@export var straight_stability: float = 1500.0
-## Traction control: allowed driven slip as a multiple of the surface's peak slip ratio.
-@export var tc_slip_multiple: float = 2.4
-## ABS: allowed brake slip as a multiple of the surface's peak slip ratio.
-@export var abs_slip_multiple: float = 1.6
+## Yaw-rate control. The steering asks for input * the grip-limited yaw rate
+## (`yaw_grip` * mu * g / v, capped by the kinematic rate at full lock); torque (Nm per rad/s of
+## error) helps the car reach it on turn-in and stops it rotating past it.
+@export var yaw_grip: float = 0.95
+@export var yaw_turn_in_gain: float = 3000.0
+@export var yaw_damping_gain: float = 5000.0
+@export var yaw_torque_max: float = 9000.0
+## The assists read the steering through a short memory: it follows a larger input at once and
+## decays with this time constant (s), so tapping a key through a long corner keeps asking for the
+## corner instead of damping the car straight between taps. An opposite input resets it.
+@export var steer_memory_time: float = 0.25
+## Body-slip governor. Allowed slip without drift intent, as multiples of the rear surface's peak
+## slip angle at low (<= 40 km/h) and high (>= 150 km/h) speed; with the wheel centred it
+## shrinks to `slip_allow_centred_deg`.
+@export var slip_allow_low: float = 1.4
+@export var slip_allow_high: float = 0.7
+@export var slip_allow_centred_deg: float = 2.0
+## Governor torque per rad beyond the allowance, damping of slip growth (Nm per rad/s), limit.
+@export var slip_governor_gain: float = 30000.0
+@export var slip_governor_damping: float = 6000.0
+@export var slip_governor_max: float = 16000.0
+## Drift intent (0..1): the handbrake raises it, lifting or braking into a turn on a loose surface
+## raises it to `lift_turn_intent`, throttle holds it, centring the wheel ends it
+## (`drift_exit_rate` per second). With full intent the allowed slip is `drift_slip_*_deg`
+## (at <= 70 and >= 160 km/h); on the handbrake itself up to `handbrake_slip_deg`.
+@export var lift_turn_intent: float = 0.5
+@export var drift_slip_low_deg: float = 45.0
+@export var drift_slip_high_deg: float = 22.0
+@export var handbrake_slip_deg: float = 85.0
+@export var drift_exit_rate: float = 3.0
+## Drift hold on throttle: yaw torque (Nm per rad) towards a slip angle set by the steering,
+## from `drift_hold` * allowance (full countersteer) to the full allowance (steering into it),
+## plus damping of slip changes (Nm per rad/s) so keyboard steering swings the slide smoothly
+## between those angles instead of snapping it straight or past the target.
+@export var drift_gain: float = 12000.0
+@export var drift_hold: float = 0.7
+@export var drift_damping: float = 5000.0
+## Traction control: allowed driven slip as a multiple of the surface's peak slip ratio; with
+## full drift intent the allowance grows by `drift_tc_relax` times itself (throttle keeps a
+## slide going, so the wheels may spin further).
+@export var tc_slip_multiple: float = 1.5
+@export var drift_tc_relax: float = 2.0
 @export var air_level_torque: float = 5500.0
 @export var air_damping: float = 5800.0
 @export var air_yaw_torque: float = 900.0
@@ -128,8 +175,19 @@ var livery_secondary: Color = Color("e8517c")
 @export var downforce_area: float = 0.45
 @export var aero_front_share: float = 0.45
 
+@export_group("Engine")
+## Engine, gearbox and driveline tuning; null = the Sakura defaults of `Drivetrain`.
+@export var drivetrain: Drivetrain
+## Loop set for car_audio.gd: &"turbo4" (Sakura), &"na4" (Hayate).
+@export var engine_sound: StringName = &"turbo4"
+
+# ---------------------------------------------------------------- read-only extras
+## Body slip angle (rad): + when the velocity points right of the nose (nose rotated left).
+var body_slip: float = 0.0
+## 0..1, see `lift_turn_intent`.
+var drift_intent: float = 0.0
+
 # ---------------------------------------------------------------- internals
-var drivetrain: Drivetrain = Drivetrain.new()
 var player_input: CarInput = CarInput.new()
 ## Microseconds spent in the last _integrate_forces (telemetry).
 var step_usec: int = 0
@@ -140,8 +198,9 @@ var _shape: CylinderShape3D
 var _queries: Array[PhysicsShapeQueryParameters3D] = []
 var _free_length: PackedFloat32Array = [0.0, 0.0, 0.0, 0.0]
 var _prev_length: PackedFloat32Array = [0.0, 0.0, 0.0, 0.0]
-var _abs_scale: PackedFloat32Array = [1.0, 1.0, 1.0, 1.0]
 var _omegas: PackedFloat32Array = [0.0, 0.0, 0.0, 0.0]
+## Wheel inertia plus the tyre's linearised grip term from the last tick (for the clutch).
+var _wheel_inertias: PackedFloat32Array = [1.25, 1.25, 1.25, 1.25]
 var _hold_anchor: Array[Vector3] = [Vector3.ZERO, Vector3.ZERO, Vector3.ZERO, Vector3.ZERO]
 var _hold_active: bool = false
 var _tc_scale: float = 1.0
@@ -150,11 +209,20 @@ var _prev_vertical_speed: float = 0.0
 var _impact_cooldown: float = 0.0
 var _pending_reset: bool = false
 var _pending_transform: Transform3D
-var _driver_delta: float = 0.0
+var _gravity: float = 9.8
+## Grip under the front wheels (mu incl. grip_scale, peak slip angle) and the rear wheels'
+## peak slip angle and looseness, kept from the last contact while airborne.
+var _front_mu: float = 1.34
+var _front_lat_peak: float = 0.125
+var _rear_lat_peak: float = 0.125
+var _rear_loose: bool = false
+var _prev_slip: float = 0.0
+var _steer_memory: float = 0.0
 
 
 func _ready() -> void:
-	mass = 1250.0
+	drivetrain = drivetrain.duplicate() as Drivetrain if drivetrain != null else Drivetrain.new()
+	_gravity = float(ProjectSettings.get_setting("physics/3d/default_gravity", 9.8))
 	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
 	center_of_mass = centre_of_mass
 	inertia = body_inertia
@@ -246,10 +314,12 @@ func shift_down() -> void:
 	drivetrain.request_shift(-1, local_velocity.dot(Vector3.FORWARD), WHEEL_RADIUS)
 
 
-## Steering lock (radians) at a given speed - also used by the autopilot.
+## Steering lock (radians) at a given speed on the surface under the front wheels - also used by
+## the autopilot: the kinematic angle for the grip-limited radius plus the tyres' peak slip angle.
 func steer_lock_at(kmh: float) -> float:
-	var lock := steer_lock_low_deg / (1.0 + absf(kmh) / steer_lock_speed_ref)
-	return deg_to_rad(maxf(lock, steer_lock_high_deg))
+	var v := maxf(absf(kmh) / 3.6, 1.0)
+	var kinematic := atan(WHEELBASE * _front_mu * _gravity * steer_grip_margin / (v * v))
+	return minf(kinematic + _front_lat_peak * steer_slip_factor, deg_to_rad(steer_lock_deg))
 
 
 ## Average grip coefficient under the grounded wheels (for the autopilot / camera).
@@ -292,6 +362,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	local_velocity = xf.basis.inverse() * lin
 	var v_fwd := lin.dot(fwd)
 	speed_kmh = v_fwd * 3.6
+	body_slip = atan2(local_velocity.x, -local_velocity.z) if Vector2(local_velocity.x, local_velocity.z).length() > 1.0 else 0.0
 
 	if controlled_by_player:
 		_read_player(dt)
@@ -306,6 +377,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	var thr_in := clampf(input_brake if reversing else input_throttle, 0.0, 1.0)
 	var brk_in := clampf(input_throttle if reversing else input_brake, 0.0, 1.0)
 	handbrake = move_toward(handbrake, 1.0 if input_handbrake else 0.0, dt * 16.0)
+	drivetrain.sliding = drift_intent > 0.1
 	if not launch_hold:
 		drivetrain.update_transmission(dt, v_fwd, input_throttle, input_brake,
 				grounded_wheels >= 2 and handbrake < 0.1, automatic, WHEEL_RADIUS)
@@ -327,19 +399,20 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	if not hold and thr_in < 0.02 and absf(v_fwd) < 3.0 and grounded_wheels >= 3:
 		var slope_accel := absf(state.total_gravity.dot(fwd))
 		var total_brake := 2.0 * (brake_torque_front + brake_torque_rear)
-		var hill := slope_accel * mass * WHEEL_RADIUS / total_brake * 1.4
-		brk_in = maxf(brk_in, clampf(0.12 + hill, 0.0, 1.0))
+		var hill := slope_accel * mass * WHEEL_RADIUS * 1.4
+		brk_in = maxf(brk_in, clampf((CREEP_BRAKE_TORQUE + hill) / total_brake, 0.0, 1.0))
 
 	for i in 4:
 		var w: WheelState = wheels[i]
 		_omegas[i] = w.spin_speed
-	drivetrain.pre_wheels(dt, thr_in * _tc_scale, _omegas, wheel_inertia, handbrake > 0.5)
+	drivetrain.traction_scale = _tc_scale
+	drivetrain.pre_wheels(dt, thr_in * _tc_scale, _omegas, _wheel_inertias, handbrake > 0.5)
 	_update_tyres(state, xf, com, lin, ang, dt, brk_in, hold)
 	for i in 4:
 		var w: WheelState = wheels[i]
 		_omegas[i] = w.spin_speed
 	drivetrain.post_wheels(_omegas)
-	_update_assists(state, xf, com, lin, ang, dt, v_fwd, thr_in)
+	_update_assists(state, xf, ang, dt, v_fwd, thr_in)
 	_apply_aero(state, xf, lin, v_fwd)
 	_update_air(state, xf, ang, dt)
 	_read_contacts(state)
@@ -364,15 +437,15 @@ func _read_player(dt: float) -> void:
 func _update_steering(v_fwd: float) -> void:
 	var kmh := absf(v_fwd) * 3.6
 	var lock := steer_lock_at(kmh)
-	_driver_delta = clampf(input_steer, -1.0, 1.0) * lock
-	var delta := _driver_delta
-	# Countersteer assist: front wheels lean towards the direction of travel when the body slides.
+	var delta := clampf(input_steer, -1.0, 1.0) * lock
+	# Countersteer assist: front wheels lean towards the direction of travel when the body slides
+	# (much less on the handbrake or while the driver holds a drift).
 	if v_fwd > 3.0 and grounded_wheels >= 2:
-		var slip_angle := atan2(local_velocity.x, -local_velocity.z)
-		var excess := signf(slip_angle) * maxf(absf(slip_angle) - deg_to_rad(countersteer_deadzone_deg), 0.0)
-		var gain := countersteer_gain * smoothstep(3.0, 12.0, v_fwd) * (1.0 - 0.7 * handbrake)
+		var excess := signf(body_slip) * maxf(absf(body_slip) - deg_to_rad(countersteer_deadzone_deg), 0.0)
+		var gain := countersteer_gain * smoothstep(3.0, 12.0, v_fwd) * (1.0 - 0.7 * handbrake) \
+				* (1.0 - 0.6 * drift_intent)
 		delta += clampf(excess, -0.7, 0.7) * gain
-	var max_total := deg_to_rad(steer_lock_low_deg + 4.0)
+	var max_total := deg_to_rad(steer_lock_deg + 4.0)
 	delta = clampf(delta, -max_total, max_total)
 	steer = clampf(delta / lock, -1.0, 1.0)
 	# Ackermann: inner wheel steers more.
@@ -446,6 +519,7 @@ func _update_suspension(state: PhysicsDirectBodyState3D, xf: Transform3D, dt: fl
 		else:
 			w.surface_mu = 0.0
 			w.surface_roughness = 0.0
+	_update_surface_grip()
 
 	# Spring, damper, bump stop and anti-roll bars -> tyre load.
 	for i in 4:
@@ -487,16 +561,18 @@ func _update_tyres(state: PhysicsDirectBodyState3D, xf: Transform3D, com: Vector
 	for w: WheelState in wheels:
 		total_load += w.load
 	var com_height := centre_of_mass.y
+	var abs_ratio := lerpf(abs_slip_ratio, abs_slip_ratio_steer, absf(clampf(input_steer, -1.0, 1.0)))
 
 	for i in 4:
 		var w: WheelState = wheels[i]
 		var inertia_i := wheel_inertia + drivetrain.extra_inertia[i]
 		var t_drive := drivetrain.drive_torque[i]
-		var t_brake := brk_in * (brake_torque_front if w.is_front else brake_torque_rear) * _abs_scale[i]
-		if not w.is_front:
-			t_brake = maxf(t_brake, handbrake * handbrake_torque)
+		var t_foot := brk_in * (brake_torque_front if w.is_front else brake_torque_rear)
+		var t_hand := 0.0 if w.is_front else handbrake * handbrake_torque
+		var t_brake := maxf(t_foot, t_hand)
 		var omega := w.spin_speed
 
+		_wheel_inertias[i] = wheel_inertia
 		if not w.contact or w.load <= 0.0:
 			omega += t_drive * dt / inertia_i
 			var b := (t_brake + 4.0) * dt / inertia_i
@@ -530,6 +606,7 @@ func _update_tyres(state: PhysicsDirectBodyState3D, xf: Transform3D, com: Vector
 		var f1 := TyreModel.combined(kappa_now + 0.002, tan_a, tyre_load, surf).x
 		var stiffness := maxf((f1 - f0) / 0.002, 0.0) / denom
 		var i_eff := inertia_i + stiffness * WHEEL_RADIUS * WHEEL_RADIUS * dt
+		_wheel_inertias[i] = wheel_inertia + stiffness * WHEEL_RADIUS * WHEEL_RADIUS * dt
 		var omega_t := omega + dt * (t_drive - WHEEL_RADIUS * f0) / i_eff
 		var slip_t := omega_t * WHEEL_RADIUS - v_long
 		if slip_t * slip_v < 0.0 and absf(slip_v) > 1e-4:
@@ -537,6 +614,13 @@ func _update_tyres(state: PhysicsDirectBodyState3D, xf: Transform3D, com: Vector
 			stiffness = maxf(stiffness, f0 / slip_v)
 			i_eff = inertia_i + stiffness * WHEEL_RADIUS * WHEEL_RADIUS * dt
 			omega_t = omega + dt * (t_drive - WHEEL_RADIUS * f0) / i_eff
+		# ABS: the foot brake may slow the wheel only down to the target slip ratio, so the tyre
+		# stays at (just under) its braking peak instead of locking. The handbrake bypasses it.
+		if t_foot > 0.0 and absf(v_long) > ABS_MIN_SPEED and not hold:
+			var omega_abs := maxf(absf(v_long) - surf.long_peak * abs_ratio * denom, 0.0) / WHEEL_RADIUS
+			var room := absf(omega_t) - omega_abs if omega_t * v_long > 0.0 else absf(omega_t)
+			t_foot = minf(t_foot, maxf(room, 0.0) * i_eff / dt)
+			t_brake = maxf(t_foot, t_hand)
 		var brake_step := t_brake * dt / i_eff
 		omega = 0.0 if absf(omega_t) <= brake_step else omega_t - signf(omega_t) * brake_step
 		if hold:
@@ -544,7 +628,9 @@ func _update_tyres(state: PhysicsDirectBodyState3D, xf: Transform3D, com: Vector
 
 		var kappa := (omega * WHEEL_RADIUS - v_long) / denom
 		var f := TyreModel.combined(kappa, tan_a, tyre_load, surf)
-		var fx := f.x
+		# Arcade braking grip: a braked tyre gets more longitudinal force (friction ellipse).
+		var bx := brake_grip_bonus if t_foot > 1.0 and kappa * v_long < 0.0 else 1.0
+		var fx := f.x * bx
 		var fy := f.y
 		var peak := TyreModel.peak_force(tyre_load, surf)
 		var share := w.load / maxf(total_load, 1.0)
@@ -567,7 +653,7 @@ func _update_tyres(state: PhysicsDirectBodyState3D, xf: Transform3D, com: Vector
 			fx -= surf.rolling * load * clampf(v_long / 0.5, -1.0, 1.0)
 			fx -= clampf(surf.drag * load * v_long, -0.35 * load, 0.35 * load)
 			fy -= clampf(surf.drag * load * v_lat, -0.35 * load, 0.35 * load)
-		var total := sqrt(fx * fx + fy * fy)
+		var total := sqrt(fx * fx / (bx * bx) + fy * fy)
 		var cap := maxf(peak, surf.drag * load * 30.0)
 		if total > cap:
 			fx *= cap / total
@@ -589,40 +675,132 @@ func _update_tyres(state: PhysicsDirectBodyState3D, xf: Transform3D, com: Vector
 		w.slip = f.z
 		w.slide_speed = Vector2(omega * WHEEL_RADIUS - v_long, v_lat).length()
 
-		# ABS modulation per wheel.
-		var abs_limit := surf.long_peak * abs_slip_multiple
-		if brk_in > 0.05 and kappa < -abs_limit and absf(v_long) > 3.0:
-			_abs_scale[i] = maxf(_abs_scale[i] - dt * 10.0, 0.3)
-		else:
-			_abs_scale[i] = minf(_abs_scale[i] + dt * 5.0, 1.0)
-
 	# Traction control from the worst driven wheel.
 	var worst := 0.0
 	for w: WheelState in wheels:
 		if w.contact and w.slip_long > 0.0:
 			var surf := TyreModel.get_surface(w.surface)
-			worst = maxf(worst, w.slip_long / (surf.long_peak * tc_slip_multiple))
+			# Holding a drift the driven wheels may spin further: throttle is what keeps it going.
+			worst = maxf(worst, w.slip_long / (surf.long_peak * tc_slip_multiple * (1.0 + drift_tc_relax * drift_intent)))
 	if worst > 1.0:
-		_tc_scale = maxf(_tc_scale - dt * 4.0 * (worst - 0.8), 0.35)
+		_tc_scale = maxf(_tc_scale - dt * 3.0 * (worst - 0.9), 0.5)
 	else:
-		_tc_scale = minf(_tc_scale + dt * 2.5, 1.0)
+		_tc_scale = minf(_tc_scale + dt * 5.0, 1.0)
 
 
-func _update_assists(state: PhysicsDirectBodyState3D, xf: Transform3D, _com: Vector3, _lin: Vector3,
-		ang: Vector3, _dt: float, v_fwd: float, _thr: float) -> void:
+## Yaw-rate control, body-slip governor and drift hold: yaw torques about the car's up axis.
+func _update_assists(state: PhysicsDirectBodyState3D, xf: Transform3D, ang: Vector3, dt: float,
+		v_fwd: float, thr: float) -> void:
+	var kmh := v_fwd * 3.6
+	var s_in := clampf(input_steer, -1.0, 1.0)
+	if absf(s_in) >= absf(_steer_memory) or s_in * _steer_memory < 0.0:
+		_steer_memory = s_in
+	else:
+		_steer_memory = s_in + (_steer_memory - s_in) * exp(-dt / steer_memory_time)
+	var s := _steer_memory
+	_update_drift_intent(dt, kmh, thr, s)
+	var slip_rate := angle_difference(_prev_slip, body_slip) / dt
+	_prev_slip = body_slip
 	if grounded_wheels < 2 or v_fwd < 4.0:
 		return
 	var up := xf.basis.y
 	var yaw_rate := ang.dot(up)
-	var target := -v_fwd * tan(_driver_delta) / WHEELBASE
-	var ground := float(grounded_wheels) / 4.0
-	var torque := 0.0
-	if absf(yaw_rate) > absf(target) and signf(yaw_rate - target) == signf(yaw_rate):
-		torque -= (yaw_rate - target) * yaw_assist * (1.0 - 0.85 * handbrake)
-	var centred := 1.0 - clampf(absf(input_steer) * 3.0, 0.0, 1.0)
-	torque -= yaw_rate * straight_stability * centred * clampf(v_fwd / 41.7, 0.0, 1.2) * (1.0 - handbrake)
-	torque = clampf(torque, -6000.0, 6000.0) * ground
-	state.apply_torque(up * torque)
+
+	# Yaw rate: the steering asks for a share of the grip-limited rate. Below it (turn-in, direction
+	# changes) the torque helps; above it (or with the wheel centred) it damps. Fades out while the
+	# driver holds a drift or pulls the handbrake.
+	var r_max := minf(v_fwd * tan(deg_to_rad(steer_lock_deg)) / WHEELBASE, yaw_grip * _front_mu * _gravity / v_fwd)
+	var target := -s * r_max
+	var under := absf(target) > 0.01 and yaw_rate * signf(target) < absf(target)
+	var yaw_torque := (target - yaw_rate) * (yaw_turn_in_gain if under else yaw_damping_gain)
+	yaw_torque = clampf(yaw_torque, -yaw_torque_max, yaw_torque_max) * (1.0 - maxf(drift_intent, handbrake))
+
+	# Body-slip governor: rotates the nose back towards the velocity beyond the allowed slip and
+	# damps slip growth close to it.
+	var mag := absf(body_slip)
+	var dir := signf(body_slip)
+	var allow := _slip_allowance(kmh, absf(s))
+	var gov := 0.0
+	if mag > allow:
+		gov -= dir * (mag - allow) * slip_governor_gain
+	if slip_rate * dir > 0.0:
+		gov -= slip_rate * slip_governor_damping * smoothstep(allow * 0.6, allow, mag)
+	# Drift hold: on throttle with drift intent, steer the slip towards a target angle: steering
+	# into the slide asks for the full allowance, full countersteer for `drift_hold` of it.
+	if drift_intent > 0.05 and thr > 0.5 and mag > deg_to_rad(4.0):
+		var into := -s * dir
+		var wanted := _drift_allowance(kmh) * lerpf(drift_hold, 1.0, (into + 1.0) * 0.5)
+		gov += (dir * (wanted - mag) * drift_gain - slip_rate * drift_damping) * drift_intent
+	gov = clampf(gov, -slip_governor_max, slip_governor_max)
+
+	state.apply_torque(up * ((yaw_torque + gov) * float(grounded_wheels) / 4.0))
+
+
+## Allowed body slip (rad) for the speed, steering and drift intent.
+func _slip_allowance(kmh: float, steer_abs: float) -> float:
+	var t := smoothstep(40.0, 150.0, kmh)
+	var base := _rear_lat_peak * lerpf(slip_allow_low, slip_allow_high, t)
+	base = lerpf(deg_to_rad(slip_allow_centred_deg), base, clampf(steer_abs * 2.0, 0.0, 1.0))
+	var allow := lerpf(base, _drift_allowance(kmh), drift_intent)
+	if handbrake > 0.0:
+		allow = maxf(allow, handbrake * deg_to_rad(lerpf(handbrake_slip_deg, drift_slip_high_deg, t)))
+	return allow
+
+
+func _drift_allowance(kmh: float) -> float:
+	return deg_to_rad(lerpf(drift_slip_low_deg, drift_slip_high_deg, smoothstep(70.0, 160.0, kmh)))
+
+
+## Drift intent: handbrake -> 1; lift or brake with the wheel turned on a loose surface ->
+## `lift_turn_intent`; held by throttle while sliding; centring the wheel ends it.
+func _update_drift_intent(dt: float, kmh: float, thr: float, s: float) -> void:
+	if grounded_wheels < 2:
+		return
+	var steer_abs := absf(s)
+	if handbrake > 0.5 and kmh > 15.0:
+		drift_intent = move_toward(drift_intent, 1.0, dt * 8.0)
+		return
+	var lift_turn := _rear_loose and thr < 0.2 and steer_abs > 0.6 and kmh > 25.0 and kmh < 110.0
+	if lift_turn and drift_intent < lift_turn_intent:
+		drift_intent = move_toward(drift_intent, lift_turn_intent, dt * 1.5)
+		return
+	var decay := 0.0
+	if steer_abs < 0.15:
+		decay = drift_exit_rate
+	elif kmh < 15.0 or absf(body_slip) < deg_to_rad(5.0):
+		decay = 1.5
+	elif thr < 0.5 and not lift_turn:
+		decay = 1.0
+	drift_intent = move_toward(drift_intent, 0.0, decay * dt)
+
+
+## Grip under the front wheels and peak slip / looseness under the rear ones (kept while airborne).
+func _update_surface_grip() -> void:
+	var mu := 0.0
+	var lat := 0.0
+	var n := 0
+	for i in 2:
+		var w: WheelState = wheels[i]
+		if w.contact:
+			mu += w.surface_mu
+			lat += TyreModel.get_surface(w.surface).lat_peak
+			n += 1
+	if n > 0:
+		_front_mu = mu / n
+		_front_lat_peak = lat / n
+	lat = 0.0
+	n = 0
+	var loose := false
+	for i in range(2, 4):
+		var w: WheelState = wheels[i]
+		if w.contact:
+			var surf := TyreModel.get_surface(w.surface)
+			lat += surf.lat_peak
+			loose = loose or surf.loose
+			n += 1
+	if n > 0:
+		_rear_lat_peak = lat / n
+		_rear_loose = loose
 
 
 func _apply_aero(state: PhysicsDirectBodyState3D, xf: Transform3D, lin: Vector3, v_fwd: float) -> void:
@@ -710,6 +888,10 @@ func _reset_state() -> void:
 	airborne_time = 0.0
 	_tc_scale = 1.0
 	_hold_active = false
+	drift_intent = 0.0
+	body_slip = 0.0
+	_prev_slip = 0.0
+	_steer_memory = 0.0
 	player_input.reset()
 	drivetrain.reset()
 	if launch_hold:
@@ -721,7 +903,6 @@ func _reset_state() -> void:
 		w.slip_long = 0.0
 		w.slip_lat = 0.0
 		w.slide_speed = 0.0
-		_abs_scale[i] = 1.0
 		_prev_length[i] = w.suspension_length
 
 

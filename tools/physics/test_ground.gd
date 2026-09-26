@@ -1,6 +1,7 @@
 extends StaticBody3D
 ## Physics proving ground (scenes/test/physics_test.tscn), built from code:
-## flat ground (grass) with surface patches, tarmac/gravel runways, five skidpads, a 15° slope,
+## flat ground (grass) with surface patches, tarmac/gravel runways, five skidpads, three handling
+## plazas (tarmac, gravel, dirt), a 15° slope,
 ## kicker ramps, a bumpy lane, a banked turn, a wall and a closed ~1.5 km loop (Path3D "Loop",
 ## first half tarmac, second half gravel) for the autopilot.
 ## Implements the track provider API used by the car: surface_at(point) and nearest_reset_transform(pos).
@@ -16,6 +17,7 @@ const COLORS := {
 	&"tarmac": Color("505669"), &"gravel": Color("c2a27a"), &"dirt": Color("9a7552"),
 	&"grass": Color("8dc266"), &"sand": Color("e6d3a3"),
 }
+const PLAZAS: Array[StringName] = [&"tarmac", &"gravel", &"dirt"]
 
 ## name -> Rect2 (x, z, width, depth) on the ground plane and its surface.
 var patches: Array[Dictionary] = []
@@ -174,6 +176,10 @@ func _build_patches() -> void:
 	_add_patch("jump_lane", Rect2(-262.0, 120.0, 24.0, 360.0), &"gravel")
 	# Bumpy lane.
 	_add_patch("bump_lane", Rect2(-538.0, -460.0, 16.0, 200.0), &"dirt")
+	# Handling plazas, 200 x 1100 m: room for a run-up to 160 km/h followed by full-lock panic
+	# steers, turn-in, slalom and drifts.
+	for i in PLAZAS.size():
+		_add_patch("plaza_%s" % PLAZAS[i], Rect2(400.0 + i * 250.0, -550.0, 200.0, 1100.0), PLAZAS[i])
 
 
 func _build_loop() -> void:
@@ -422,3 +428,5 @@ func _build_spawns() -> void:
 	spawns["slope_up"] = Transform3D(slope_basis, slope_centre)
 	spawns["slope_across"] = Transform3D(slope_basis * Basis(Vector3.UP, PI * 0.5), slope_centre)
 	spawns["loop_start"] = loop_transform(0.0)
+	for i in PLAZAS.size():
+		spawns["plaza_" + PLAZAS[i]] = Transform3D(north, Vector3(500.0 + i * 250.0, 0.0, 530.0))

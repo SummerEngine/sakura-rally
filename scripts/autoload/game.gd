@@ -37,8 +37,9 @@ const MODE_LIAISON := "liaison"
 const SAVE_PATH := "user://sakura_rally.cfg"
 
 ## Map catalogue. Medal times are in seconds for one lap in time trial, set against the
-## autopilot's clean reference lap (hanami 123.4 s, momiji 108.2 s): gold ~1.1x, silver
-## ~1.22x, bronze ~1.42x.
+## autopilot's clean reference lap in the default car, the Sakura (ep2 handling: hanami 113.3 s,
+## momiji 99.5 s; tools/physics/run_tests.gd only=maps): gold 1.1x, silver 1.22x, bronze 1.42x,
+## rounded to 0.5 s.
 const MAPS: Array[Dictionary] = [
 	{
 		"id": "hanami",
@@ -47,7 +48,7 @@ const MAPS: Array[Dictionary] = [
 		"tagline": "Spring noon. Gravel and tarmac under the blossom.",
 		"preview": "res://assets/textures/previews/hanami.png",
 		"season": "spring",
-		"medals": {"gold": 135.0, "silver": 150.0, "bronze": 175.0},
+		"medals": {"gold": 124.5, "silver": 138.0, "bronze": 161.0},
 	},
 	{
 		"id": "momiji",
@@ -56,7 +57,7 @@ const MAPS: Array[Dictionary] = [
 		"tagline": "Autumn, golden hour. Loose dirt through the maples.",
 		"preview": "res://assets/textures/previews/momiji.png",
 		"season": "autumn",
-		"medals": {"gold": 118.0, "silver": 132.0, "bronze": 154.0},
+		"medals": {"gold": 109.5, "silver": 121.5, "bronze": 141.5},
 	},
 	{
 		"id": "natsu",
@@ -86,18 +87,18 @@ const CARS: Array[Dictionary] = [
 		"name": "Sakura",
 		"name_jp": "桜",
 		"tagline": "Turbo four, all-wheel drive. Grips, forgives, flies.",
-		"spec": "2.0 turbo · AWD · 1250 kg",
+		"spec": "2.0 turbo · AWD · 0-100 3.5 s · 189 km/h",
 		"scene": "res://scenes/car/car.tscn",
-		"stats": {"speed": 0.8, "acceleration": 0.85, "grip": 0.85, "drift": 0.5},
+		"stats": {"speed": 0.79, "acceleration": 0.83, "grip": 0.88, "drift": 0.81},
 	},
 	{
 		"id": "hayate",
 		"name": "Hayate",
 		"name_jp": "疾風",
 		"tagline": "Rev-happy coupe, rear-wheel drive. Slides when you ask it to.",
-		"spec": "1.6 twin-cam · RWD · 1050 kg",
+		"spec": "1.6 twin-cam · RWD · 0-100 5.0 s · 188 km/h",
 		"scene": "res://scenes/car/car_hayate.tscn",
-		"stats": {"speed": 0.75, "acceleration": 0.6, "grip": 0.65, "drift": 0.9},
+		"stats": {"speed": 0.78, "acceleration": 0.59, "grip": 0.9, "drift": 0.88},
 	},
 ]
 

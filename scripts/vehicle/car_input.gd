@@ -1,14 +1,20 @@
 class_name CarInput
 extends RefCounted
 ## Reads the InputMap actions for the player car and shapes them for keyboard and gamepad.
-## Keyboard: steering ramps in (slower at speed) and snaps back to centre faster; pedals ramp briefly.
+## Keyboard: steering ramps in (slower at speed); letting go returns it to centre (more gently at
+## speed, so taps through a long corner average out instead of dropping to straight between
+## taps); the opposite key swings it across centre fast. Pedals ramp briefly.
 ## Gamepad: light smoothing plus a response curve for precise small corrections.
 
-## Keyboard steering rate towards full lock (1/s) at standstill and at high speed.
-var key_steer_rate_low: float = 5.0
-var key_steer_rate_high: float = 2.4
-## Keyboard rate back to centre / across centre (1/s).
-var key_return_rate: float = 8.0
+## Keyboard steering rate towards full lock (1/s) at standstill and at high speed. The lock
+## itself shrinks with speed (Car.steer_lock_at), so a quick ramp stays gentle at speed.
+var key_steer_rate_low: float = 6.0
+var key_steer_rate_high: float = 4.5
+## Keyboard rate back to centre after letting go (1/s) at standstill and at high speed.
+var key_release_rate_low: float = 9.0
+var key_release_rate_high: float = 4.5
+## Keyboard rate across centre while the opposite key is held (1/s).
+var key_return_rate: float = 9.0
 ## Stick response exponent (>1 = finer control around centre).
 var stick_exponent: float = 1.35
 var pedal_rate: float = 9.0
@@ -36,9 +42,12 @@ func read(dt: float, speed_kmh: float) -> void:
 		var shaped := signf(raw) * pow(absf(raw), stick_exponent)
 		steer += (shaped - steer) * (1.0 - exp(-dt / 0.045))
 	else:
-		var toward_centre := absf(raw) < absf(steer) or signf(raw) != signf(steer)
 		var t := clampf(absf(speed_kmh) / 140.0, 0.0, 1.0)
-		var rate := key_return_rate if toward_centre else lerpf(key_steer_rate_low, key_steer_rate_high, t)
+		var rate := lerpf(key_steer_rate_low, key_steer_rate_high, t)
+		if raw == 0.0:
+			rate = lerpf(key_release_rate_low, key_release_rate_high, t)
+		elif raw * steer < 0.0:
+			rate = key_return_rate
 		steer = move_toward(steer, raw, rate * dt)
 
 	var thr_raw := Input.get_action_strength(&"throttle")
