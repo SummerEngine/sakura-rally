@@ -137,6 +137,8 @@ func _race_start() -> Car:
 	car.controlled_by_player = false
 	var ap := Autopilot.new()
 	ap.curve = main.map.track.to_curve()
+	# On show: committed braking and every real corner sideways (see Autopilot `style`).
+	ap.style = &"showoff"
 	car.add_child(ap)
 	return car
 

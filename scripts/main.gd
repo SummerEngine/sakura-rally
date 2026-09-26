@@ -414,7 +414,9 @@ func _spawn_car(player: bool, mode: String) -> void:
 
 ## Autopilot on the road (replacing any earlier one). An open road's line runs on 45 m past the
 ## arrival along its heading (into the service park), so the lookahead never ends at the car.
-func _attach_autopilot(speed_scale: float, max_kmh: float) -> void:
+## `style`: &"tidy" for the calm drives (liaison roll-out, finish cruise), &"showoff" for driving
+## on show (the title flyover, see Autopilot).
+func _attach_autopilot(speed_scale: float, max_kmh: float, style: StringName = &"tidy") -> void:
 	if autopilot != null and is_instance_valid(autopilot):
 		autopilot.queue_free()
 	autopilot = Autopilot.new()
@@ -422,6 +424,7 @@ func _attach_autopilot(speed_scale: float, max_kmh: float) -> void:
 	autopilot.closed = map.track.closed
 	autopilot.speed_scale = speed_scale
 	autopilot.max_speed_kmh = max_kmh
+	autopilot.style = style
 	car.add_child(autopilot)
 
 
