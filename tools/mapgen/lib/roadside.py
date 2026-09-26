@@ -31,11 +31,19 @@ rule, or 3.5 m below it 12 m past the verge: an embankment a car rolls down), an
 every corner casts miss lines: a car that stops turning anywhere between just before
 turn-in and the apex runs straight on along the tangent, coasting, at 1.2 x the speed it
 arrived with. If a line leaves the road where, before the car would stop, the ground is more
-than DROP m below the road, water, or outside the play area, the outside of the corner gets a
+than DROP m below the road, water, or outside the play area, or the car would fly off the edge
+and land more than DROP m lower, the outside of the corner gets a
 rail from before turn-in to past where the lines cross the edge, and on as far as a car
 scraping along it would leave it badly at its end. Runs merge across short gaps; the leading
 end flares away and is buried, the trailing end dips into the ground, and an end at a bridge
 tapers into its parapet.
+
+Signs. Each corner gets a warning diamond (curve, sharp, hairpin; hairpins on both sides) 120-200
+m before turn-in, at least 70 m before the braking point where there is room, placed where the
+terrain and the props already standing leave it in view longest; a corner that follows the
+previous one closely is announced by that one (the series sign when the next turns the other
+way). Chevron boards stand on the outside from turn-in to the exit (on the rail where there is
+one), more and bigger with severity; the marker posts they replace are skipped.
 """
 from __future__ import annotations
 
@@ -353,11 +361,16 @@ def _miss_line(road: Road, ground: Ground, k: int, v0: float, bounds, o: dict,
         if len(back) and int(back[0]) < last:
             crossing = v2[int(back[0])] > o["catch"] ** 2
             last = int(back[0])
+    # a jump: over ground falling away faster than the car's arc it flies, and lands this far down
+    grade = float(road.pos[_idx(road, je + 1), 1] - road.pos[je, 1])
+    arc = y_edge + grade * dist - G * dist * dist / (2.0 * max(v_edge, 1.0) ** 2)
+    land = np.nonzero(H >= arc)[0]
+    fall = float(y_edge - H[int(land[0])]) if len(land) else float(y_edge - H[-1])
     seg = slice(0, max(last, 1))
     # below the nearest stretch of this road (a car rolling down beside a descending road is
     # not falling off it)
     drop = float(np.max(road.pos[j[e:], 1][seg] - H[seg]))
-    danger = drop > o["drop"] or crossing
+    danger = drop > o["drop"] or fall > o["drop"] or crossing
     if not danger:
         inside = _in_bounds(bounds, X[e:][seg], Z[e:][seg])
         wet = ground.wet(X[e:][seg], Z[e:][seg]) if ground.wet is not None else np.zeros(1, dtype=bool)
