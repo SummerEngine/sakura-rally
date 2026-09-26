@@ -1,18 +1,23 @@
 # Sakura Rally 桜ラリー
 
-A cel-shaded low-poly rally game in Godot 4.7: two small hand-dressed maps drawn like an anime
-background, in the look of the yamazakura sakura bike ride
-(`/Users/velizard/Projects/SummerEngineWorkspace/yamazakura`). The look comes from flat cel
-bands, shadows tinted violet instead of darkened, thin ink lines, painted clouds and aerial haze.
+A cel-shaded low-poly rally game for Summer Engine and Godot 4.7. Two small maps drawn like an
+anime background: flat cel bands, shadows tinted violet instead of darkened, thin ink lines,
+painted clouds and aerial haze. The look follows yamazakura, an earlier three.js sakura bike
+ride by the same author.
+
+Claude Opus 5.5 built it from one prompt in about five hours: the code, the car and prop models
+(Blender scripts), both maps, the synthesised engine audio, the UI and the trailer edit. It split
+the work across parallel sub-agents for the car, props, physics, audio and UI, which coordinated
+through [docs/CONTRACTS.md](docs/CONTRACTS.md).
 
 ![Hanami Pass from above](docs/renders/hanami_aerial.jpg)
 ![Momiji Valley from above](docs/renders/momiji_aerial.jpg)
 
 ## Play
 
-Double-click `Play Sakura Rally.command`. It runs the project with stock Godot 4.7.2 from
-`/Applications/Godot.app`; `Godot --path .` does the same from a shell. The Summer binary
-(`/Applications/Summer.app/Contents/MacOS/Summer`, a Godot 4.7.2 build) runs the project unchanged.
+Open the project in Summer Engine and press Play; `npx -y summer-engine@latest run .` opens it.
+Stock Godot 4.7 runs it too: `godot --path .`. On macOS, `Play Sakura Rally.command` starts the
+game directly with Godot or Summer, whichever is installed.
 
 The window opens at 16:9, sized to 80 % of the screen. Fullscreen is in Settings.
 
@@ -47,15 +52,15 @@ manual gearbox, camera, km/h or mph, three volume sliders and fullscreen. The 3D
 at most 1920×1080 pixels before the quality scale, and FSR upscales bigger windows. A Retina
 fullscreen frame therefore costs about as much as a 1080p window.
 
-Settings and records live in
+With Godot on macOS, settings and records live in
 `~/Library/Application Support/Godot/app_userdata/Sakura Rally/sakura_rally.cfg`.
 
-## Demo video
+## Trailer
 
-`export/sakura_rally_demo.mp4` is 63 s long: 1920×1080 at 60 fps, H.264 High + AAC-LC,
-−14 LUFS. It is 232 MB, inside X's upload limits (512 MB, 140 s). Movie Maker renders it offline
-from the real game, cutting on the beat of the drive theme. `export/` is not in git; rebuild it with
-`tools/video/render_demo.sh`: about 10 min to render the footage, then 3 min to cut.
+The trailer is rendered offline from the game itself: `tools/video/demo.gd` drives a scripted run
+under Movie Maker, and `tools/video/cut_demo.py` cuts the footage on the beat of the drive theme.
+`tools/video/render_demo.sh` does both (about 10 min for the footage, 3 min for the cut) and
+writes `/tmp/sakura_demo/sakura_rally_demo.mp4`.
 
 ## How it is built
 
@@ -100,3 +105,10 @@ timeout 600 $G --disable-crash-handler --path . -s res://tools/game/playthrough.
   medium 80 fps, low 119 fps.
 - The launcher, driven in a real window with OS key events: title, intro card, countdown, race,
   pause, and Cmd+Q mid-race, which exits with no errors or leaks.
+
+## License
+
+Code and assets are MIT, see [LICENSE](LICENSE), except the fonts (Dela Gothic One, Yuji Syuku,
+Zen Maru Gothic), which are under the SIL Open Font License 1.1; the licence texts are in
+`assets/fonts/`. The music and the ambience beds were generated with ElevenLabs models on fal;
+[docs/AUDIO.md](docs/AUDIO.md) lists the prompts and the provider terms.

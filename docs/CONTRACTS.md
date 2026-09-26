@@ -1,10 +1,9 @@
 # Sakura Rally — shared contracts
 
 Cel-shaded, low-poly rally game in Godot 4.7 (GDScript only, Forward+, Jolt).
-Visual target: the "hand-painted anime background" look of
-`/Users/velizard/Projects/SummerEngineWorkspace/yamazakura` (see its `artifacts/final-*.png`,
-`dist-ride.png`) — flat cel bands, shadows hue-shifted to violet instead of darkened,
-soft aerial haze, pastel sky with puffy cel clouds, thin dark-violet ink lines.
+Visual target: the "hand-painted anime background" look of yamazakura, the author's earlier
+three.js sakura bike ride (not public) — flat cel bands, shadows hue-shifted to violet instead of
+darkened, soft aerial haze, pastel sky with puffy cel clouds, thin dark-violet ink lines.
 
 ## Engine and commands
 

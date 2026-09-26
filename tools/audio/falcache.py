@@ -23,19 +23,15 @@ from audiolib import SR
 HERE = Path(__file__).resolve().parent
 CACHE = HERE / "cache"
 LOG = HERE / "fal_log.json"
-ENV_FILE = Path("/Users/velizard/Projects/PublicSummerEngine/.env.development.local")
 FFMPEG = "/opt/homebrew/bin/ffmpeg"
 AUDIO_EXT = {".mp3", ".wav", ".flac", ".ogg", ".opus", ".m4a", ".aac"}
 
 
 def _key() -> str:
     k = os.environ.get("FAL_KEY")
-    if k:
-        return k
-    for line in ENV_FILE.read_text().splitlines():
-        if line.startswith("FAL_KEY="):
-            return line.split("=", 1)[1].strip().strip('"').strip("'")
-    raise RuntimeError("FAL_KEY not found")
+    if not k:
+        raise RuntimeError("FAL_KEY is not set; it is only needed to generate uncached entries")
+    return k
 
 
 _LOCK = threading.Lock()
