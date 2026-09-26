@@ -145,6 +145,8 @@ func _run_car() -> void:
 		await test_pole(0.3, "tree trunk (r 0.3)")
 		await test_rock()
 		await test_hairpin_wall()
+		await test_climb_scrape()
+		await test_loaded_crashes()
 	if _want("jump"):
 		await test_jump()
 	if _want("slope"):
@@ -710,6 +712,10 @@ class CrashLog:
 	var air := 0.0
 	var max_slip := 0.0
 	var min_up := 1.0
+	## Heading change accumulated since contact (signed) and its largest magnitude: a full spin
+	## is 360°, however it happens.
+	var yaw_total := 0.0
+	var yaw_total_max := 0.0
 	var _headings: Array[float] = []
 
 	## yaw_max is the rate the heading actually turns, over 0.1 s windows (a one-tick solver spike
@@ -717,6 +723,8 @@ class CrashLog:
 	func sample(c: Car, t: float, dt: float, h0: float, heading: float) -> void:
 		if t <= 0.5:
 			v_min = minf(v_min, c.linear_velocity.length())
+		yaw_total += rad_to_deg(angle_difference(_headings[-1] if not _headings.is_empty() else h0, heading))
+		yaw_total_max = maxf(yaw_total_max, absf(yaw_total))
 		_headings.append(heading)
 		var window := int(round(0.1 / dt))
 		if _headings.size() > window:
@@ -880,6 +888,202 @@ func test_hairpin_wall() -> void:
 			("contact %s, out along the road %.2f s later at %.0f km/h, yaw %.0f°/s, spins %d" % [
 				"yes" if contact_at >= 0.0 else "no", exit_at, exit_kmh, log.yaw_max, spins]),
 			"exit <= 2.0 s after contact, 0 spins", ok)
+
+
+## Grade profile of the climb scrape after its 15 m of flat: (horizontal length m, grade).
+const CLIMB_PROFILE := [[8.0, 0.03], [8.0, 0.06], [8.0, 0.09], [200.0, 0.12]]
+
+
+## A static tarmac ground body (layer 1) for a ramp built by a test.
+func _ground_body() -> StaticBody3D:
+	var body := StaticBody3D.new()
+	body.collision_layer = 1
+	body.collision_mask = 0
+	body.set_meta(&"surface", &"tarmac")
+	root.add_child(body)
+	_obstacles.append(body)
+	return body
+
+
+## One scrape along a rail that meets the car's path 25 m ahead at 12°: 90 km/h run-up, then the
+## left key (towards the rail) and throttle held for 4 s, then the wheel centred on throttle for
+## 2.5 s. The road along the rail stays flat for 15 m past the contact point and then climbs to
+## 12 % over 24 m (`climb`), or stays flat. Without `rail` the same line is driven lane-kept 1.2 m
+## off where the rail would be, as the no-scrape baseline.
+func _climb_run(climb: bool, rail: bool) -> Dictionary:
+	var lane := await _kb_run_up("plaza_tarmac", 90.0, 0.3)
+	var fwd := _flat_fwd()
+	var ground_y := 0.0
+	for w: WheelState in car.wheels:
+		ground_y += w.contact_point.y * 0.25
+	var origin := Vector3(car.global_position.x, ground_y, car.global_position.z)
+	var dir := fwd.rotated(Vector3.UP, -deg_to_rad(12.0))
+	var right := dir.cross(Vector3.UP)
+	var a := origin + fwd * 25.0
+	var pts: Array[Vector3] = [a - dir * 10.0, a + dir * 15.0]
+	for seg: Array in CLIMB_PROFILE:
+		pts.append(pts[-1] + dir * float(seg[0]) + Vector3.UP * (float(seg[0]) * float(seg[1]) if climb else 0.0))
+	var wall := _obstacle_body() if rail else null
+	var ramp := _ground_body() if climb else null
+	for i in pts.size() - 1:
+		var d := pts[i + 1] - pts[i]
+		var b := Basis.looking_at(d.normalized(), Vector3.UP)
+		var mid := (pts[i] + pts[i + 1]) * 0.5
+		if wall != null:
+			# Inner face on the line, 1 m tall above the road.
+			_add_box(wall, Vector3(0.25, 1.0, d.length() + 0.3), Transform3D(b, mid + b.y * 0.5 - right * 0.125))
+		if ramp != null and i > 0:
+			_add_box(ramp, Vector3(18.0, 2.0, d.length() + 0.2), Transform3D(b, mid + right * 8.5 - b.y * 1.0))
+	var t := 0.0
+	while t < 8.0 and (car.global_position - origin).dot(fwd) < 23.0 and not (wall != null and _touching(wall)):
+		_kb_lane(lane)
+		_kb_hold_speed(90.0)
+		await _tick()
+		t += DT
+	var r := {"contact": wall == null or _touching(wall), "v0": car.speed_kmh, "max_comp": 0.0,
+			"hull": 0, "air": 0.0, "air_after": 0.0, "v4": 0.0}
+	var guard_end := -1.0
+	t = 0.0
+	while t < 6.5:
+		var lean := t < 4.0
+		if rail and lean:
+			keys.steer_key(-1)
+		elif rail:
+			keys.steer_key(0)
+		else:
+			var e := (car.global_position - a).dot(right) - 1.2
+			var hd := (-car.global_transform.basis.z).dot(right)
+			keys.steer_towards(clampf(-0.06 * e - 2.0 * hd, -1.0, 1.0), car.player_input.steer, DT)
+		keys.pedals(true, false)
+		await _tick()
+		t += DT
+		for w: WheelState in car.wheels:
+			if w.contact:
+				r["max_comp"] = maxf(r["max_comp"], w.compression)
+		for body in car.get_colliding_bodies():
+			if body != wall:
+				r["hull"] += 1
+				break
+		var air := car.grounded_wheels == 0
+		if air:
+			r["air"] += DT
+		if not lean and guard_end < 0.0:
+			var g: Variant = car.get("_guard")
+			if g == null or float(g) <= 0.0:
+				guard_end = t
+		if guard_end >= 0.0 and t - guard_end < 1.5 and air:
+			r["air_after"] += DT
+		if absf(t - 4.0) < DT * 0.5:
+			r["v4"] = car.speed_kmh
+	keys.steer_key(0)
+	keys.pedals(false, false)
+	_clear_obstacles()
+	return r
+
+
+## Leaning on a rail up a climb must not push the body into its bump stops or make it hop when
+## the impact guard lets go, and the rail must cost no more speed on the climb than on the flat.
+func test_climb_scrape() -> void:
+	var climb := await _climb_run(true, true)
+	var flat := await _climb_run(false, true)
+	var climb_free := await _climb_run(true, false)
+	var flat_free := await _climb_run(false, false)
+	var travel_left := (1.0 - float(climb["max_comp"])) * car.travel * 100.0
+	var flat_left := (1.0 - float(flat["max_comp"])) * car.travel * 100.0
+	var free_left := (1.0 - float(climb_free["max_comp"])) * car.travel * 100.0
+	var cost_climb: float = climb_free["v4"] - climb["v4"]
+	var cost_flat: float = flat_free["v4"] - flat["v4"]
+	var ok: bool = climb["contact"] and flat["contact"] and travel_left > 2.0 and climb["hull"] == 0 \
+			and float(climb["air"]) < 0.05 and float(climb["air_after"]) < 0.05 and cost_climb <= cost_flat + 5.0
+	_record("rail scrape up a 12 % climb, 90 km/h",
+			"travel left %.1f cm (flat %.1f, no rail %.1f), hull-ground %d ticks, air %.2f s (%.2f after guard), rail cost %.0f km/h (flat %.0f) at 4 s: %.0f vs %.0f km/h" % [
+				travel_left, flat_left, free_left, climb["hull"], climb["air"], climb["air_after"], cost_climb, cost_flat, climb["v4"], climb_free["v4"]],
+			"travel left > 2 cm, 0 hull, air < 0.05 s, cost <= flat + 5", ok)
+
+
+## Hits with the car already loaded, keyboard only: from `lead` m before the obstacle (which is
+## `dist` m ahead of the run-up point) and for 2 s after contact `act.call(phase, t)` sets the keys
+## (phase 0 before contact, 1 after). Logs the accumulated yaw, spins and airtime after contact.
+func _loaded_run(kmh: float, dist: float, lead: float, build: Callable, act: Callable) -> CrashLog:
+	var lane := await _kb_run_up("plaza_tarmac", kmh, 0.3)
+	var origin := car.global_position * Vector3(1, 0, 1)
+	var fwd := _flat_fwd()
+	var body: StaticBody3D = build.call(origin, fwd)
+	var log := CrashLog.new()
+	var t := 0.0
+	var t_act := 0.0
+	var acting := false
+	while t < 8.0 and not _touching(body):
+		acting = acting or dist - (car.global_position - origin).dot(fwd) < lead
+		if acting:
+			act.call(0, t_act)
+			t_act += DT
+		else:
+			_kb_lane(lane)
+			_kb_hold_speed(kmh)
+		log.v0 = car.linear_velocity.length()
+		await _tick()
+		t += DT
+	if not _touching(body):
+		log.v0 = -1.0
+	var h0 := _heading()
+	t = 0.0
+	while t < 2.0:
+		act.call(1, t)
+		await _tick()
+		t += DT
+		log.sample(car, t, DT, h0, _heading())
+	keys.steer_key(0)
+	keys.pedals(false, false)
+	keys.handbrake(false)
+	_clear_obstacles()
+	return log
+
+
+## A rail crossing the path `dist` m ahead at `angle` (running off to the right, 150 m long, 40 m
+## of it reaching back to the left of the path).
+func _rail(angle: float, dist: float) -> Callable:
+	return func(origin: Vector3, fwd: Vector3) -> StaticBody3D:
+		var body := _obstacle_body()
+		var d := fwd.rotated(Vector3.UP, -deg_to_rad(angle))
+		_add_box(body, Vector3(0.25, 1.0, 150.0),
+				Transform3D(Basis.looking_at(d, Vector3.UP), origin + fwd * dist + d * 35.0 + Vector3.UP * 0.5))
+		return body
+
+
+func _loaded_row(label: String, log: CrashLog) -> void:
+	var contact := log.v0 >= 0.0
+	var spins := int(log.yaw_total_max / 360.0)
+	var ok := contact and log.yaw_total_max < 180.0 and log.air < 0.2 and log.min_up > 0.5
+	_record("loaded: " + label,
+			("yaw %.0f° total, %d spins, air %.2f s, %.0f km/h after" % [log.yaw_total_max, spins, log.air, car.speed_kmh]) if contact else "no contact",
+			"< 180° total, air < 0.2 s", ok)
+
+
+## Vel's multi-spin: hits with throttle and steering (or the handbrake) already loading the car.
+func test_loaded_crashes() -> void:
+	for side in [-1, 1]:
+		var steer_side: int = side
+		var log := await _loaded_run(110.0, 25.0, 13.0, _rail(25.0, 25.0), func(_phase: int, _t: float) -> void:
+			keys.steer_key(steer_side)
+			keys.pedals(true, false))
+		_loaded_row("wall 25° at 110 km/h, throttle + steer %s" % ("into the wall" if side < 0 else "away"), log)
+	var slide := await _loaded_run(80.0, 40.0, 28.0, _rail(60.0, 40.0), func(phase: int, t: float) -> void:
+		var tap := phase == 0 and t < 0.35
+		keys.handbrake(tap)
+		keys.steer_key(-1)
+		keys.pedals(not tap, false))
+	_loaded_row("handbrake slide into a wall at 80 km/h", slide)
+	for side in [1, -1]:
+		var steer_side: int = side
+		var pole := func(origin: Vector3, fwd: Vector3) -> StaticBody3D:
+			var body := _obstacle_body()
+			_add_cylinder(body, 0.16, 6.0, origin + fwd * 25.0 + fwd.cross(Vector3.UP) * (0.87 - 0.435 + 0.16))
+			return body
+		var log := await _loaded_run(80.0, 25.0, 6.0, pole, func(_phase: int, _t: float) -> void:
+			keys.steer_key(steer_side)
+			keys.pedals(true, false))
+		_loaded_row("pole at 80 km/h, throttle + steer %s" % ("towards it" if side > 0 else "away"), log)
 
 
 # ---------------------------------------------------------------- chassis

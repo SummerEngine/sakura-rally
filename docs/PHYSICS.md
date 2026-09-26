@@ -380,9 +380,13 @@ the previous step and replaces what they did to the velocity:
 - **Impact guard.** Any wall or obstacle contact (re)starts a 0.6 s guard (`impact_guard_time`).
   For its first half the yaw rate is limited to `impact_yaw_limit` (1.1 rad/s) and roll/pitch
   rates to `impact_tilt_limit` (1.0 rad/s); over the second half the limits relax to 3x. The car
-  may not rise faster than `impact_climb_speed` (1 m/s) above its vertical speed before the hit,
-  so a rock or a rail cannot launch it. The guard is gated on real contacts, so drifts, jumps
-  and landings on open ground never see it.
+  may not rise off the road faster than `impact_climb_speed` (1 m/s) above its speed before the
+  hit, so a rock or a rail cannot launch it. "Off the road" is measured along the mean contact
+  normal of the wheels (world up when none touches), so a car leaning on a rail up a climb or out
+  of a dip keeps following the road: the first version capped world vertical speed, which on a
+  12 % climb at 90 km/h (2.5 m/s of climb) pushed the body into its bump stops and scrubbed the
+  speed away. The guard is gated on real contacts, so drifts, jumps and landings on open ground
+  never see it.
 
 Tests (`only=crash`, both cars, tarmac plaza, keyboard path): the car runs at the given speed into
 a guardrail-like box (0.25 m thick, 1.0 m tall, the `Barriers` kind, on layer 3) crossing its path
@@ -392,7 +396,8 @@ solver spike at contact is not what the driver sees); heading error is to the wa
 after contact; a spin is body slip > 75°. Pole and trunk hits are quarter-overlap (a quarter of
 the 1.74 m body width) at 80 km/h; the rock is a 0.4 m tall, 1 m wide cylinder at 70 km/h; the
 hairpin is a 90° right-hander (radius 20 m, 8 m wide) entered at 100 km/h with full lock and
-throttle held and a rail on the outside.
+throttle held and a rail on the outside. Two more groups of rows follow the main table: the climb
+scrape and the loaded hits.
 
 Before = the car code and hull material of 54d0738 (ep2 as merged), after = this branch, same test
 file:
@@ -410,13 +415,56 @@ file:
 | 0.4 m rock at 70 km/h | air 1.23 s, min up 0.89, rotation 8°, 79 km/h after **FAIL** | air 0.26 s, min up 0.99, rotation 0°, 114 km/h after | air 0.72 s, min up 0.98, rotation 1°, 91 km/h after **FAIL** | air 0.20 s, min up 0.99, rotation 1°, 105 km/h after | air < 0.3 s, no roll-over |
 | hairpin with outside rail, 100 km/h | exit 0.82 s later at 76 km/h, yaw 240°/s | exit 0.92 s later at 87 km/h, yaw 74°/s | exit 0.57 s later at 67 km/h, yaw 236°/s | exit 0.89 s later at 79 km/h, yaw 72°/s | exit <= 2.0 s after contact, 0 spins |
 
-Before, none of these scripted hits spun the car outright (the multi-spins Vel saw came from hits
-with steering and throttle already loading the car), but every 25-45° hit flicked it off the wall
+Before, none of these straight-line hits spun the car outright, but every 25-45° hit flicked it off the wall
 at 145-245°/s, the pole hit rotated the Sakura 126°, and the rock launched it for 1.23 s. In the
 hairpin the old car left the rail sooner only because it bounced off at 240°/s. After, no hit
 turns the car faster than 74°/s, it points along the wall within 4° a second later, pole and trunk
 hits turn it less than 50°, and nothing leaves the ground for more than 0.26 s. The hairpin exit
 is 10 km/h faster.
+
+**Climb scrape.** A rail meets the path at 12° at 90 km/h; the car keeps the left key (towards
+the rail) and the throttle held for 4 s, then centres on throttle for 2.5 s. Past the contact
+point the road stays flat for 15 m, then climbs to 12 % in 3 % steps over 24 m. The same run is
+repeated on the flat and, as baselines, without the rail (lane-kept 1.2 m off it). Travel left is
+the least suspension travel of any grounded wheel (0.22 m in total); rail cost is the speed 4 s
+after contact without the rail minus with it. Before = f5017a4 (ep2 with the first crash version),
+after = this branch:
+
+| | Sakura before | Sakura after | Hayate before | Hayate after |
+| --- | --- | --- | --- | --- |
+| travel left on the climb (flat) | 0.0 cm (5.3) | 2.7 cm (5.3) | 0.0 cm (5.8) | 3.1 cm (5.8) |
+| hull-ground contact | 221 ticks | 0 | 0 | 0 |
+| speed 4 s after contact, rail / no rail | 28 / 127 km/h | 107 / 127 km/h | 32 / 110 km/h | 85 / 110 km/h |
+| rail cost on the climb (flat) | 99 km/h (35) | 20 km/h (35) | 78 km/h (36) | 25 km/h (36) |
+| airborne, and after the guard ends | 0.00 / 0.00 s | 0.00 / 0.00 s | 0.00 / 0.00 s | 0.00 / 0.00 s |
+
+The lead expected a hop when the guard let go; there was none, because the old cap simply held the
+car down and scrubbed the climb speed off (the Sakura dragged its hull up the ramp at 28 km/h).
+Without the rail, full throttle takes the car into the 3 % steps at about 125 km/h and the bump
+stops touch on the kinks (0.0 cm left on both versions); that is the test ramp, not the guard.
+The 0.4 m rock stays at 0.26 s (Sakura) and 0.20 s (Hayate) in the air.
+
+**Loaded hits.** Attempts at Vel's multi-spin with the car already loaded, keyboard only: a 25°
+rail at 110 km/h with throttle and a steering key held from 13 m before it (towards the rail, and
+away); a handbrake slide at 80 km/h (0.35 s handbrake with the left key 28 m before a rail
+crossing at 60°, then throttle with the key still held) into the rail; the 80 km/h quarter-overlap
+pole with throttle and a key held from 6 m before it. Yaw total is the largest accumulated heading
+change in the 2 s after contact (360° = one full spin). Before = the car code and hull of 54d0738
+(ep2 before any crash handling), after = this branch; target < 180° total and < 0.2 s in the air:
+
+| Hit | Sakura before | Sakura after | Hayate before | Hayate after |
+| --- | --- | --- | --- | --- |
+| wall 25° at 110 km/h, throttle + steer into the wall | yaw 30° total, 0 spins, air 0.00 s, 92 km/h after | yaw 26° total, 0 spins, air 0.00 s, 103 km/h after | yaw 29° total, 0 spins, air 0.00 s, 82 km/h after | yaw 26° total, 0 spins, air 0.00 s, 90 km/h after |
+| wall 25° at 110 km/h, throttle + steer away | yaw 60° total, 0 spins, air 0.00 s, 120 km/h after | yaw 59° total, 0 spins, air 0.00 s, 123 km/h after | yaw 70° total, 0 spins, air 0.00 s, 102 km/h after | yaw 66° total, 0 spins, air 0.00 s, 106 km/h after |
+| handbrake slide into a wall at 80 km/h | yaw 156° total, 0 spins, air 0.00 s, 32 km/h after | yaw 136° total, 0 spins, air 0.00 s, 33 km/h after | yaw 117° total, 0 spins, air 0.00 s, 22 km/h after | yaw 84° total, 0 spins, air 0.00 s, 22 km/h after |
+| pole at 80 km/h, throttle + steer towards it | yaw 210° total, 0 spins, air 0.00 s, 27 km/h after | yaw 68° total, 0 spins, air 0.00 s, 23 km/h after | yaw 117° total, 0 spins, air 0.00 s, 20 km/h after | yaw 38° total, 0 spins, air 0.00 s, 13 km/h after |
+| pole at 80 km/h, throttle + steer away | yaw 77° total, 0 spins, air 0.00 s, 0 km/h after | yaw 82° total, 0 spins, air 0.00 s, 35 km/h after | yaw 102° total, 0 spins, air 0.00 s, 13 km/h after | yaw 54° total, 0 spins, air 0.00 s, 19 km/h after |
+
+The old car's worst case was the pole with the key held towards it: the Sakura was swung 210°
+round the pole (Hayate 117°); after, 68° and 38°. No loaded hit left the ground on either version
+and none reached a full spin in these scripted cases. The handbrake slide is the largest after the
+change (136° Sakura, 84° Hayate, counted from contact with the key and throttle still held), down
+from 156° and 117°.
 
 Footage: `capture.gd only=crash` (see Visual review) on both versions. In the overhead pole sheet
 the old car is swung round to about 90° across its path within 0.9 s; the new one is deflected
@@ -441,7 +489,7 @@ time until the slip is below 3° after the key is released, for throttle held, l
 The `maps` group runs one lap per car and map with the analog autopilot and with the keyboard bot,
 and prints the medal times the analog laps imply.
 
-Latest results (2026-09-26, Apple M1 Max, headless, both cars): **108/108 PASS**.
+Latest results (2026-09-26, Apple M1 Max, headless, both cars): **120/120 PASS**.
 
 | Test | Result | Target | |
 | --- | --- | --- | --- |
@@ -483,6 +531,12 @@ Latest results (2026-09-26, Apple M1 Max, headless, both cars): **108/108 PASS**
 | sakura: tree trunk (r 0.3) hit 80 km/h (quarter overlap) | rotation 28°, yaw 45°/s, air 0.00 s, 73 km/h after | rotation < 90°, air < 0.2 s, upright | PASS |
 | sakura: 0.4 m rock at 70 km/h | air 0.26 s, min up 0.99, rotation 0°, 114 km/h after | air < 0.3 s, no roll-over | PASS |
 | sakura: hairpin with outside rail, 100 km/h | contact yes, out along the road 0.92 s later at 87 km/h, yaw 74°/s, spins 0 | exit <= 2.0 s after contact, 0 spins | PASS |
+| sakura: rail scrape up a 12 % climb, 90 km/h | travel left 2.7 cm (flat 5.3, no rail 0.0), hull-ground 0 ticks, air 0.00 s (0.00 after guard), rail cost 20 km/h (flat 35) at 4 s: 107 vs 127 km/h | travel left > 2 cm, 0 hull, air < 0.05 s, cost <= flat + 5 | PASS |
+| sakura: loaded: wall 25° at 110 km/h, throttle + steer into the wall | yaw 26° total, 0 spins, air 0.00 s, 103 km/h after | < 180° total, air < 0.2 s | PASS |
+| sakura: loaded: wall 25° at 110 km/h, throttle + steer away | yaw 59° total, 0 spins, air 0.00 s, 123 km/h after | < 180° total, air < 0.2 s | PASS |
+| sakura: loaded: handbrake slide into a wall at 80 km/h | yaw 136° total, 0 spins, air 0.00 s, 33 km/h after | < 180° total, air < 0.2 s | PASS |
+| sakura: loaded: pole at 80 km/h, throttle + steer towards it | yaw 68° total, 0 spins, air 0.00 s, 23 km/h after | < 180° total, air < 0.2 s | PASS |
+| sakura: loaded: pole at 80 km/h, throttle + steer away | yaw 82° total, 0 spins, air 0.00 s, 35 km/h after | < 180° total, air < 0.2 s | PASS |
 | sakura: jump airtime | 1.18 s (landing 1.00) | > 0.6 s | PASS |
 | sakura: jump landing settle | 0.27 s, 0 bounces | < 1.0 s, 0 bounces | PASS |
 | sakura: rest on 15° slope (up) | 0.069 cm / 5 s | < 1 cm | PASS |
@@ -492,7 +546,7 @@ Latest results (2026-09-26, Apple M1 Max, headless, both cars): **108/108 PASS**
 | sakura: autopilot laps (3 flying) | 67.2, 64.7, 64.7, 64.7 s | 3 laps | PASS |
 | sakura: autopilot max line error | 1.06 m, 0 ticks off | wheels on road | PASS |
 | sakura: autopilot crashes | 0 impacts > 0.25 | 0 | PASS |
-| sakura: physics cost per tick (car) | 198 us avg, 7781 us max | < 400 us avg | PASS |
+| sakura: physics cost per tick (car) | 205 us avg, 5691 us max | < 400 us avg | PASS |
 | sakura: soak 309 s (loop, jumps, wall, bumps, banking) | NaN=false vmax=44 m/s wmax=2.9 rad/s | no NaN, v<70, w<15 | PASS |
 | sakura: soak events | 21 impacts (3 hard), 6 landings | signals fire | PASS |
 | hayate: 0-100 km/h tarmac | 4.99 s | 4.3-5.2 s | PASS |
@@ -533,6 +587,12 @@ Latest results (2026-09-26, Apple M1 Max, headless, both cars): **108/108 PASS**
 | hayate: tree trunk (r 0.3) hit 80 km/h (quarter overlap) | rotation 29°, yaw 42°/s, air 0.00 s, 53 km/h after | rotation < 90°, air < 0.2 s, upright | PASS |
 | hayate: 0.4 m rock at 70 km/h | air 0.20 s, min up 0.99, rotation 1°, 105 km/h after | air < 0.3 s, no roll-over | PASS |
 | hayate: hairpin with outside rail, 100 km/h | contact yes, out along the road 0.89 s later at 79 km/h, yaw 72°/s, spins 0 | exit <= 2.0 s after contact, 0 spins | PASS |
+| hayate: rail scrape up a 12 % climb, 90 km/h | travel left 3.1 cm (flat 5.8, no rail 0.0), hull-ground 0 ticks, air 0.00 s (0.00 after guard), rail cost 25 km/h (flat 36) at 4 s: 85 vs 110 km/h | travel left > 2 cm, 0 hull, air < 0.05 s, cost <= flat + 5 | PASS |
+| hayate: loaded: wall 25° at 110 km/h, throttle + steer into the wall | yaw 26° total, 0 spins, air 0.00 s, 90 km/h after | < 180° total, air < 0.2 s | PASS |
+| hayate: loaded: wall 25° at 110 km/h, throttle + steer away | yaw 66° total, 0 spins, air 0.00 s, 106 km/h after | < 180° total, air < 0.2 s | PASS |
+| hayate: loaded: handbrake slide into a wall at 80 km/h | yaw 84° total, 0 spins, air 0.00 s, 22 km/h after | < 180° total, air < 0.2 s | PASS |
+| hayate: loaded: pole at 80 km/h, throttle + steer towards it | yaw 38° total, 0 spins, air 0.00 s, 13 km/h after | < 180° total, air < 0.2 s | PASS |
+| hayate: loaded: pole at 80 km/h, throttle + steer away | yaw 54° total, 0 spins, air 0.00 s, 19 km/h after | < 180° total, air < 0.2 s | PASS |
 | hayate: jump airtime | 1.11 s (landing 0.95) | > 0.6 s | PASS |
 | hayate: jump landing settle | 0.27 s, 0 bounces | < 1.0 s, 0 bounces | PASS |
 | hayate: rest on 15° slope (up) | 0.169 cm / 5 s | < 1 cm | PASS |
@@ -542,13 +602,13 @@ Latest results (2026-09-26, Apple M1 Max, headless, both cars): **108/108 PASS**
 | hayate: autopilot laps (3 flying) | 69.9, 66.6, 66.6, 66.6 s | 3 laps | PASS |
 | hayate: autopilot max line error | 0.77 m, 0 ticks off | wheels on road | PASS |
 | hayate: autopilot crashes | 0 impacts > 0.25 | 0 | PASS |
-| hayate: physics cost per tick (car) | 199 us avg, 5033 us max | < 400 us avg | PASS |
+| hayate: physics cost per tick (car) | 202 us avg, 9720 us max | < 400 us avg | PASS |
 | hayate: soak 309 s (loop, jumps, wall, bumps, banking) | NaN=false vmax=40 m/s wmax=4.8 rad/s | no NaN, v<70, w<15 | PASS |
 | hayate: soak events | 21 impacts (6 hard), 6 landings | signals fire | PASS |
-| sakura: hanami analog lap | 113.31 s, 0 resets, 0 hard, off 0.0 s | clean | PASS |
-| sakura: hanami keyboard-bot lap | 114.43 s (x1.010), 0 resets, 0 hard, slip 8° | clean, slip < 25°, <= x1.12 | PASS |
-| hayate: hanami analog lap | 118.86 s, 0 resets, 0 hard, off 0.0 s | clean | PASS |
-| hayate: hanami keyboard-bot lap | 119.77 s (x1.008), 0 resets, 0 hard, slip 7° | clean, slip < 25°, <= x1.12 | PASS |
+| sakura: hanami analog lap | 112.83 s, 0 resets, 0 hard, off 0.0 s | clean | PASS |
+| sakura: hanami keyboard-bot lap | 114.07 s (x1.011), 0 resets, 0 hard, slip 10° | clean, slip < 25°, <= x1.12 | PASS |
+| hayate: hanami analog lap | 118.30 s, 0 resets, 0 hard, off 0.0 s | clean | PASS |
+| hayate: hanami keyboard-bot lap | 119.15 s (x1.007), 0 resets, 0 hard, slip 5° | clean, slip < 25°, <= x1.12 | PASS |
 | sakura: momiji analog lap | 99.53 s, 0 resets, 0 hard, off 0.0 s | clean | PASS |
 | sakura: momiji keyboard-bot lap | 100.79 s (x1.013), 0 resets, 0 hard, slip 9° | clean, slip < 25°, <= x1.12 | PASS |
 | hayate: momiji analog lap | 104.09 s, 0 resets, 0 hard, off 0.0 s | clean | PASS |
