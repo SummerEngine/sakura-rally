@@ -3771,6 +3771,42 @@
    "nodes": [
     "spectator_f"
    ]
+  },
+  {
+   "name": "marshal",
+   "file": "res://assets/models/props/marshal.glb",
+   "category": "spectator",
+   "size": [
+    1.396,
+    1.743,
+    0.734
+   ],
+   "aabb_center": [
+    0.392,
+    0.871,
+    -0.233
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.3,
+    "height": 1.743
+   },
+   "placement": [
+    "spectator_zone",
+    "roadside"
+   ],
+   "footprint_radius": 1.244,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 876,
+   "materials": [
+    "Crowd_Base"
+   ],
+   "nodes": [
+    "marshal"
+   ]
   }
  ]
 }
