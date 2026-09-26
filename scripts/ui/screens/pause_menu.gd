@@ -97,7 +97,6 @@ func _link_focus() -> void:
 		shown_buttons[i].focus_neighbor_bottom = next.get_path()
 		shown_buttons[i].focus_neighbor_left = shown_buttons[i].get_path()
 		shown_buttons[i].focus_neighbor_right = shown_buttons[i].get_path()
-	visible = false
 
 
 func _button(parent: Control, text: String, variation: StringName, cb: Callable) -> InkButton:

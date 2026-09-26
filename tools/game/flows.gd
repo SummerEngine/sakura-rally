@@ -84,6 +84,8 @@ func _run_core() -> void:
 	await _event(&"pause")
 	await _seconds(0.4)
 	_check(game.paused and paused, "pause action pauses the tree")
+	var pm: Control = main.ui.pause_menu
+	_check(pm.is_visible_in_tree() and root.gui_get_focus_owner() == pm._resume, "pause menu on screen, focus on Resume")
 	var pos_paused := car.global_position
 	await _seconds(0.8)
 	_check(car.global_position.distance_to(pos_paused) < 0.01, "car frozen while paused")
@@ -298,6 +300,7 @@ func _campaign_liaison(ui: CanvasLayer, leg: Dictionary) -> void:
 	var start := Time.get_ticks_msec()
 	while game.state == game.State.LIAISON and Time.get_ticks_msec() - start < 400000:
 		await process_frame
+	var arrived_ms := Time.get_ticks_msec()
 	Engine.time_scale = 1.0
 	_check(game.state == game.State.ARRIVED, "%s: arrived (%.0f m driven)" % [leg["code"], left0 - float(game.session.distance_left)])
 	_check(int(game.campaign_status()["leg"]) > game.campaign_leg, "arrival saves the next leg")
@@ -305,9 +308,14 @@ func _campaign_liaison(ui: CanvasLayer, leg: Dictionary) -> void:
 	await shot("arrival_a")
 	await _seconds(1.6)
 	await shot("arrival")
+	# The car rolls in under the arrival card; it has to be at rest at the time control before
+	# the beat hands over to the journey map.
+	while game.state == game.State.ARRIVED and car.speed_kmh >= 3.0:
+		await process_frame
+	var rest_s := (Time.get_ticks_msec() - arrived_ms) / 1000.0
 	var arrival_d := Vector2(car.global_position.x - main.map.arrival.origin.x, car.global_position.z - main.map.arrival.origin.z).length()
-	_check(car.speed_kmh < 3.0 and arrival_d < main.map.arrival_radius + 6.0,
-			"arrival stop: %.1f km/h, %.1f m from the time control" % [car.speed_kmh, arrival_d])
+	_check(game.state == game.State.ARRIVED and car.speed_kmh < 3.0 and arrival_d < main.map.arrival_radius + 6.0,
+			"arrival stop: %.1f km/h, %.1f m from the time control, at rest by %.1f s into the arrival beat" % [car.speed_kmh, arrival_d, rest_s])
 	_mark()
 
 
@@ -317,8 +325,10 @@ func _campaign_pause(ui: CanvasLayer, leg: Dictionary) -> void:
 	await _seconds(0.6)
 	var pm: Control = ui.pause_menu
 	var stage: bool = leg["kind"] == "stage"
-	_check(game.paused and pm._restart.visible == stage and (not stage or pm._restart.text == "Retry stage")
-			and pm._menu.text == "Quit to title", "%s: campaign pause menu (%s)" % [leg["code"], "retry" if stage else "no retry"])
+	_check(game.paused and pm.is_visible_in_tree() and root.gui_get_focus_owner() == pm._resume
+			and pm._restart.visible == stage and (not stage or pm._restart.text == "Retry stage")
+			and pm._menu.text == "Quit to title",
+			"%s: campaign pause menu on screen, focus on Resume (%s)" % [leg["code"], "retry" if stage else "no retry"])
 	await shot("pause_%s" % leg["code"])
 	await _event(&"pause")
 	await _seconds(0.3)
