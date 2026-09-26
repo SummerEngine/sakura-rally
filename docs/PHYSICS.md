@@ -546,7 +546,7 @@ Latest results (2026-09-26, Apple M1 Max, headless, both cars): **120/120 PASS**
 | sakura: autopilot laps (3 flying) | 67.2, 64.7, 64.7, 64.7 s | 3 laps | PASS |
 | sakura: autopilot max line error | 1.06 m, 0 ticks off | wheels on road | PASS |
 | sakura: autopilot crashes | 0 impacts > 0.25 | 0 | PASS |
-| sakura: physics cost per tick (car) | 205 us avg, 5691 us max | < 400 us avg | PASS |
+| sakura: physics cost per tick (car) | 205 us avg, 3821 us max | < 400 us avg | PASS |
 | sakura: soak 309 s (loop, jumps, wall, bumps, banking) | NaN=false vmax=44 m/s wmax=2.9 rad/s | no NaN, v<70, w<15 | PASS |
 | sakura: soak events | 21 impacts (3 hard), 6 landings | signals fire | PASS |
 | hayate: 0-100 km/h tarmac | 4.99 s | 4.3-5.2 s | PASS |
@@ -602,7 +602,7 @@ Latest results (2026-09-26, Apple M1 Max, headless, both cars): **120/120 PASS**
 | hayate: autopilot laps (3 flying) | 69.9, 66.6, 66.6, 66.6 s | 3 laps | PASS |
 | hayate: autopilot max line error | 0.77 m, 0 ticks off | wheels on road | PASS |
 | hayate: autopilot crashes | 0 impacts > 0.25 | 0 | PASS |
-| hayate: physics cost per tick (car) | 202 us avg, 9720 us max | < 400 us avg | PASS |
+| hayate: physics cost per tick (car) | 209 us avg, 7542 us max | < 400 us avg | PASS |
 | hayate: soak 309 s (loop, jumps, wall, bumps, banking) | NaN=false vmax=40 m/s wmax=4.8 rad/s | no NaN, v<70, w<15 | PASS |
 | hayate: soak events | 21 impacts (6 hard), 6 landings | signals fire | PASS |
 | sakura: hanami analog lap | 112.83 s, 0 resets, 0 hard, off 0.0 s | clean | PASS |
