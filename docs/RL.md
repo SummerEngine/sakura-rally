@@ -43,7 +43,10 @@ at 10 Hz, smoothed like a gamepad. The same two files run in training and in the
 ```sh
 cd tools/rl
 caffeinate -i nice -n 10 uv run --python 3.12 train.py --run gen1 --car sakura,hayate \
-    --routes hanami,hanami:rev,liaison,liaison:rev --procs 4 --cars 16 --steps 40e6 --save-every 1e6
+    --routes hanami,hanami:rev,liaison,liaison:rev --procs 4 --cars 16 --steps 6e6 --save-every 1e6
+caffeinate -i nice -n 10 uv run --python 3.12 train.py --run gen2 --car sakura,hayate \
+    --routes hanami,hanami:rev,liaison,liaison:rev --procs 4 --cars 16 --steps 14e6 --save-every 1e6 \
+    --resume runs/gen1/ckpt/model_6000000.zip
 ```
 
 - `train.py` (Stable-Baselines3 PPO, CPU) starts `--procs` headless Summer processes running
@@ -56,7 +59,8 @@ caffeinate -i nice -n 10 uv run --python 3.12 train.py --run gen1 --car sakura,h
   and ±0.2 rad. gen1 trained without the steering cost; gen2 resumes gen1 at 6M with it.
 - Every `--save-every` steps: a checkpoint in `runs/<run>/ckpt/` and a game policy JSON in
   `runs/<run>/policies/` (with a test vector the game checks). `--resume` continues a run.
-- Four processes use about four cores; the trainer uses two threads.
+- Four processes use about four cores; the trainer uses two threads. On the M1 Max gen1 (6M
+  decisions) took 80 minutes and gen2 (14M more) 2 h 23 min, 1,300-1,650 decisions per second.
 
 ## Checking a policy
 
@@ -80,6 +84,30 @@ Pictures only from `--summer-offscreen` in place of `--headless`, never a window
 saves a PNG before every cut and on the results card, `--write-movie <file>.avi` records the
 run. Rendered runs take focus from a fullscreen app for now (docs/CONTRACTS.md), so shoot all
 shots in one run.
+
+## Results
+
+The shipped driver is gen2 at 7M decisions: of every checkpoint, the fewest resets on the final
+world (both cars, three starts per route), steering about four times calmer than gen1 at the same
+pace, and it never drove on Momiji in training. Median stage times, resets per car, from the eval
+command in the README once per car (`car=hayate` for the second column):
+
+| Route | Sakura | Hayate |
+|---|---|---|
+| hanami | 96.0 s, 0 | 100.0 s, 0 |
+| hanami:rev | 96.4 s, 1.3 | 98.0 s, 0 |
+| momiji (held out) | 82.8 s, 0 | 86.8 s, 0 |
+| momiji:rev (held out) | 84.2 s, 0 | 89.8 s, 1.0 |
+| liaison | 55.2 s, 1.0 | 57.6 s, 1.0 |
+
+For scale, the gold medals are 124.5 s on Hanami and 109.5 s on Momiji. The cars of one eval
+share one world and its smashed props, so a run with more cars can differ by about a second.
+
+Known weakness: every gen2 and gen3 checkpoint misses one corner of the liaison, 230 m before
+Momiji's grid (a 31 m-radius kink it enters at about 110 km/h); gen1 takes it, sampled driving
+misses it too. In the game the rescue puts the car back after 2.5 s. Training longer (gen2 to
+20M) made the reversed roads faster but left the road more often, and gen3 (3M more decisions
+from gen2 7M with the liaison weighted) fixed neither.
 
 ## Shipping
 

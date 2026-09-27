@@ -155,6 +155,7 @@ timeout 400 $S --headless --disable-crash-handler --path . -s res://tools/game/f
 timeout 900 $S --headless --disable-crash-handler --path . -s res://tools/game/flows.gd -- flow=campaign speed=3
 timeout 400 $S --headless --disable-crash-handler --path . -s res://tools/game/softcourse_probe.gd -- map=liaison
 timeout 1800 $S --headless --disable-crash-handler --fixed-fps 60 --path . -s res://tools/physics/flyoff_probe.gd -- map=momiji
+timeout 900 $S --headless --disable-crash-handler --fixed-fps 120 --path . -s res://tools/rl/eval.gd -- policy=assets/ai/driver.json routes=hanami,hanami:rev,momiji,momiji:rev,liaison cars=3
 ```
 
 - Physics suite, both cars: 129/129 passed. Sakura does 0–100 km/h in 3.5 s, stops from
@@ -181,6 +182,10 @@ timeout 1800 $S --headless --disable-crash-handler --fixed-fps 60 --path . -s re
   compiles during the drive.
 - Median FPS offscreen at 1600×900, low / medium / high, with the whole world loaded: Hanami
   120 / 120 / 120 (the display's cap), Momiji 120 / 120 / 98.
+- AI driver (2026-09-27, three starts per route): Sakura finishes Hanami in 96.0 s and Momiji,
+  a road it never trained on, in 82.8 s (gold is 2:04.5 and 1:49.5), with no reset on either;
+  over both cars and all five routes it averages 0.4 resets per run, and on the liaison it misses
+  the same corner every time ([docs/RL.md](docs/RL.md)).
 
 ## License
 
