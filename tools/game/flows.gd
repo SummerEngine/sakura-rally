@@ -30,7 +30,9 @@ extends SceneTree
 ## counter turns to the final lap. The finish: the results say RACE, stamp the position and list
 ## the classification in running order; the finishers come to rest one behind the other past the
 ## line in finishing order, and the rivals still racing fill in their rows as they finish. Pause
-## says RACE; Retry builds a fresh grid; the title clears every car of the race.
+## says RACE; Retry builds a fresh grid; the title clears every car of the race. Rendered, it also
+## logs frame times for 10 s at normal speed behind the pack and saves frames of the first
+## overtakes and of the first real bump.
 ##
 ##   timeout 400 $S --headless --disable-crash-handler --path . -s res://tools/game/flows.gd -- map=hanami
 ##   timeout 900 $S --headless --disable-crash-handler --path . -s res://tools/game/flows.gd -- \
@@ -312,6 +314,19 @@ func _run_race() -> void:
 	var bumps: Array[float] = []
 	var grab_bump := func(strength: float, _p: Vector3, _o: Car) -> void: bumps.append(strength)
 	car.bumped.connect(grab_bump)
+	if DisplayServer.get_name() != "headless":
+		# Rendered: frame times for 10 s at normal speed, the whole field in view ahead.
+		var frames: Array[float] = []
+		var t0 := Time.get_ticks_usec()
+		var last := t0
+		while Time.get_ticks_usec() - t0 < 10000000:
+			await process_frame
+			var now := Time.get_ticks_usec()
+			frames.append((now - last) / 1000.0)
+			last = now
+		frames.sort()
+		_log("race: frame time over 10 s behind the pack at %s: median %.1f ms, 95th percentile %.1f ms, worst %.1f ms (%d frames)"
+				% [str(root.size), frames[int(frames.size() * 0.5)], frames[int(frames.size() * 0.95)], frames.back(), frames.size()])
 	Engine.time_scale = float(opts["speed"])
 	var best_pos := all.size()
 	var last_pos := all.size()
