@@ -19,8 +19,9 @@ extends Node
 ##   SS1 (INTRO, COUNTDOWN, RACING, FINISHED at Hanami's finish stop, results)
 ##   -> Continue         the hanami_branch gate opens in view over the resting car (short beat)
 ##   -> LIAISON          the player drives on from where he stopped, route `liaison`
-##   -> ARRIVED          near Momiji's grid the car is taken over and brought to rest there
-##   -> INTRO, COUNTDOWN SS2's start card and countdown on the spot
+##   -> ARRIVED          near Momiji's grid the car is taken over and brought to rest there; the
+##                       arrival card asks to start SS2 (or quit to the title)
+##   -> Start SS2        INTRO, COUNTDOWN: SS2's start card and countdown on the spot
 ##   -> SS2 ... FINISHED at Momiji's finish stop, results
 ##   -> Continue         (ink) FINALE: classification over a flyover of the Momiji loop
 ##
@@ -40,14 +41,13 @@ const FINISH_SLOWMO := 0.3
 ## Minimum time the loading card stays up: its brush animation plays, first-use shaders
 ## compile and the placed car settles on its springs behind the ink.
 const MIN_COVER := 0.75
-## Seconds of the arrival beat at the next stage's grid (at least; the car is at rest by then).
-const ARRIVAL_HOLD := 2.6
 ## The gate beat after results Continue: the car rests, the gate opens over it, then the drive.
 const GATE_LEAD := 0.5
 const GATE_BEAT := 2.1
 ## Where the gate shot's camera ends up: this many metres short of the gate.
 const GATE_CLOSE := 20.0
-## Longest wait for a car still rolling to its finish stop before the gate beat starts anyway.
+## Longest wait for a car still rolling to its stop (a finish stop, the next stage's grid) before
+## the next leg starts anyway.
 const REST_WAIT := 8.0
 
 var ui: CanvasLayer
@@ -176,10 +176,11 @@ func _on_campaign_requested() -> void:
 	_start_race(leg["map"], Game.MODE_LIAISON if leg["kind"] == "liaison" else Game.MODE_TIME_TRIAL, run)
 
 
-## Results "Continue" of a campaign stage: straight on into the next leg from where the car
-## stands, or (ink) into the finale after the last stage.
+## Campaign "Continue": after a stage's results, straight on into the next leg from where the car
+## stands, or (ink) into the finale after the last stage; at the arrival card on the next stage's
+## grid, that stage.
 func _on_campaign_continue() -> void:
-	if _busy or Game.state != Game.State.FINISHED or car == null:
+	if _busy or car == null or Game.state not in [Game.State.FINISHED, Game.State.ARRIVED]:
 		return
 	_run += 1
 	var run := _run
@@ -307,11 +308,8 @@ func _countdown(run: int) -> void:
 func _drive_on(index: int, run: int) -> void:
 	var from_route := map.route_id
 	var leg: Dictionary = Game.CAMPAIGN[index]
-	var rest_until := Time.get_ticks_msec() + int(REST_WAIT * 1000.0)
-	while car.linear_velocity.length() > 0.5 and Time.get_ticks_msec() < rest_until:
-		await get_tree().physics_frame
-		if run != _run:
-			return
+	if not await _await_rest(run):
+		return
 	_restore_time()
 	Game.notify_campaign_leg(index)
 	var gate: Node3D = map.gates.get("%s_branch" % from_route)
@@ -342,34 +340,26 @@ func _drive_on(index: int, run: int) -> void:
 	_busy = false
 
 
-## Liaison arrival: the car rolls to rest on the next stage's grid under a roadside shot, then
-## that stage starts on the spot.
+## Liaison arrival: the car rolls to rest on the next stage's grid under a roadside shot while the
+## arrival card plays, then waits for the player: Start (Game.request_campaign_continue, into
+## _stage_here) or Quit to title.
 func _on_session_arrived() -> void:
 	if Game.state != Game.State.LIAISON:
 		return
 	Game.set_state(Game.State.ARRIVED)
 	_run += 1
-	var run := _run
-	_busy = true
 	_stop_at(map.arrival)
 	post.letterbox_target = 1.0
 	var side := -1.0 if map.track.lateral(map.track.nearest(car.global_position), car.global_position) < 0.0 else 1.0
 	cine.cut_to(car, map.track, "roadside", side, map.arrival_progress)
-	var since := Time.get_ticks_msec()
-	while Time.get_ticks_msec() - since < int(ARRIVAL_HOLD * 1000.0) or car.linear_velocity.length() > 0.5:
-		await get_tree().physics_frame
-		if run != _run:
-			return
-		if Time.get_ticks_msec() - since > int((ARRIVAL_HOLD + REST_WAIT) * 1000.0):
-			break
-	var index := int(Game.campaign_status()["leg"])
-	if index < Game.CAMPAIGN.size() and Game.CAMPAIGN[index]["kind"] == "stage":
-		_stage_here(index, run)
 
 
-## A campaign stage from where the car stands (on its grid after the liaison): the stage's start
-## card over the intro swoop, then the countdown on the spot. The gates close behind.
+## A campaign stage from where the car stands (on its grid after the liaison), once it is at rest:
+## the stage's start card over the intro swoop, then the countdown on the spot. The gates close
+## behind.
 func _stage_here(index: int, run: int) -> void:
+	if not await _await_rest(run):
+		return
 	var leg: Dictionary = Game.CAMPAIGN[index]
 	_restore_time()
 	Game.notify_campaign_leg(index)
@@ -418,6 +408,16 @@ func _release_stop() -> void:
 		car.input_brake = 0.0
 		car.input_handbrake = false
 		car.input_steer = 0.0
+
+
+## Waits for the car to come to rest (REST_WAIT at most); false if a newer flow took over.
+func _await_rest(run: int) -> bool:
+	var until := Time.get_ticks_msec() + int(REST_WAIT * 1000.0)
+	while car.linear_velocity.length() > 0.5 and Time.get_ticks_msec() < until:
+		await get_tree().physics_frame
+		if run != _run:
+			return false
+	return true
 
 
 ## Camera behind and above the resting car, looking over it at the gate, then flying up the road

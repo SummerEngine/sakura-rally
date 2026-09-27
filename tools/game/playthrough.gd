@@ -11,9 +11,9 @@ extends SceneTree
 ##
 ## map: hanami | momiji. mode: time_trial | free_roam (free roam drives `lap_s` seconds) |
 ## campaign (a fresh campaign from the title in one continuous drive: SS1, results Continue,
-## the gate opening, the liaison, the arrival on Momiji's grid, SS2's start card and countdown
-## on the spot, SS2, the finale and its end card, back to the title; every leg is driven by the
-## autopilot, `map` is ignored, FPS is reported per leg).
+## the gate opening, the liaison, the arrival on Momiji's grid and Start on its card, SS2's start
+## card and countdown on the spot, SS2, the finale and its end card, back to the title; every leg
+## is driven by the autopilot, `map` is ignored, FPS is reported per leg).
 ## speed: Engine.time_scale while the autopilot drives (the flow itself runs in real time).
 ## record=1: capture the end of the Master bus to <out>/playthrough.wav with
 ## <out>/playthrough_events.json (states, gears, surfaces, checkpoints) for
@@ -184,8 +184,10 @@ func _run_campaign() -> void:
 			await _shot("results_%d" % li)
 			ui.results._continue.pressed.emit()
 		else:
-			await _seconds(1.5)
+			# The arrival card's buttons are up 1.9 s in; Start SS2.
+			await _seconds(2.6)
 			await _shot("arrival_%d" % li)
+			ui.arrival._start.pressed.emit()
 	await _until_state(&"FINALE", 60.0)
 	await _seconds(5.5)
 	await _shot("finale_board")
