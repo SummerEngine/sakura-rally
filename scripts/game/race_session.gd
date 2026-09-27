@@ -1,8 +1,12 @@
 class_name RaceSession
 extends Node
-## Follows the player car along the loaded map's road: lap progress, checkpoint
-## splits, the lap timer, wrong-way and off-route notices, the reset point, and on a
-## liaison road the distance left and the arrival zone.
+## Follows the player car along the selected route of the world (MapWorld.select_route): lap
+## progress, checkpoint splits, the lap timer, wrong-way and off-route notices, the reset point,
+## and on the liaison the distance left and the arrival zone (the next stage's grid).
+##
+## `setup()` anchors on wherever the car stands, so Main calls it again on the same car when a
+## campaign leg carries on from the previous one (the liaison from a stage's finish stop, a stage
+## from its grid at the end of the liaison) without moving the car.
 ##
 ## Joins the "track" group for Car.reset_to_track(). In a time trial the car resets to
 ## the last point of the route it legitimately reached (no shortcuts by falling down a
@@ -50,12 +54,17 @@ var _wrong_way_time: float = 0.0
 var _wrong_way_shown: bool = false
 var _off_route_time: float = 0.0
 var _off_route_shown: bool = false
+## Free roam: the car is on a road of the world other than the session's route.
+var _on_other_road: bool = false
 var _water_time: float = 0.0
 var _lake_poly: PackedVector2Array
 var _lake_level: float = -INF
-var _river: PackedVector3Array
-var _river_half: float = 0.0
-var _play_half: float = 600.0
+## The world's rivers (pack `water.rivers`): per river its centreline and half width.
+var _rivers: Array[PackedVector3Array] = []
+var _river_halves := PackedFloat32Array()
+## Driveable area on the ground plane (x, z): the world pack's `bounds` (its terrain
+## rectangle); leaving it resets the car.
+var _area: Rect2
 var _tick: int = 0
 
 
@@ -69,23 +78,28 @@ func setup(new_map: MapWorld, new_car: Car, new_mode: String) -> void:
 	car = new_car
 	mode = new_mode
 	checkpoint_total = map.checkpoints.size()
-	best_time = _game().best_time(map.map_id) if _game() else INF
-	_play_half = float(map.info.get("play_half", 600.0)) + 40.0
+	best_time = _game().best_time(map.route_id) if _game() else INF
+	var b: Array = map.info["bounds"]
+	_area = Rect2(float(b[0]), float(b[1]), float(b[2]) - float(b[0]), float(b[3]) - float(b[1]))
 	var water: Dictionary = map.info.get("water", {})
 	var lake: Dictionary = water.get("lake", {})
 	_lake_poly = PackedVector2Array()
 	for p in lake.get("poly", []):
 		_lake_poly.append(Vector2(p[0], p[1]))
 	_lake_level = float(lake.get("level", -INF))
-	var river: Dictionary = water.get("river", {})
-	_river = PackedVector3Array()
-	for p in river.get("points", []):
-		_river.append(Vector3(p[0], p[1], p[2]))
-	_river_half = float(river.get("width", 0.0)) * 0.5
+	_rivers.clear()
+	_river_halves = PackedFloat32Array()
+	for river: Dictionary in water.get("rivers", []):
+		var pts := PackedVector3Array()
+		for p in river.get("points", []):
+			pts.append(Vector3(p[0], p[1], p[2]))
+		if pts.size() >= 2:
+			_rivers.append(pts)
+			_river_halves.append(float(river.get("width", 0.0)) * 0.5)
 	reset_progress()
 
 
-## Re-anchor on the car's current position (after placing it at the spawn).
+## Re-anchor on the car's current position (after placing it, or where the last leg left it).
 func reset_progress() -> void:
 	running = false
 	has_arrived = false
@@ -104,6 +118,7 @@ func reset_progress() -> void:
 	distance_left = track.length - _last_p
 	_wrong_way_time = 0.0
 	_off_route_time = 0.0
+	_on_other_road = false
 	_water_time = 0.0
 
 
@@ -114,15 +129,45 @@ func start_timer() -> void:
 
 
 ## Called by Car.reset_to_track(): the last legitimately reached point of the route in
-## a time trial, the nearest road in free roam.
+## a time trial, the nearest point of the route on a liaison, the nearest road of the world
+## (any route's track) in free roam.
 func nearest_reset_transform(from: Vector3) -> Transform3D:
-	var roam := mode != "time_trial"
-	var i := track.nearest(from) if roam else _idx
+	var road := track
+	var i := _idx
+	if mode == "free_roam":
+		var hit := _nearest_road(from)
+		road = hit[0]
+		i = hit[1]
+	elif mode != "time_trial":
+		i = track.nearest(from)
 	# Nudge back a little so the car does not land on the obstacle it just hit.
-	var xf := track.transform_at_abs(track.dist(i) - 4.0, 0.0, 0.35)
-	if roam:
+	var xf := road.transform_at_abs(road.dist(i) - 4.0, 0.0, 0.35)
+	if mode != "time_trial" and road == track:
 		_reanchor(track.nearest(xf.origin, i, SEARCH_WINDOW), xf.origin)
 	return xf
+
+
+## Free roam: the nearest road of the world, [Track, sample index]: over every route's
+## track, the sample nearest to `pos` (height counts, so a road on a bridge above wins only
+## for a car up there).
+func _nearest_road(pos: Vector3) -> Array:
+	var best: Array = [track, track.nearest(pos)]
+	var best_d := pos.distance_squared_to(track.point(best[1]))
+	for r: Dictionary in map.routes.values():
+		var t: Track = r["track"]
+		if t == track:
+			continue
+		var j := t.nearest(pos)
+		var d := pos.distance_squared_to(t.point(j))
+		if d < best_d:
+			best_d = d
+			best = [t, j]
+	return best
+
+
+## True when `pos` is on the carriageway or verge of sample i of road t (and near its height).
+func _on_road(t: Track, i: int, pos: Vector3) -> bool:
+	return absf(t.lateral(i, pos)) < t.half_width(i) + t.verge and absf(pos.y - t.point(i).y) < 4.0
 
 
 ## Free roam: carry on along the route from sample i. The skipped (or doubled-back)
@@ -151,10 +196,20 @@ func _physics_process(delta: float) -> void:
 		top_speed_kmh = maxf(top_speed_kmh, kmh)
 	var i := track.nearest(pos, _idx, SEARCH_WINDOW)
 	var on_route := absf(track.lateral(i, pos)) < track.half_width(i) + track.verge + ROUTE_MARGIN
-	if not on_route and mode != "time_trial" and _tick % REANCHOR_TICKS == 0:
+	if on_route:
+		_on_other_road = false
+	elif mode != "time_trial" and _tick % REANCHOR_TICKS == 0:
+		# Rejoining the route re-anchors the lap on it; in free roam another road of the world
+		# (the branch, the other loop) is not "off the route" either.
+		var road: Track = track
 		var g := track.nearest(pos)
-		if absf(track.lateral(g, pos)) < track.half_width(g) + track.verge \
-				and absf(pos.y - track.point(g).y) < 4.0:
+		if mode == "free_roam":
+			var hit := _nearest_road(pos)
+			road = hit[0]
+			g = hit[1]
+		var on_road := _on_road(road, g, pos)
+		_on_other_road = on_road and road != track
+		if on_road and road == track:
 			_reanchor(g, pos)
 			i = g
 			on_route = true
@@ -173,6 +228,9 @@ func _physics_process(delta: float) -> void:
 		else:
 			progress = clampf(p / track.length, 0.0, 1.0)
 			distance_left = track.length - p
+	elif _on_other_road:
+		_off_route_time = 0.0
+		_off_route_shown = false
 	else:
 		_off_route_time += delta
 		if _off_route_time > 3.0 and not _off_route_shown and kmh < 25.0:
@@ -230,11 +288,11 @@ func _finish(t: float) -> void:
 	}
 	if _game():
 		_game().notify_finished(result)
-		best_time = _game().best_time(map.map_id)
+		best_time = _game().best_time(map.route_id)
 	finished.emit(result)
 
 
-## Liaison: the arrival zone is the circle around the map's arrival point, or the last
+## Liaison: the arrival zone is the circle around the route's arrival point, or the last
 ## `arrival_radius` metres of the road for a car that reached them on the route.
 func _check_arrival(pos: Vector3, on_route: bool) -> void:
 	var r := map.arrival_radius
@@ -263,7 +321,7 @@ func _update_wrong_way(i: int, delta: float, kmh: float) -> void:
 
 
 func _update_hazards(pos: Vector3, delta: float) -> void:
-	if absf(pos.x) > _play_half or absf(pos.z) > _play_half or pos.y < -50.0:
+	if not _area.has_point(Vector2(pos.x, pos.z)) or pos.y < -50.0:
 		reset_needed.emit("bounds")
 		return
 	var surface := _water_height(pos)
@@ -281,20 +339,27 @@ func _water_height(pos: Vector3) -> float:
 	var p2 := Vector2(pos.x, pos.z)
 	if pos.y < _lake_level + 2.0 and not _lake_poly.is_empty() and Geometry2D.is_point_in_polygon(p2, _lake_poly):
 		return _lake_level
-	if _river.size() < 2:
-		return -INF
+	for r in _rivers.size():
+		var h := _river_height(_rivers[r], _river_halves[r], p2)
+		if h > -INF:
+			return h
+	return -INF
+
+
+## Surface height of one river under p2, or -INF outside it.
+func _river_height(river: PackedVector3Array, half: float, p2: Vector2) -> float:
 	var best := INF
 	var h := -INF
-	for k in range(0, _river.size() - 1, 2):
-		var a := _river[k]
-		var b := _river[mini(k + 2, _river.size() - 1)]
+	for k in range(0, river.size() - 1, 2):
+		var a := river[k]
+		var b := river[mini(k + 2, river.size() - 1)]
 		var ab := Vector2(b.x - a.x, b.z - a.z)
 		var t := clampf((p2 - Vector2(a.x, a.z)).dot(ab) / maxf(ab.length_squared(), 1e-4), 0.0, 1.0)
 		var d := p2.distance_squared_to(Vector2(a.x, a.z) + ab * t)
 		if d < best:
 			best = d
 			h = lerpf(a.y, b.y, t)
-	return h if best < _river_half * _river_half else -INF
+	return h if best < half * half else -INF
 
 
 func _notice(text: String) -> void:

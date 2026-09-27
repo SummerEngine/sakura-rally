@@ -8,8 +8,8 @@ darkened, soft aerial haze, pastel sky with puffy cel clouds, thin dark-violet i
 ## Engine and commands
 
 - Engine binary: `/Applications/Summer.app/Contents/MacOS/Summer` (Godot 4.7.2 custom build).
-  Official Godot 4.7.2 at `/Applications/Godot.app/Contents/MacOS/Godot` is equivalent; keep
-  the project pure GDScript so both run it.
+  Official Godot 4.7.2 at `/Applications/Godot.app/Contents/MacOS/Godot` is equivalent (for
+  agents, `--headless` only; see below); keep the project pure GDScript so both run it.
 - Always pass `--disable-crash-handler`. Always wrap runs in `timeout`.
 - Import after writing raw assets: `timeout 180 $S --headless --disable-crash-handler --path . --import`
 - Run a headless script: `$S --headless --disable-crash-handler --path . -s res://path/script.gd`
@@ -18,8 +18,14 @@ darkened, soft aerial haze, pastel sky with puffy cel clouds, thin dark-violet i
 - `-s` runs and the UI preview never read or write the player's save
   (`user://sakura_rally.cfg`): `Game.persistent` is false, so they start from default
   settings with no records, and nothing they finish or change reaches the player.
-- Headless has no pixels. For screenshots run windowed (no `--headless`); windows on screen are
-  fine for this project. Capture with `get_viewport().get_texture().get_image().save_png(...)`.
+- Vel watches fullscreen video on this Mac while agents work, and a Summer window pulls him out
+  of fullscreen. `--headless` for every run that needs no pixels. A run that needs pixels uses
+  only `--summer-offscreen --audio-driver Dummy` (the real renderer, off screen); capture with
+  `get_viewport().get_texture().get_image().save_png(...)`. Never a plain windowed run (`$S
+  --path . …` with neither flag), `open -a Summer`, or Godot.app without `--headless`: those
+  always take focus. Summer 0.5.68 bug: even `--summer-offscreen` comes to the front when a
+  fullscreen app is frontmost, so rendered runs are few and batched: every capture a task needs
+  in one process where the tool allows it, no exploratory or repeat render runs.
 - Judge runs by stderr (`SCRIPT ERROR`, `Parse Error`, `ERROR:`) and by artifacts, not exit code.
   Summer prints harmless noise: `[SE] AuthManager`, `Sparkle`, `SSL module failed`, `TLS handshake`.
 - Tools that run the game, a car or the Sound API end with `Game.request_quit(exit_code)`, not
@@ -86,6 +92,12 @@ mesh has them — they multiply the albedo). Name keywords (case-insensitive sub
 
 Wind sway weight is computed in the shader from object-space height, so foliage meshes should have
 their origin at the ground (tree base).
+
+Tree and bush canopies need a working LOD chain (the world draws thousands of them): the prop kit
+colours a canopy per vertex (`canopy_shade` is evaluated with the smoothed vertex normal), and each
+canopy prop's `.glb.import` sets `lods/normal_merge_angle` 60 for its mesh (`_subresources` →
+`meshes` → `<prop>_<prop>`). Face-coloured, flat-shaded canopies at the default 25° come out of
+Godot's simplifier with no LODs or one step, and far trees then draw at full detail.
 
 ## Surfaces
 
@@ -161,7 +173,8 @@ resize (`Quality.apply_render_scale`).
 Buses: Master → Music, Ambience, UI, SFX → (Engine, World).
 `Sound.play_ui(&"hover"|&"click"|&"back"|&"start"|&"toggle")`,
 `Sound.play_music(&"menu"|&"drive"|&"results", fade)`, `Sound.stop_music(fade)`,
-`Sound.play_ambience(map_id, fade)`, `Sound.stop_ambience(fade)`,
+`Sound.play_ambience(fade)`, `Sound.set_ambience_mix(weights)`, `Sound.stop_ambience(fade)` (ep3: one
+bed mixed by the season at the camera),
 `Sound.play_stinger(&"countdown"|&"go"|&"checkpoint"|&"finish"|&"record")`,
 `Sound.play_3d(name, position, volume_db)`, `Sound.set_slowmo(time_scale)`.
 Car audio: a `CarAudio` Node3D child of the car with `scripts/vehicle/car_audio.gd`, reading the car
@@ -213,17 +226,6 @@ never pushes and never touches `main`; the lead merges into `ep2`.
 - `Car.engine_sound: StringName` (Physics exports it, default `&"turbo4"`, Hayate `&"na4"`);
   `car_audio.gd` (Audio) picks its loop set from it.
 
-### Liaison map `natsu` (Map)
-
-- `Game.MAPS` has the entry (`"liaison": true`, no medals); `Game.stage_maps()` skips it.
-- `SPEC["road"]["closed"] = False` builds an open road. `map.json` adds `"closed": false` and
-  `"arrival": {"pos": [x, y, z], "yaw": rad, "radius": m}`; `spawn` / `start_line` sit at
-  s = 0; `checkpoints` may be empty.
-- `Track.closed: bool`. On an open track `point()`, `position_at_abs()`, `nearest()` clamp
-  instead of wrapping, `to_curve()` returns an open curve, `Track.length` runs start → arrival.
-- Atmosphere preset `summer_afternoon`; season `summer` in `MapWorld.SEASONS` and `SkyRig`.
-- Ambience id `natsu`: Audio adds `assets/audio/ambience/natsu.ogg` and the `Sound.AMBIENCE` entry.
-
 ### Road corridor (mapgen, `tools/mapgen/lib/corridor.py`)
 
 Mapgen keeps the road driveable wide: a car that runs wide or leans on the outside of a corner
@@ -235,8 +237,8 @@ meets only walls it can scrape along or props it knocks over.
   `map.checkpoints` entry (room for the runtime's fabric gate uprights).
 - **Rigid** props (every collider not listed below: trees, poles, rocks, lanterns, jizo,
   buildings, spectators …) stay out of the corridor. Low rocks, stumps and logs stay out of
-  the wide corridor everywhere. Natsu's sign boards (`signs`) break like smashables but still
-  step out until their posts clear the corridor.
+  the wide corridor everywhere. The branch road's sign boards (`signs`) break like smashables but
+  still step out until their posts clear the corridor.
 - **Smashable** props (`SMASHABLE`, the mirror of `SoftCourse.SMASHABLE` in
   `scripts/world/soft_course.gd`; keep the two in step) may stand in the corridor but never on
   the tarmac: |lateral| >= half width + 0.3 m.
@@ -251,7 +253,7 @@ meets only walls it can scrape along or props it knocks over.
 - Bridge ends: where the carve fades out towards a deck, the ground is capped under the road
   and ramps down under the deck (`road.bridge_clearance`, default 1.6 m below the deck), so no
   bank shows through the road.
-- Sign boards (`map.json` `signs[i]`, natsu only): each is its own `meshes` entry named by
+- Sign boards (`map.json` `signs[i]`, on the branch road): each is its own `meshes` entry named by
   `signs[i].mesh` (`sign_<i>`, `"local": true`, material `props_vc`), in sign-local
   coordinates: origin at the base centre on the ground, board front +Z, yaw 0. The runtime
   places it at `Transform3D(Basis(Vector3.UP, yaw), base)` and must not add `local` meshes at
@@ -268,7 +270,7 @@ meets only walls it can scrape along or props it knocks over.
   metres) and `Game.notify_arrived()` re-emits it as `Game.arrived`. `RaceSession.progress`
   is start → arrival (0..1) and `RaceSession.distance_left` the road metres to go.
 - Campaign API on `Game`: `const CAMPAIGN` (legs `{"map", "kind": "stage"|"liaison", "code",
-  "title", "title_jp", "kanji"}`: SS1 `hanami`, L1 `natsu`, SS2 `momiji`), `const RIVALS`
+  "title", "title_jp", "kanji"}`: SS1 `hanami`, L1 `liaison`, SS2 `momiji`), `const RIVALS`
   (`{"name", "name_jp", "team", "pace": [factor per stage]}`, stage time = gold × factor),
   `request_campaign(fresh: bool)` (a finished campaign always restarts),
   `request_campaign_continue()`, `campaign_status() -> {"started", "finished", "leg", "legs",
@@ -282,16 +284,12 @@ meets only walls it can scrape along or props it knocks over.
   A campaign stage's `race_finished` result adds `"campaign": true, "leg", "standing",
   "field"`. Progress (`[campaign]` leg, results, finished) lives in the player save
   (`persistent` rules); a quit resumes at the start of the saved leg.
-- `Game.State` adds, in this order after `FREE_ROAM`: `JOURNEY` (the painted journey map,
-  also the campaign's loading screen), `LIAISON` (driving a liaison; within braking distance
-  of the time control Main takes the car over and brakes it in, "Time control ahead"),
-  `ARRIVED` (the arrival beat: the car rolls to rest at the time control under a roadside
-  shot, arrival card), `FINALE` (classification and end card). Pause works in `LIAISON` as in
-  `RACING`.
-- Campaign flow: title → `JOURNEY` → `LOADING` → `INTRO` → stage (`COUNTDOWN`, `RACING`,
-  `FINISHED`, results Continue) or liaison (`LIAISON`, `ARRIVED`) → `JOURNEY` … → after the
-  last leg `JOURNEY` → `FINALE` → `MENU`. Music: `liaison` on the liaison drive, `menu` on the
-  journey map, `results` on the finale; stingers `arrived`, `campaign_complete`.
+- `Game.State` adds, in this order after `FREE_ROAM`: `LIAISON` (driving the liaison; within
+  braking distance of Momiji's grid Main takes the car over and brakes it in), `ARRIVED` (the
+  arrival beat: the car rolls to rest on the grid, arrival card), `FINALE` (classification and
+  end card). Pause works in `LIAISON` as in `RACING`.
+- Campaign flow: see "Campaign in one world" under Episode 3. Music: `liaison` on the liaison
+  drive, `results` on the finale; stingers `arrived`, `campaign_complete`.
 
 ### Soft course (SoftCourse)
 
@@ -315,8 +313,7 @@ meets only walls it can scrape along or props it knocks over.
   sign's mesh and its Label3D lines under one `Signs/Sign_<i>` node and registers it with
   `SoftCourse.add_sign()` as kind `road_sign` (`SoftCourse.ROAD_SIGN`, 4 %, `thump`). A hit
   hides the node (board and text together) and flings two debris pieces, the posts (triangles
-  reaching below 40 % of the sign's height) and the board. In an older pack (no `mesh`) the board
-  stays in `dressing` and its posts in `collision_boxes`, rigid as before.
+  reaching below 40 % of the sign's height) and the board.
 - `checkpoint_gate` instances are skipped (`SoftCourse.SKIPPED_PROPS`); `FabricGate`
   (`scripts/world/fabric_gate.gd`, banner shader `shaders/world/fabric_banner.gdshader`) stands at
   every `map.checkpoints` entry of a closed stage except one within 20 m of a start/finish arch,
@@ -332,8 +329,8 @@ meets only walls it can scrape along or props it knocks over.
   fires (the loading cover is still up) every smashable mesh and burst type is drawn for a few
   frames, tiny, in front of the active camera, so their pipelines compile behind the cover
   (`SoftCourse.is_warm()`).
-- Probe: `tools/game/softcourse_probe.gd -- map=hanami [car=hayate]` (headless). Run windowed
-  (`--audio-driver Dummy`, no `--headless`) it also logs frame times, physics steps, pipeline
+- Probe: `tools/game/softcourse_probe.gd -- map=hanami [car=hayate]` (headless). Rendered
+  (`--summer-offscreen --audio-driver Dummy`) it also logs frame times, physics steps, pipeline
   compilations and node/resource counts in the second after the 1st, 2nd and 10th smash and the
   first gate pass and hit, and fails above 25 ms or on any compilation or creation there.
 
@@ -342,8 +339,8 @@ meets only walls it can scrape along or props it knocks over.
 - Title hub: Campaign, Time Attack, Garage, Settings, Quit. The Campaign item calls
   `Game.request_campaign(...)` and labels itself from `Game.campaign_status()`.
 - `Game.set_menu_view(view)` and signal `menu_view_changed(view)`, views `"title"`,
-  `"time_attack"`, `"garage"`. In `"garage"` the menu car parks at the map spawn and the cine
-  camera orbits it; a livery or car change shows on that car at once.
+  `"time_attack"`, `"garage"`. In `"garage"` the menu car stands at the workshop (see Garage
+  under Episode 3) and the cine camera orbits it; a livery change shows on that car at once.
 - Top-down card art from `tools/build/capture_topdown.gd`: `assets/ui/maps/<id>_top.png` and
   `assets/ui/maps/<id>_route.json` = `{"image_size": [w, h], "world_rect": [x0, z0, width,
   height], "closed": bool, "points": [[u, v] …], "surface": [ … ], "start": [u, v],
@@ -374,3 +371,217 @@ meets only walls it can scrape along or props it knocks over.
   lat/hw > 1.0 means the car's centre crossed the road edge: in showoff that happens on the way
   out of the momiji gravel hairpins (up to 1.8 m onto the verge) and by 0.14 m once on hanami
   with Hayate. Open: hanami Sakura is at 17.5 % of corner time sliding (target 20 %).
+
+## Episode 3 (branch `ep3`)
+
+From Vel's third playtest. Goals:
+
+- Replays: every drive the player makes is recorded to disk, and a tool reviews them (where he
+  hesitated, got lost, crashed or flew off) so the lead can see what was unclear.
+- Corners: big warning signs seen well ahead; barriers where the road edge drops, so a missed
+  corner does not end off a cliff (it happened on Momiji).
+- Chase camera: downhill the road ahead stays visible; today the car hides it.
+- One connected world: Hanami, a branch road through the seasons, Momiji. After SS1 the car
+  stops on the loop, the results say the stage is complete and point on to SS2; Continue opens
+  the branch that was blocked and the player drives on from where he stopped. The road starts
+  among sakura and blends spring → summer → autumn into Momiji. No journey map, no liaison
+  level, no loading between legs.
+- Garage: a real place, not the start grid; on a car switch the old car drives off and the new
+  one drives in; every car in a strip at the bottom; no car ever drops from the air.
+- People: better-looking spectators that tumble comically when hit and get back up.
+
+### Ownership (ep3)
+
+| Slice (agent) | Owns |
+|---|---|
+| world generation (`WorldGen`) | `tools/mapgen/*` except what RoadSafety and Garage own below, `assets/maps/`, `docs/renders/map_*`, `docs/WORLD.md` (new) |
+| world runtime (`WorldRuntime`) | `scripts/world/*` except `soft_course.gd` and `crowd.gd`, `shaders/*` except `shaders/ui/`, `scripts/fx/post_fx.gd`, the ambience part of `scripts/autoload/sound.gd`, the map-id migration of `tools/physics/*`, `tools/build/capture_map.gd`, `tools/build/smoke.gd` |
+| campaign (`Campaign`) | `scripts/autoload/game.gd`, `scripts/main.gd` except the menu functions (Garage), `scripts/game/race_session.gd`, `scripts/game/arrival_stop.gd`, `scripts/ui/ui_root.gd`, `scripts/ui/screens/*` except `garage_panel.gd`, `scripts/ui/widgets/journey_strip.gd`, `tools/game/*`, `tools/build/capture_topdown.gd`, `assets/ui/maps/`, the map-id migration of `tools/video/*` and `tools/showoff/*`, the flow sections of `docs/UI.md` |
+| road safety (`RoadSafety`) | `tools/mapgen/lib/roadside.py` (new), the roadside dressing in `tools/mapgen/lib/road.py` (guardrails, delineators, chevrons) and its call sites in `mapgen.py`, corner-sign entries in `tools/mapgen/maps/*.py`, the new sign props (`tools/blender/props/*`, outputs in `assets/models/props/`), their `SoftCourse.SMASHABLE` entries and the `corridor.py` mirror, the sign view distance in `MapWorld.CATEGORY_VIEW`, `tools/physics/flyoff_probe.gd` (new) |
+| camera (`Camera`) | `scripts/camera/chase_camera.gd`, `tools/physics/camera_probe.gd` (new), the camera section of `docs/PHYSICS.md` |
+| replays (`Replays`) | `scripts/autoload/replays.gd` (new autoload `Replays`) and its `project.godot` line, `scripts/game/replay_*.gd` (new), `tools/replay/*` (new), `docs/REPLAYS.md` (new) |
+| garage (`Garage`) | `scripts/game/menu_stage.gd`, the garage parts of `scripts/camera/cine_camera.gd`, `scripts/ui/screens/garage_panel.gd`, `scripts/ui/widgets/car_selector.gd` (becomes the car strip), `scripts/game/garage_set.gd` (new), garage props (`tools/blender/props/garage.py`, new, outputs in `assets/models/props/`), the `garage` entry of `tools/mapgen/maps/hanami.py` and its pass-through to `map.json`, `assets/ui/cars/`, the menu functions of `scripts/main.gd` (`_enter_menu`, `_on_settings_changed`, `_on_menu_view_changed`), the garage section of `docs/UI.md` |
+| people (`People`) | `tools/blender/props/people.py` and the spectator outputs, `scripts/world/crowd.gd` (new), the crowd hooks in `soft_course.gd` / `map_world.gd`, the spectator rules in `corridor.py` and `scatter.py` (`_crowd`), crowd sounds |
+
+Someone else's file: message the owner (`write agent://<Name>`); a hook of a few lines may be
+made by you once the owner agrees. Work in `~/Projects/sakura-rally-wt/ep3-<slice>` on branch
+`ep3-<slice>` cut from `ep3` (`git worktree add -b ep3-<slice> ~/Projects/sakura-rally-wt/ep3-<slice> ep3`),
+copy the import cache first (`cp -R ~/Projects/sakura-rally/.godot <worktree>/`), then
+`--import`. Commit there; never push; never touch `main`, `ep2` or `ep3`. The lead merges into
+`ep3`.
+
+### Running things while Vel uses the Mac
+
+Nothing opens a window: pixels come from `--summer-offscreen --audio-driver Dummy`, the rest runs
+`--headless` (the rule under "Engine and commands"). Rendered runs are few and batched: plan the
+captures and put them in one process (the world loads once; `MapWorld.select_route()` switches
+routes), and each report says how many rendered launches the slice made. Wrap runs in `timeout`
+and `nice -n 5`. Eight agents share the machine, so frame rates measured during ep3 work are
+noisy: report them, the lead re-measures at integration.
+
+### Scripted spawns (lead, done)
+
+- `Car.place_at_rest(xform: Transform3D)`: the car on the ground under `xform.origin` as it sits
+  at rest (origin on the plane through the four tyre contacts, level with it, heading from
+  `xform`, still). Measured on all three maps with both cars: it moves 6 mm and is still after
+  0.13 s, where `reset_to()` from the pack spawn drops 0.78 m and still bounces after 1 s. Every
+  scripted spawn uses it (Main `_spawn_car` does; the garage, campaign legs and tools as well).
+  `reset_to()` (+0.12 m) stays for resets during a drive.
+
+### One world (WorldGen writes, WorldRuntime reads, Campaign drives)
+
+- One pack, `assets/maps/world/` (`map.json` `"version": 2` + `map.bin`), built by
+  `tools/mapgen/mapgen.py` from `tools/mapgen/maps/world.py`, loaded once at boot and kept for
+  the whole session: menu, both stages, the liaison, free roam. There are no v1 packs and no v1
+  code paths. Layout, regions, terrain and build numbers: [WORLD.md](WORLD.md).
+- Layout: the Hanami region sits at the world origin, unrotated (`maps/hanami.py` coordinates are
+  world coordinates); Momiji is turned a quarter left and moved east; the 1.8 km branch road
+  between them carries Natsu's content (terraces, village, stone bridge, time control). One rim
+  around the world, none between regions.
+- `map.json` keys:
+  - `bounds` `[x0, z0, x1, z1]`, `cell` (terrain, 4 m), `road_half_width` 3.5.
+  - `roads{id: {length, closed, verge, junctions?}}`: the physical ribbons `hanami`, `momiji`
+    (loops) and `branch` (open). `junctions[{road, end, s, other_s}]`: the branch end (`start` /
+    `end`) at branch `s` meets `road` at its `other_s`, with an apron (no step, no z-fighting).
+  - `routes{id: {track, closed, season, atmosphere, road{length, start_s, verge, surfaces,
+    bridges, start}, spawn, checkpoints, corners, finish_stop | arrival}}`: what a session
+    drives, `track` naming its raw (the v1 ten columns). `hanami` and `momiji` are closed laps
+    with `finish_stop` `{pos, yaw}` (on Hanami before the branch gate, the gate in view);
+    `liaison` is open (`checkpoints` empty), starts at Hanami's `finish_stop`, runs 34 m of the
+    Hanami loop, the branch and 217 m of the Momiji loop, and ends at `arrival`
+    `{pos, yaw, radius}` = Momiji's spawn pose. `corners` come from RoadSafety's roadside pass.
+  - `gates[{id, route, s, pos, yaw, width}]`: `hanami_branch` and `momiji_branch`, across the
+    branch just past each junction, `s` along the `liaison` route.
+  - `season_grid{raw, origin, cell 8, dims [470, 256], order [spring, summer, autumn]}`: u8 × 3
+    per cell summing to 255. The terrain vertex colours are blended by the same weights and the
+    scatter runs sakura → summer greens → maples along the branch.
+  - `water{lake{level, poly}, rivers[{id, width, points}]}` (`rivers` replaces v1's `river`).
+  - `garage{pos, yaw, workshop, lot, keep_out, road_side}` (Garage).
+  - As in v1, in world coordinates: `collision_boxes`, `signs`, `parked`, `materials`, `meshes`
+    (terrain chunks carry `visibility` ranges: fine near, coarse far, beyond the rim), `raw`,
+    `instances`. `map.bin` is 45 MB uncompressed.
+
+### Open routes (the liaison)
+
+- A route with `"closed": false` gives `Track.closed == false`: `point()`, `position_at_abs()`
+  and `nearest()` clamp instead of wrapping, `to_curve()` returns an open curve, and
+  `Track.length` runs start → arrival.
+- The summer look: atmosphere preset `summer_afternoon`, season `summer`, ambience `natsu`
+  (`assets/audio/ambience/natsu.ogg`), all mixed by the season weights at the camera.
+
+### MapWorld v2 (WorldRuntime implements; Campaign and tools use it)
+
+- `MapWorld.map_id` is a route id (`hanami`, `momiji`, `liaison`): `build()` always loads the
+  world pack and selects that route, so a tool's `map.map_id = "hanami"; await map.build()`
+  keeps working.
+- `routes: Dictionary` (id → route), `route_id: String`, `select_route(id)`: points the fields
+  every consumer reads today (`track`, `closed`, `spawn`, `start_line`, `checkpoints`,
+  `arrival`, `arrival_radius`, `arrival_progress`) at that route, plus `finish_stop:
+  Transform3D`. The fabric gates of both stages stand all the time.
+- `gates: Dictionary` (id → node with `set_open(open: bool, animate := true)`, `is_open`,
+  signal `opened`).
+- `season_at(pos: Vector3) -> Vector3` (spring, summer, autumn). The atmosphere, colour grade,
+  global shader parameters, sky particles (petals → fluff → leaves), ground and road litter and
+  the ambience follow the season at the camera; shaders read the grid as the global texture
+  `sr_season` (its rect in `sr_season_rect`).
+- `garage: Transform3D` (identity when the pack has none).
+- The world loads behind the boot / loading screen once; a start inside the loaded world only
+  places the car (`place_at_rest`) under a short cover.
+- Implementation (WorldRuntime, done): `map_id` follows `select_route`, so records keyed by
+  `map.map_id` stay keyed by stage. After `select_route("liaison")` `spawn` is the liaison's
+  start pose (Hanami's `finish_stop`). Gates are `RoadGate` nodes (`scripts/world/road_gate.gd`)
+  at the road centre, -Z along the route: two striped wings hinged at the road edges
+  (`AnimatableBody3D` on the props layer, rigid), a 通行止め / ROAD CLOSED board and the
+  `marshal` prop; open, the wings fold back along the verges in 1.8 s and the marshal steps
+  off, then `opened` fires. `SoftCourse.build_gates(…, clear)` adds each closed route's fabric
+  gates; `SoftCourse.gate_near(pos)` finds one by checkpoint position.
+- Season look: `Atmosphere.set_weights(w)` blends `spring_noon`, `summer_afternoon`,
+  `autumn_golden` (sun by direction, colours, fog, ambient, exposure, `grade`, the `sr_*`
+  globals, cloud colours and towers) and counts `changed`; PostFX and the SkyRig follow it by
+  themselves (PostFX finds the node in group `atmosphere`), so nobody calls
+  `post.apply_preset` per start. MapWorld eases the weights at the camera at 1.5/s, snaps on a
+  camera jump over 60 m (a cut) and re-applies only when they moved by 0.002. The sky
+  particles are three volumes emitting by weight; litter picks a season per litter cell
+  (`shaders/inc/season.gdshaderinc`); the ambience is `Sound.play_ambience(fade)` +
+  `Sound.set_ambience_mix(w)` (MapWorld calls the mix).
+
+### Campaign in one world (Campaign)
+
+- Legs stay SS1 `hanami`, L1 `liaison`, SS2 `momiji`, but the liaison is not a level: no
+  JOURNEY state, no journey map, no leg code on the road. Flow: title → Campaign → INTRO →
+  COUNTDOWN → SS1 → FINISHED: the car is brought to rest at Hanami's `finish_stop`; the results
+  say the lap is complete (time, medal, standing) and a side panel says what comes next
+  ("SS2 Momiji Valley: drive on, the road is open") → Continue: the `hanami_branch` gate opens
+  in view and the player drives off from where he stopped (LIAISON; the HUD shows a road sign
+  to Momiji with the distance) → at Momiji's grid the car is brought to rest (ARRIVED, a short
+  beat) → SS2 start card and COUNTDOWN on the spot → SS2 → FINISHED at Momiji's `finish_stop` →
+  results → FINALE. No cover and no reload between legs.
+- Time Attack and free roam run in the world: time trials keep the gates closed, free roam
+  opens them. Resume: SS1 → Hanami grid; L1 → Hanami `finish_stop` with the gate open; SS2 →
+  Momiji grid. Records and campaign results stay keyed by stage id.
+
+### Corners (RoadSafety)
+
+- Every corner that needs braking gets big warning signs, computed from the road for every road
+  (loops and branch): an advance warning well before the braking point and big chevron boards
+  on the outside through the corner, scaled with severity; high contrast in the cel look, seen
+  from far (their own view distance), never hidden by props. They are kit props in
+  `SoftCourse.SMASHABLE` (they break), except where they are mounted on a guardrail.
+- Guardrails wherever the road edge drops, outsides of corners first: a car that misses a corner
+  at any speed the road allows scrapes along a rail and stays up on the road.
+  `tools/physics/flyoff_probe.gd` proves it corner by corner.
+- The code is functions of one road and the terrain (`tools/mapgen/lib/roadside.py`,
+  `road.py`); WorldGen calls them for every road of the world.
+- Props (`tools/blender/props/corner.py`, category `corner_sign`, `CATEGORY_VIEW` 1000 m):
+  `corner_warn_{curve,sharp,hairpin,series}_{left,right}` (3.1 m yellow diamonds on two posts,
+  board centre 3.05 m up at scale 1, placed at 1.4-1.7 with severity; `series` = linked bends, the first to
+  that side), `corner_chevron_{left,right}` (1.2 x 1.5 m boards, placed at 1.2-1.5) and
+  `corner_chevron_rail_{left,right}` (0.9 x 1.1 m on a rail post, same scale, no collider, not smashable). The old
+  `chevron_*` and `sign_curve_*` props are gone.
+- `map.json` `corners` (one list per road): `dir`, `severity` (1 fast, 2 sharp, 3 hairpin),
+  `kind`, `radius`, `angle`, speeds `v_approach`/`v_entry`/`v_min` (km/h, the plausible profile),
+  poses `brake`/`turn_in`/`mid`/`apex`/`exit` (`pos`, `yaw`, `s` in Track distance), `warning`
+  (`pos`, `yaw`, `s` of the road beside it, `prop`, `visible_m`; null when the corner before
+  announces it) and `path` (centreline `[x, y, z, half_width]` every 4 m from 20 m before
+  turn-in to 150 m past the exit).
+
+### Camera (Camera)
+
+- `ChaseCamera` keeps its interface. Downhill the camera rises and pitches with the slope so the
+  road ahead shows over the car; `tools/physics/camera_probe.gd` measures how much of the road
+  ahead is visible on the descents of every stage.
+
+### Replays (Replays)
+
+- Autoload `Replays` records every drive the player controls (RACING, LIAISON, FREE_ROAM) from
+  `Game` signals, `Game.player_car` and `Game.session`, with no Main edits: per physics tick the
+  inputs, the car state and the camera; events (impacts, landings, resets, smashes, checkpoints,
+  off-road, wrong way, finish). Files in `user://replays/` (format in `docs/REPLAYS.md`). Tool
+  runs record only when a tool asks, and never into the player's folder.
+- `tools/replay/review.gd` lists and summarises replays (where time went, where the car left the
+  road, resets, hesitations) and renders what the player saw at chosen moments, offscreen.
+
+### Garage (Garage)
+
+- A real place in the Hanami region, before or beside the start straight and away from the
+  branch (WorldGen and Garage agree on the spot by message): `map.json` `garage` `{pos, yaw, …}`,
+  `MapWorld.garage`.
+- On a car switch the old car drives off and the new one drives in and parks. The car choice is
+  a strip of every car at the bottom of the screen (fixed layout; no arrows that move with the
+  name). The garage car is placed at rest, never dropped.
+
+### People (People)
+
+- New spectator models: better-looking people in the cel look (same prop names, or a new set
+  documented here).
+- Spectators are not rigid anymore: a car that hits one knocks it over in a comic tumble (no
+  gore); it lies a moment and gets back up, and the car loses a little speed.
+  `scripts/world/crowd.gd` owns the list, mirrored in `corridor.py` like `SMASHABLE`.
+- Done (ep3-people): the kit is `spectator_a`..`spectator_l` (twelve people, same names for
+  a..f) plus a static `marshal` (not knockable; WorldRuntime's road gates). Materials
+  `Crowd_Base` (vertex colours) and `Crowd_Dye` (tinted per instance from `Crowd.PALETTE`);
+  vertex alpha weights the arms for the crowd motion (`shaders/inc/crowd.gdshaderinc`, opt
+  `crowd` of ToonMaterials). Crowd lists live in `tools/mapgen/lib/scatter.py`
+  (`SPECTATORS`, `SPECTATOR_WEIGHTS`); `corridor.py` `KNOCKABLE` = `Crowd.PEOPLE` (off the
+  tarmac only). A knock costs 1-1.5 % of the car's speed through SoftCourse's loss budget.
+  Verification: `tools/crowd/crowd_probe.gd` (shots, lineup, knock).

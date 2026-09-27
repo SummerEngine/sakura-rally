@@ -7,19 +7,26 @@ extends SceneTree
 ## whole course back. The row and gate passes use only the car API, so the same run on a
 ## branch without SoftCourse gives the "before" numbers.
 ##
-## Run in a window (silent) it also renders the drive from a camera behind the car and logs
-## every frame: real frame time, physics steps, and the growth of draw-time pipeline
-## compilations, nodes and resources. It prints the worst frames within 1 s of the 1st, 2nd
-## and 10th smash, the first upright hit and the first gate pass (FRAMES lines), and fails on
-## a compilation, node or resource created at hit time or a frame over 25 ms there.
+## Rendered (`--summer-offscreen --audio-driver Dummy`) it also draws the drive from a camera
+## behind the car and logs every frame: real frame time, physics steps, and the growth of
+## draw-time pipeline compilations, nodes and resources. It prints the worst frames within 1 s
+## of the 1st, 2nd and 10th smash, the first upright hit and the first gate pass (FRAMES lines),
+## and fails on a compilation, node or resource created at hit time or a frame over 25 ms there.
+##
+## `map` is a route of the world (hanami, momiji, liaison); the passes run along that route.
 ##
 ##   timeout 300 $S --headless --disable-crash-handler --path . -s res://tools/game/softcourse_probe.gd \
 ##       -- map=hanami car=sakura
-##   timeout 300 $S --audio-driver Dummy --disable-crash-handler --path . -s res://tools/game/softcourse_probe.gd
+##   timeout 300 $S --summer-offscreen --audio-driver Dummy --disable-crash-handler --path . \
+##       -s res://tools/game/softcourse_probe.gd
 
 const DT := 1.0 / 120.0
 ## Hits are measured over this long after the contact (s).
 const WINDOW := 0.6
+## A row also needs the lane this far (m) past its offset clear: swinging out to it at speed the
+## car runs up to a metre wide of its lane with the nose turned out (on the liaison it reached a
+## maple 2.3 m behind the bale row).
+const ROW_SWING := 1.2
 
 var opts := {"map": "hanami", "car": "sakura", "kmh": "85"}
 ## Heavy dressing: a light row leaves these out; the heavy row is a tyre or bale wall.
@@ -262,9 +269,9 @@ func _run() -> void:
 		var gate: Node = null
 		if soft != null:
 			for c in map.checkpoints:
-				if soft.gate_for_checkpoint(int(c["index"])) != null:
+				if soft.gate_near(c["position"]) != null:
 					cp = c
-					gate = soft.gate_for_checkpoint(int(c["index"]))
+					gate = soft.gate_near(c["position"])
 					break
 		var cs := map.track.dist(map.track.nearest(cp["position"]))
 		var billowed := [false]
@@ -321,11 +328,7 @@ func _spawn_car() -> void:
 func _find_row(heavy: bool) -> Dictionary:
 	var track := map.track
 	var names: Array[String] = []
-	var smash := ["tape_post", "banner_fence", "flag_pole", "flag_pole_pink", "flag_pole_blue",
-		"traffic_cone", "chevron_left", "chevron_right", "distance_board_100", "distance_board_50",
-		"tire_stack", "hay_bale_round", "hay_bale_square", "marshal_post", "sign_curve_left",
-		"sign_curve_right", "road_mirror", "rice_paddy_marker", "scarecrow", "koinobori",
-		"fence_wood", "fence_bamboo", "bench"]
+	var smash: Array = SoftCourse.SMASHABLE.keys()
 	var found: Array[Dictionary] = []
 	var inst: Dictionary = map.info["instances"]
 	for n in smash:
@@ -338,7 +341,7 @@ func _find_row(heavy: bool) -> Dictionary:
 			var hw := track.half_width(i)
 			if absf(l) < hw - 0.5 or absf(l) > hw + track.verge + 4.5 or absf(p.y - track.point(i).y) > 1.5:
 				continue
-			found.append({"s": track.dist(i), "lat": l, "name": n})
+			found.append({"s": track.dist(i), "lat": l, "name": n, "hw": hw})
 	found.sort_custom(func(x: Dictionary, y: Dictionary) -> bool: return x["s"] < y["s"])
 	var best := {"s0": 600.0, "s1": 640.0, "lat": 6.0, "names": names}
 	var best_n := 0
@@ -353,9 +356,19 @@ func _find_row(heavy: bool) -> Dictionary:
 			if signf(g["lat"]) == signf(f["lat"]) and absf(float(g["lat"]) - float(f["lat"])) < 1.0:
 				sel.append(g["name"])
 				s1 = g["s"]
-		if sel.size() > best_n and float(f["s"]) > 150.0 and _lane_clear(float(f["s"]) - 35.0, s1 + 10.0, float(f["lat"])):
+		# the row's own lane, every lane on the way out to it (a row behind a guardrail is out of
+		# reach) and the lane just past it (ROW_SWING)
+		var lat: float = f["lat"]
+		var reach := sel.size() > best_n and float(f["s"]) > 150.0
+		var l_out := float(f["hw"]) + 0.5
+		while reach and l_out < absf(lat) + 0.5:
+			reach = _lane_clear(float(f["s"]) - 35.0, s1 + 10.0, signf(lat) * minf(l_out, absf(lat)))
+			l_out += 1.0
+		if reach:
+			reach = _lane_clear(float(f["s"]) - 35.0, s1 + 10.0, signf(lat) * (absf(lat) + ROW_SWING))
+		if reach:
 			best_n = sel.size()
-			best = {"s0": f["s"], "s1": s1, "lat": f["lat"], "names": sel}
+			best = {"s0": f["s"], "s1": s1, "lat": lat, "names": sel}
 	return best
 
 
@@ -497,7 +510,7 @@ func _pass(label: String, s_from: float, s_to: float, lat: float, each_tick: Cal
 	return result
 
 
-## Mapgen direction boards (natsu): straight into the first one, from 30 m in front of it.
+## Mapgen direction boards (along the liaison road): straight into the first one, from 30 m in front of it.
 func _sign_pass() -> void:
 	var sign_id := -1
 	for id in soft.smashable_count():

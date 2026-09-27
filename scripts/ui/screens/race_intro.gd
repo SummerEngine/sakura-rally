@@ -139,7 +139,15 @@ func _chip(parent: Control, bg: Color, fg: Color) -> Label:
 
 func setup(map_id: String, mode: String) -> void:
 	var game := UIApi.game()
-	var m: Dictionary = game.get_map(map_id)
+	var tt: bool = mode == str(game.MODE_TIME_TRIAL)
+	var liaison: bool = mode == str(game.MODE_LIAISON)
+	var leg: Dictionary = game.campaign_current_leg()
+	var campaign: bool = not leg.is_empty() and leg["map"] == map_id
+	var legs: Array = game.CAMPAIGN
+	var i: int = game.campaign_leg
+	# The liaison is not a place of its own: its card names where the road goes.
+	var dest: Dictionary = legs[clampi(i + 1, 0, legs.size() - 1)] if campaign else {}
+	var m: Dictionary = game.get_map(str(dest["map"]) if liaison and campaign else map_id)
 	_accent = UITheme.season_accent(str(m.get("season", "spring")))
 	_strip_kanji.text = str(m.get("name_jp", ""))
 	_strip_kanji.color = _accent.darkened(0.05)
@@ -147,20 +155,13 @@ func setup(map_id: String, mode: String) -> void:
 	_tagline.text = str(m.get("tagline", ""))
 	_swash.set_param("paint", _accent)
 	_swash.size.x = _name.text_width() + 110.0
-	var tt: bool = mode == str(game.MODE_TIME_TRIAL)
-	var liaison: bool = mode == str(game.MODE_LIAISON)
-	var leg: Dictionary = game.campaign_current_leg()
-	var campaign: bool = not leg.is_empty() and leg["map"] == map_id
 	_kicker.visible = campaign
 	_mode_chip.text = "TIME TRIAL" if tt else ("UNTIMED" if liaison else "FREE ROAM")
 	if campaign:
-		var legs: Array = game.CAMPAIGN
-		var i: int = game.campaign_leg
 		if liaison:
 			var from: Dictionary = legs[maxi(i - 1, 0)]
-			var dest: Dictionary = legs[mini(i + 1, legs.size() - 1)]
-			_kicker.text = "%s  ·  LIAISON  →  %s" % [leg["code"], str(dest["title"]).to_upper()]
-			_tagline.text = "%s → %s. No clock: take in the summer." % [from["title"], dest["title"]]
+			_kicker.text = "DRIVE ON  →  %s START" % dest["code"]
+			_tagline.text = "The road is open from %s through the summer hills. No clock." % from["title"]
 		else:
 			var stages := 0
 			var nth := 0

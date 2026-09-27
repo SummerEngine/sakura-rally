@@ -29,7 +29,7 @@ PROPS: dict[str, PropSpec] = {}
 
 BUDGET = {
     "tree": 1500, "vegetation": 1500, "ground_cover": 40, "rock": 300, "building": 3000,
-    "village": 3000, "rally": 3000, "spectator": 600,
+    "village": 3000, "rally": 3000, "spectator": 1300, "corner_sign": 900,
 }
 
 

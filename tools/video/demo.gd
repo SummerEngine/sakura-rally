@@ -2,15 +2,16 @@ extends SceneTree
 ## Demo reel footage, rendered offline by Movie Maker: run tools/video/render_demo.sh, not this
 ## script directly (cue times count Movie Maker frames at 60 fps). The real game, driven by real
 ## key / pad presses through the real UI and the autopilot:
-##   title hub over the drifting flyover -> Down, Down, Enter: the garage (the menu car parks
-##   under the showroom orbit) -> Down, Right: the next livery brushes on -> Esc -> Up, Enter:
-##   Time Attack with the Hanami card focused -> Up to Time Trial and back -> Enter: intro swoop,
-##   countdown with throttle blips, launch under the chase camera with the HUD -> the showoff
-##   lap under directed cinematic cuts (HUD hidden): a fabric checkpoint gate, the tarmac
-##   hairpin where the car runs wide through the hay bales, slow motion through the gravel
-##   esses -> chase camera + HUD over the last bridge to the finish -> results card -> Right,
-##   A: Next map -> Momiji at golden hour, slow motion through the gravel hairpin -> pause ->
-##   Main menu (lands on the Time Attack page) -> Esc: the title over Momiji.
+##   title hub over the drifting flyover -> Down, Down, Enter: the garage (the menu car stands
+##   at the roadside workshop under the garage orbit) -> Up, Right: the next livery brushes on
+##   -> Esc -> Up, Enter: Time Attack with the Hanami card focused -> Up to Time Trial and back
+##   -> Enter: intro swoop, countdown with throttle blips, launch under the chase camera with
+##   the HUD -> the showoff lap under directed cinematic cuts (HUD hidden): a fabric checkpoint
+##   gate, the tarmac hairpin where the car runs wide through the hay bales, slow motion
+##   through the gravel esses -> chase camera + HUD over the last bridge to the finish ->
+##   results card -> Right, A: Next map -> Momiji at golden hour, slow motion through the
+##   gravel hairpin -> pause -> Main menu (lands on the Time Attack page) -> Esc: the title over
+##   the Hanami flyover.
 ## Music is muted here: cut_demo.py lays one continuous track under the edit. Cues (video
 ## seconds + lap progress) go to <footage>/cues.json: every state entry, every cut and pass, every
 ## menu step, each fabric gate the car passes (<map>_gate_<i>) and the first smash of soft
@@ -20,6 +21,10 @@ extends SceneTree
 ##   timeout 600 $S --summer-offscreen --audio-driver Dummy --disable-crash-handler --path . \
 ##       -s res://tools/video/demo.gd -- footage=/tmp/sakura_demo_check stills=/tmp/sakura_demo_check/stills
 ## (stills=<dir> saves the frame at every cue, and two more after each smash and gate.)
+##
+## Cue times count main-loop iterations, one per Movie Maker frame. macOS stops drawing a covered
+## window, the offscreen one too, while Movie Maker still writes a frame per iteration; KeepDrawing
+## draws those frames itself, so the footage never freezes and the cues stay on the footage clock.
 
 const SLOWMO := 0.3
 ## Seconds between menu key presses: slow enough to read each focus move on video.
@@ -84,6 +89,25 @@ var reached: Dictionary = {}
 var marked: Dictionary = {}
 var cues: Array[Dictionary] = []
 var _frame0 := 0
+var _keep: KeepDrawing
+
+
+## Runs last in every iteration; after one that drew nothing (the window covered), renders the
+## frame into the viewport texture, which Movie Maker and the stills read.
+class KeepDrawing extends Node:
+	var forced := 0
+	var _drawn := -1
+
+	func _init() -> void:
+		process_mode = Node.PROCESS_MODE_ALWAYS
+		process_priority = 1 << 30
+
+	func _process(delta: float) -> void:
+		var drawn := Engine.get_frames_drawn()
+		if drawn == _drawn:
+			RenderingServer.force_draw(false, delta)
+			forced += 1
+		_drawn = drawn
 
 
 func _initialize() -> void:
@@ -100,8 +124,10 @@ func _initialize() -> void:
 		reached[s] = int(reached.get(s, 0)) + 1
 		_cue("%s_%d" % [str((game.State as Dictionary).find_key(s)).to_lower(), reached[s]]))
 	# A window close request quits the game mid-take: say so in the log.
-	root.close_requested.connect(func() -> void: print("WINDOW close requested at %.2f s" % ((Engine.get_frames_drawn() - _frame0) / 60.0)))
-	_frame0 = Engine.get_frames_drawn()
+	root.close_requested.connect(func() -> void: print("WINDOW close requested at %.2f s" % _now()))
+	_frame0 = Engine.get_process_frames()
+	_keep = KeepDrawing.new()
+	root.add_child(_keep)
 	main = load("res://scenes/main.tscn").instantiate()
 	root.add_child(main)
 	_run.call_deferred()
@@ -148,6 +174,7 @@ func _run() -> void:
 	_cue("title_end")
 	await _seconds(9.0)
 	_cue("end")
+	print("KEEP_DRAWING %d frames drawn by the tool (window covered)" % _keep.forced)
 	var f := FileAccess.open("%s/cues.json" % opts["footage"], FileAccess.WRITE)
 	f.store_string(JSON.stringify(cues, "  "))
 	f.close()
@@ -164,8 +191,8 @@ func _menu_run() -> void:
 	await _key(KEY_ENTER)
 	await _until(func() -> bool: return str(game.menu_view) == "garage", 5.0)
 	_cue("garage")
-	await _seconds(2.6) # the car rolls onto the grid, the showroom orbit starts
-	await _key(KEY_DOWN) # car -> livery
+	await _seconds(2.6) # the garage orbit's establishing view eases in
+	await _key(KEY_UP) # car strip -> livery picker
 	await _seconds(MENU_STEP)
 	var colour := int(game.get_setting("car_color"))
 	_cue("garage_livery")
@@ -229,7 +256,7 @@ func _race_start() -> Car:
 	# On show: committed braking and every real corner sideways (see Autopilot `style`).
 	ap.style = &"showoff"
 	car.add_child(ap)
-	var map_id := str(main.map.map_id)
+	var map_id := str(main.map.route_id)
 	for s: Array in SWERVES.get(map_id, []):
 		_swerve(car, ap, map_id, s)
 	_watch_gates(car, map_id)
@@ -274,7 +301,7 @@ func _watch_gates(car: Car, map_id: String) -> void:
 		if marks[i] < 1.0 or marks[i] > track.length - 1.0:
 			continue # the start / finish line
 		await _until_progress(car, marks[i])
-		if not is_instance_valid(car) or main.map == null or str(main.map.map_id) != map_id:
+		if not is_instance_valid(car) or main.map == null or str(main.map.route_id) != map_id:
 			return
 		_cue("%s_gate_%d" % [map_id, i], car)
 
@@ -380,7 +407,7 @@ func _send(ev: InputEvent) -> void:
 # ---------------------------------------------------------------- helpers
 
 func _cue(cue_name: String, car: Car = null) -> void:
-	var t := (Engine.get_frames_drawn() - _frame0) / 60.0
+	var t := _now()
 	var cue := {"name": cue_name, "t": snappedf(t, 0.001)}
 	if car != null and main.map != null and main.map.track != null:
 		var track: Track = main.map.track
@@ -401,7 +428,12 @@ func _stills(cue_name: String) -> void:
 			await _seconds(0.5)
 		await RenderingServer.frame_post_draw
 		var img := root.get_texture().get_image()
-		img.save_jpg("%s/%07.2f_%s_%.1f.jpg" % [opts["stills"], (Engine.get_frames_drawn() - _frame0) / 60.0, cue_name, d], 0.85)
+		img.save_jpg("%s/%07.2f_%s_%.1f.jpg" % [opts["stills"], _now(), cue_name, d], 0.85)
+
+
+## Seconds of footage since the start (60 fps).
+func _now() -> float:
+	return (Engine.get_process_frames() - _frame0) / 60.0
 
 
 func _seconds(s: float) -> void:

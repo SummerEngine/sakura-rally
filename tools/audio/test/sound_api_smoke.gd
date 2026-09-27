@@ -31,12 +31,12 @@ func _run() -> void:
 	sound.play_music(&"results", 0.0)
 	sound.play_music(&"liaison", 0.3)
 	sound.play_music(&"missing_track")
-	sound.play_ambience("hanami", 0.2)
+	sound.play_ambience(0.2)
 	await create_timer(0.3).timeout
-	sound.play_ambience("momiji", 0.4)
-	sound.play_ambience("natsu", 0.4)
-	sound.play_ambience("no_such_map")
-	sound.play_ambience("hanami")
+	sound.set_ambience_mix(Vector3(0.0, 0.0, 1.0))
+	sound.set_ambience_mix(Vector3(0.0, 0.5, 0.5))
+	sound.play_ambience() # playing already: harmless
+	sound.set_ambience_mix(Vector3(1.0, 0.0, 0.0))
 	for n in [&"impact_light", &"impact_heavy", &"thump", &"stone", &"backfire", &"blowoff", &"shift", &"bogus"]:
 		sound.play_3d(n, Vector3(1, 0, -3), -3.0)
 	sound.play_3d(&"res://assets/audio/car/stone_1.wav", Vector3.ZERO)

@@ -13,7 +13,7 @@ const MANIFEST := "res://assets/models/props/manifest.json"
 const SIZE_TOLERANCE := 0.10
 const BUDGETS := {
 	"tree": 1500, "vegetation": 1500, "ground_cover": 40, "rock": 300, "building": 3000,
-	"village": 3000, "roadside": 3000, "rally": 3000, "vehicle": 3000, "spectator": 600,
+	"village": 3000, "roadside": 3000, "rally": 3000, "vehicle": 3000, "spectator": 1300,
 }
 
 

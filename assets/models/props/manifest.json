@@ -2080,80 +2080,6 @@
    ]
   },
   {
-   "name": "sign_curve_left",
-   "file": "res://assets/models/props/sign_curve_left.glb",
-   "category": "roadside",
-   "size": [
-    0.919,
-    2.61,
-    0.14
-   ],
-   "aabb_center": [
-    0.0,
-    1.305,
-    -0.04
-   ],
-   "collision": {
-    "type": "cylinder",
-    "radius": 0.05,
-    "height": 2.61
-   },
-   "placement": [
-    "roadside"
-   ],
-   "footprint_radius": 0.463,
-   "seasons": [
-    "spring",
-    "autumn"
-   ],
-   "tris": 100,
-   "materials": [
-    "Galvanized",
-    "Ink",
-    "Yellow_Sign"
-   ],
-   "nodes": [
-    "sign_curve_left"
-   ]
-  },
-  {
-   "name": "sign_curve_right",
-   "file": "res://assets/models/props/sign_curve_right.glb",
-   "category": "roadside",
-   "size": [
-    0.919,
-    2.61,
-    0.14
-   ],
-   "aabb_center": [
-    0.0,
-    1.305,
-    -0.04
-   ],
-   "collision": {
-    "type": "cylinder",
-    "radius": 0.05,
-    "height": 2.61
-   },
-   "placement": [
-    "roadside"
-   ],
-   "footprint_radius": 0.463,
-   "seasons": [
-    "spring",
-    "autumn"
-   ],
-   "tris": 100,
-   "materials": [
-    "Galvanized",
-    "Ink",
-    "Yellow_Sign"
-   ],
-   "nodes": [
-    "sign_curve_right"
-   ]
-  },
-  {
    "name": "road_mirror",
    "file": "res://assets/models/props/road_mirror.glb",
    "category": "roadside",
@@ -3132,98 +3058,6 @@
    ]
   },
   {
-   "name": "chevron_left",
-   "file": "res://assets/models/props/chevron_left.glb",
-   "category": "rally",
-   "size": [
-    1.64,
-    1.17,
-    0.109
-   ],
-   "aabb_center": [
-    0.0,
-    0.585,
-    0.019
-   ],
-   "collision": {
-    "type": "box",
-    "size": [
-     1.64,
-     1.17,
-     0.12
-    ],
-    "center": [
-     0,
-     0.585,
-     0
-    ]
-   },
-   "placement": [
-    "roadside"
-   ],
-   "footprint_radius": 0.82,
-   "seasons": [
-    "spring",
-    "autumn"
-   ],
-   "tris": 128,
-   "materials": [
-    "Galvanized",
-    "Ink",
-    "Red",
-    "White"
-   ],
-   "nodes": [
-    "chevron_left"
-   ]
-  },
-  {
-   "name": "chevron_right",
-   "file": "res://assets/models/props/chevron_right.glb",
-   "category": "rally",
-   "size": [
-    1.64,
-    1.17,
-    0.109
-   ],
-   "aabb_center": [
-    0.0,
-    0.585,
-    0.019
-   ],
-   "collision": {
-    "type": "box",
-    "size": [
-     1.64,
-     1.17,
-     0.12
-    ],
-    "center": [
-     0,
-     0.585,
-     0
-    ]
-   },
-   "placement": [
-    "roadside"
-   ],
-   "footprint_radius": 0.82,
-   "seasons": [
-    "spring",
-    "autumn"
-   ],
-   "tris": 128,
-   "materials": [
-    "Galvanized",
-    "Ink",
-    "Red",
-    "White"
-   ],
-   "nodes": [
-    "chevron_right"
-   ]
-  },
-  {
    "name": "tape_post",
    "file": "res://assets/models/props/tape_post.glb",
    "category": "rally",
@@ -3520,38 +3354,33 @@
    "file": "res://assets/models/props/spectator_a.glb",
    "category": "spectator",
    "size": [
-    0.683,
-    1.78,
-    0.382
+    0.822,
+    1.879,
+    0.334
    ],
    "aabb_center": [
-    -0.029,
-    0.885,
-    -0.061
+    0.0,
+    0.939,
+    0.007
    ],
    "collision": {
     "type": "cylinder",
-    "radius": 0.25,
-    "height": 1.775
+    "radius": 0.3,
+    "height": 1.879
    },
    "placement": [
     "spectator_zone",
     "roadside"
    ],
-   "footprint_radius": 0.372,
+   "footprint_radius": 0.417,
    "seasons": [
     "spring",
     "autumn"
    ],
-   "tris": 386,
+   "tris": 713,
    "materials": [
-    "Cloth_Denim",
-    "Cloth_White",
-    "Cloth_Blue",
-    "Skin",
-    "Ink",
-    "Hair_Brown",
-    "Cloth_Red"
+    "Crowd_Base",
+    "Crowd_Dye"
    ],
    "nodes": [
     "spectator_a"
@@ -3562,37 +3391,33 @@
    "file": "res://assets/models/props/spectator_b.glb",
    "category": "spectator",
    "size": [
-    1.038,
-    1.96,
-    0.3
+    0.627,
+    1.819,
+    0.385
    ],
    "aabb_center": [
-    0.0,
-    0.975,
-    -0.02
+    0.053,
+    0.909,
+    -0.003
    ],
    "collision": {
     "type": "cylinder",
     "radius": 0.3,
-    "height": 1.955
+    "height": 1.819
    },
    "placement": [
     "spectator_zone",
     "roadside"
    ],
-   "footprint_radius": 0.526,
+   "footprint_radius": 0.367,
    "seasons": [
     "spring",
     "autumn"
    ],
-   "tris": 330,
+   "tris": 809,
    "materials": [
-    "Cloth_Navy",
-    "Cloth_Red",
-    "Cloth_Yellow",
-    "Skin",
-    "Ink",
-    "Hair_Black"
+    "Crowd_Base",
+    "Crowd_Dye"
    ],
    "nodes": [
     "spectator_b"
@@ -3603,40 +3428,33 @@
    "file": "res://assets/models/props/spectator_c.glb",
    "category": "spectator",
    "size": [
-    1.261,
-    2.293,
-    0.492
+    1.445,
+    2.659,
+    0.392
    ],
    "aabb_center": [
-    0.298,
-    1.142,
-    -0.029
+    0.41,
+    1.329,
+    -0.045
    ],
    "collision": {
     "type": "cylinder",
     "radius": 0.3,
-    "height": 2.288
+    "height": 2.659
    },
    "placement": [
     "spectator_zone",
     "roadside"
    ],
-   "footprint_radius": 0.947,
+   "footprint_radius": 1.151,
    "seasons": [
     "spring",
     "autumn"
    ],
-   "tris": 378,
+   "tris": 835,
    "materials": [
-    "Cloth_White",
-    "Cloth_Navy",
-    "Cloth_Pink",
-    "Skin",
-    "Ink",
-    "Hair_Black",
-    "Wood_Pale",
-    "Vermilion",
-    "White"
+    "Crowd_Base",
+    "Crowd_Dye"
    ],
    "nodes": [
     "spectator_c"
@@ -3647,40 +3465,33 @@
    "file": "res://assets/models/props/spectator_d.glb",
    "category": "spectator",
    "size": [
-    0.544,
-    1.8,
-    0.722
+    0.519,
+    1.735,
+    0.768
    ],
    "aabb_center": [
-    0.0,
-    0.895,
-    -0.125
+    -0.009,
+    0.868,
+    -0.239
    ],
    "collision": {
     "type": "cylinder",
-    "radius": 0.25,
-    "height": 1.795
+    "radius": 0.28,
+    "height": 1.735
    },
    "placement": [
     "spectator_zone",
     "roadside"
    ],
-   "footprint_radius": 0.487,
+   "footprint_radius": 0.627,
    "seasons": [
     "spring",
     "autumn"
    ],
-   "tris": 452,
+   "tris": 890,
    "materials": [
-    "Cloth_Khaki",
-    "Cloth_Black",
-    "Cloth_Green",
-    "Skin",
-    "Ink",
-    "Hair_Grey",
-    "Red",
-    "Metal_Dark",
-    "Glass"
+    "Crowd_Base",
+    "Crowd_Dye"
    ],
    "nodes": [
     "spectator_d"
@@ -3691,38 +3502,33 @@
    "file": "res://assets/models/props/spectator_e.glb",
    "category": "spectator",
    "size": [
-    0.544,
-    1.38,
-    0.624
+    0.502,
+    1.159,
+    0.675
    ],
    "aabb_center": [
     0.0,
-    0.685,
-    -0.202
+    0.584,
+    -0.182
    ],
    "collision": {
     "type": "cylinder",
     "radius": 0.3,
-    "height": 1.375
+    "height": 1.164
    },
    "placement": [
     "spectator_zone",
     "roadside"
    ],
-   "footprint_radius": 0.518,
+   "footprint_radius": 0.527,
    "seasons": [
     "spring",
     "autumn"
    ],
-   "tris": 362,
+   "tris": 726,
    "materials": [
-    "Cloth_Black",
-    "Cloth_White",
-    "Cloth_Orange",
-    "Skin",
-    "Ink",
-    "Hair_Black",
-    "Cloth_Navy"
+    "Crowd_Base",
+    "Crowd_Dye"
    ],
    "nodes": [
     "spectator_e"
@@ -3733,43 +3539,1049 @@
    "file": "res://assets/models/props/spectator_f.glb",
    "category": "spectator",
    "size": [
-    0.583,
-    1.295,
-    0.463
+    0.8,
+    1.664,
+    0.391
    ],
    "aabb_center": [
-    0.032,
-    0.644,
-    -0.007
+    0.178,
+    0.832,
+    0.002
    ],
    "collision": {
     "type": "cylinder",
-    "radius": 0.2,
-    "height": 1.292
+    "radius": 0.22,
+    "height": 1.664
    },
    "placement": [
     "spectator_zone",
     "roadside"
    ],
-   "footprint_radius": 0.332,
+   "footprint_radius": 0.591,
    "seasons": [
     "spring",
     "autumn"
    ],
-   "tris": 436,
+   "tris": 953,
    "materials": [
-    "Cloth_Navy",
-    "Cloth_Pink",
-    "Cloth_Teal",
-    "Skin",
-    "Ink",
-    "Hair_Black",
-    "Cloth_Yellow",
-    "Red",
-    "Red_Dark"
+    "Crowd_Base",
+    "Crowd_Dye"
    ],
    "nodes": [
     "spectator_f"
+   ]
+  },
+  {
+   "name": "marshal",
+   "file": "res://assets/models/props/marshal.glb",
+   "category": "spectator",
+   "size": [
+    1.396,
+    1.743,
+    0.734
+   ],
+   "aabb_center": [
+    0.392,
+    0.871,
+    -0.233
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.3,
+    "height": 1.743
+   },
+   "placement": [
+    "spectator_zone",
+    "roadside"
+   ],
+   "footprint_radius": 1.244,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 884,
+   "materials": [
+    "Crowd_Base"
+   ],
+   "nodes": [
+    "marshal"
+   ]
+  },
+  {
+   "name": "garage_workshop",
+   "file": "res://assets/models/props/garage_workshop.glb",
+   "category": "building",
+   "size": [
+    15.0,
+    5.79,
+    10.718
+   ],
+   "aabb_center": [
+    0.0,
+    2.895,
+    0.0
+   ],
+   "collision": {
+    "type": "none"
+   },
+   "placement": [
+    "village",
+    "roadside"
+   ],
+   "footprint_radius": 9.172,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 8258,
+   "materials": [
+    "Concrete",
+    "Metal_Dark",
+    "Plaster",
+    "Wood_Dark",
+    "Wood_Weathered",
+    "Glass",
+    "Wood",
+    "Stone",
+    "Vermilion",
+    "Roof_Tin",
+    "Roof_Ridge",
+    "Paper_White",
+    "Gold",
+    "Ink",
+    "Rope",
+    "Light_Panel",
+    "Lantern_Red",
+    "Lantern_Paper",
+    "Wood_Pale",
+    "Metal",
+    "Red",
+    "Red_Dark",
+    "Blue",
+    "Rubber",
+    "Blue_Pale",
+    "Galvanized",
+    "Yellow_Sign",
+    "White",
+    "Banner_Pink",
+    "Banner_Ink",
+    "Banner_Rose",
+    "Blossom_Rose"
+   ],
+   "nodes": [
+    "garage_workshop",
+    "Lamp_0",
+    "Lamp_1",
+    "Lamp_2",
+    "Lantern_0",
+    "Lantern_1",
+    "Lantern_2",
+    "Lantern_3"
+   ],
+   "markers": {
+    "Lamp_0": [
+     -4.667,
+     2.93,
+     -0.2
+    ],
+    "Lamp_1": [
+     0.0,
+     2.93,
+     -0.2
+    ],
+    "Lamp_2": [
+     4.667,
+     2.93,
+     -0.2
+    ],
+    "Lantern_0": [
+     -6.79,
+     3.13,
+     -4.55
+    ],
+    "Lantern_1": [
+     -2.263,
+     3.13,
+     -4.55
+    ],
+    "Lantern_2": [
+     2.263,
+     3.13,
+     -4.55
+    ],
+    "Lantern_3": [
+     6.79,
+     3.13,
+     -4.55
+    ]
+   }
+  },
+  {
+   "name": "garage_nobori",
+   "file": "res://assets/models/props/garage_nobori.glb",
+   "category": "rally",
+   "size": [
+    1.0,
+    4.54,
+    0.56
+   ],
+   "aabb_center": [
+    0.22,
+    2.27,
+    0.0
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.06,
+    "height": 4.54
+   },
+   "placement": [
+    "roadside"
+   ],
+   "footprint_radius": 0.72,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 1746,
+   "materials": [
+    "Rubber",
+    "Galvanized",
+    "Banner_Pink",
+    "White",
+    "Vermilion",
+    "Banner_Ink",
+    "Banner_Rose"
+   ],
+   "nodes": [
+    "garage_nobori"
+   ]
+  },
+  {
+   "name": "garage_tyres",
+   "file": "res://assets/models/props/garage_tyres.glb",
+   "category": "rally",
+   "size": [
+    1.94,
+    0.91,
+    1.326
+   ],
+   "aabb_center": [
+    0.285,
+    0.455,
+    -0.079
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.7,
+    "height": 0.91
+   },
+   "placement": [
+    "roadside"
+   ],
+   "footprint_radius": 1.256,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 976,
+   "materials": [
+    "Rubber",
+    "Blue",
+    "Metal_Dark"
+   ],
+   "nodes": [
+    "garage_tyres"
+   ]
+  },
+  {
+   "name": "spectator_g",
+   "file": "res://assets/models/props/spectator_g.glb",
+   "category": "spectator",
+   "size": [
+    1.27,
+    2.146,
+    1.175
+   ],
+   "aabb_center": [
+    0.253,
+    1.073,
+    -0.06
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.3,
+    "height": 2.146
+   },
+   "placement": [
+    "spectator_zone",
+    "roadside"
+   ],
+   "footprint_radius": 0.904,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 810,
+   "materials": [
+    "Crowd_Base",
+    "Crowd_Dye"
+   ],
+   "nodes": [
+    "spectator_g"
+   ]
+  },
+  {
+   "name": "spectator_h",
+   "file": "res://assets/models/props/spectator_h.glb",
+   "category": "spectator",
+   "size": [
+    0.635,
+    1.812,
+    0.471
+   ],
+   "aabb_center": [
+    0.045,
+    0.906,
+    -0.086
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.28,
+    "height": 1.812
+   },
+   "placement": [
+    "spectator_zone",
+    "roadside"
+   ],
+   "footprint_radius": 0.477,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 804,
+   "materials": [
+    "Crowd_Base",
+    "Crowd_Dye"
+   ],
+   "nodes": [
+    "spectator_h"
+   ]
+  },
+  {
+   "name": "spectator_i",
+   "file": "res://assets/models/props/spectator_i.glb",
+   "category": "spectator",
+   "size": [
+    0.819,
+    1.741,
+    0.653
+   ],
+   "aabb_center": [
+    0.078,
+    0.871,
+    -0.182
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.3,
+    "height": 1.741
+   },
+   "placement": [
+    "spectator_zone",
+    "roadside"
+   ],
+   "footprint_radius": 0.694,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 725,
+   "materials": [
+    "Crowd_Base",
+    "Crowd_Dye"
+   ],
+   "nodes": [
+    "spectator_i"
+   ]
+  },
+  {
+   "name": "spectator_j",
+   "file": "res://assets/models/props/spectator_j.glb",
+   "category": "spectator",
+   "size": [
+    0.595,
+    1.776,
+    0.504
+   ],
+   "aabb_center": [
+    0.0,
+    0.888,
+    -0.097
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.32,
+    "height": 1.776
+   },
+   "placement": [
+    "spectator_zone",
+    "roadside"
+   ],
+   "footprint_radius": 0.35,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 815,
+   "materials": [
+    "Crowd_Base",
+    "Crowd_Dye"
+   ],
+   "nodes": [
+    "spectator_j"
+   ]
+  },
+  {
+   "name": "spectator_k",
+   "file": "res://assets/models/props/spectator_k.glb",
+   "category": "spectator",
+   "size": [
+    0.738,
+    2.228,
+    0.27
+   ],
+   "aabb_center": [
+    0.0,
+    1.114,
+    -0.02
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.32,
+    "height": 2.228
+   },
+   "placement": [
+    "spectator_zone",
+    "roadside"
+   ],
+   "footprint_radius": 0.379,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 831,
+   "materials": [
+    "Crowd_Base",
+    "Crowd_Dye"
+   ],
+   "nodes": [
+    "spectator_k"
+   ]
+  },
+  {
+   "name": "spectator_l",
+   "file": "res://assets/models/props/spectator_l.glb",
+   "category": "spectator",
+   "size": [
+    0.582,
+    1.336,
+    0.775
+   ],
+   "aabb_center": [
+    0.0,
+    0.667,
+    -0.158
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.3,
+    "height": 1.335
+   },
+   "placement": [
+    "spectator_zone",
+    "roadside"
+   ],
+   "footprint_radius": 0.579,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 698,
+   "materials": [
+    "Crowd_Base",
+    "Crowd_Dye"
+   ],
+   "nodes": [
+    "spectator_l"
+   ]
+  },
+  {
+   "name": "corner_warn_curve_left",
+   "file": "res://assets/models/props/corner_warn_curve_left.glb",
+   "category": "corner_sign",
+   "size": [
+    3.111,
+    4.606,
+    0.3
+   ],
+   "aabb_center": [
+    0.0,
+    2.303,
+    0.089
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.07,
+    "height": 4.3,
+    "offsets": [
+     [
+      -0.55,
+      0.0,
+      0.1
+     ],
+     [
+      0.55,
+      0.0,
+      0.1
+     ]
+    ]
+   },
+   "placement": [
+    "roadside"
+   ],
+   "footprint_radius": 1.556,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 472,
+   "materials": [
+    "Galvanized",
+    "Concrete",
+    "Ink",
+    "Yellow_Sign"
+   ],
+   "nodes": [
+    "corner_warn_curve_left"
+   ]
+  },
+  {
+   "name": "corner_warn_curve_right",
+   "file": "res://assets/models/props/corner_warn_curve_right.glb",
+   "category": "corner_sign",
+   "size": [
+    3.111,
+    4.606,
+    0.3
+   ],
+   "aabb_center": [
+    0.0,
+    2.303,
+    0.089
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.07,
+    "height": 4.3,
+    "offsets": [
+     [
+      -0.55,
+      0.0,
+      0.1
+     ],
+     [
+      0.55,
+      0.0,
+      0.1
+     ]
+    ]
+   },
+   "placement": [
+    "roadside"
+   ],
+   "footprint_radius": 1.556,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 472,
+   "materials": [
+    "Galvanized",
+    "Concrete",
+    "Ink",
+    "Yellow_Sign"
+   ],
+   "nodes": [
+    "corner_warn_curve_right"
+   ]
+  },
+  {
+   "name": "corner_warn_sharp_left",
+   "file": "res://assets/models/props/corner_warn_sharp_left.glb",
+   "category": "corner_sign",
+   "size": [
+    3.111,
+    4.606,
+    0.3
+   ],
+   "aabb_center": [
+    0.0,
+    2.303,
+    0.089
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.07,
+    "height": 4.3,
+    "offsets": [
+     [
+      -0.55,
+      0.0,
+      0.1
+     ],
+     [
+      0.55,
+      0.0,
+      0.1
+     ]
+    ]
+   },
+   "placement": [
+    "roadside"
+   ],
+   "footprint_radius": 1.556,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 232,
+   "materials": [
+    "Galvanized",
+    "Concrete",
+    "Ink",
+    "Yellow_Sign"
+   ],
+   "nodes": [
+    "corner_warn_sharp_left"
+   ]
+  },
+  {
+   "name": "corner_warn_sharp_right",
+   "file": "res://assets/models/props/corner_warn_sharp_right.glb",
+   "category": "corner_sign",
+   "size": [
+    3.111,
+    4.606,
+    0.3
+   ],
+   "aabb_center": [
+    0.0,
+    2.303,
+    0.089
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.07,
+    "height": 4.3,
+    "offsets": [
+     [
+      -0.55,
+      0.0,
+      0.1
+     ],
+     [
+      0.55,
+      0.0,
+      0.1
+     ]
+    ]
+   },
+   "placement": [
+    "roadside"
+   ],
+   "footprint_radius": 1.556,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 232,
+   "materials": [
+    "Galvanized",
+    "Concrete",
+    "Ink",
+    "Yellow_Sign"
+   ],
+   "nodes": [
+    "corner_warn_sharp_right"
+   ]
+  },
+  {
+   "name": "corner_warn_series_left",
+   "file": "res://assets/models/props/corner_warn_series_left.glb",
+   "category": "corner_sign",
+   "size": [
+    3.111,
+    4.606,
+    0.3
+   ],
+   "aabb_center": [
+    0.0,
+    2.303,
+    0.089
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.07,
+    "height": 4.3,
+    "offsets": [
+     [
+      -0.55,
+      0.0,
+      0.1
+     ],
+     [
+      0.55,
+      0.0,
+      0.1
+     ]
+    ]
+   },
+   "placement": [
+    "roadside"
+   ],
+   "footprint_radius": 1.556,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 808,
+   "materials": [
+    "Galvanized",
+    "Concrete",
+    "Ink",
+    "Yellow_Sign"
+   ],
+   "nodes": [
+    "corner_warn_series_left"
+   ]
+  },
+  {
+   "name": "corner_warn_series_right",
+   "file": "res://assets/models/props/corner_warn_series_right.glb",
+   "category": "corner_sign",
+   "size": [
+    3.111,
+    4.606,
+    0.3
+   ],
+   "aabb_center": [
+    0.0,
+    2.303,
+    0.089
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.07,
+    "height": 4.3,
+    "offsets": [
+     [
+      -0.55,
+      0.0,
+      0.1
+     ],
+     [
+      0.55,
+      0.0,
+      0.1
+     ]
+    ]
+   },
+   "placement": [
+    "roadside"
+   ],
+   "footprint_radius": 1.556,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 808,
+   "materials": [
+    "Galvanized",
+    "Concrete",
+    "Ink",
+    "Yellow_Sign"
+   ],
+   "nodes": [
+    "corner_warn_series_right"
+   ]
+  },
+  {
+   "name": "corner_warn_hairpin_left",
+   "file": "res://assets/models/props/corner_warn_hairpin_left.glb",
+   "category": "corner_sign",
+   "size": [
+    3.111,
+    4.606,
+    0.3
+   ],
+   "aabb_center": [
+    0.0,
+    2.303,
+    0.089
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.07,
+    "height": 4.3,
+    "offsets": [
+     [
+      -0.55,
+      0.0,
+      0.1
+     ],
+     [
+      0.55,
+      0.0,
+      0.1
+     ]
+    ]
+   },
+   "placement": [
+    "roadside"
+   ],
+   "footprint_radius": 1.556,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 712,
+   "materials": [
+    "Galvanized",
+    "Concrete",
+    "Ink",
+    "Yellow_Sign"
+   ],
+   "nodes": [
+    "corner_warn_hairpin_left"
+   ]
+  },
+  {
+   "name": "corner_warn_hairpin_right",
+   "file": "res://assets/models/props/corner_warn_hairpin_right.glb",
+   "category": "corner_sign",
+   "size": [
+    3.111,
+    4.606,
+    0.3
+   ],
+   "aabb_center": [
+    0.0,
+    2.303,
+    0.089
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.07,
+    "height": 4.3,
+    "offsets": [
+     [
+      -0.55,
+      0.0,
+      0.1
+     ],
+     [
+      0.55,
+      0.0,
+      0.1
+     ]
+    ]
+   },
+   "placement": [
+    "roadside"
+   ],
+   "footprint_radius": 1.556,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 712,
+   "materials": [
+    "Galvanized",
+    "Concrete",
+    "Ink",
+    "Yellow_Sign"
+   ],
+   "nodes": [
+    "corner_warn_hairpin_right"
+   ]
+  },
+  {
+   "name": "corner_chevron_left",
+   "file": "res://assets/models/props/corner_chevron_left.glb",
+   "category": "corner_sign",
+   "size": [
+    1.2,
+    2.4,
+    0.159
+   ],
+   "aabb_center": [
+    0.0,
+    1.2,
+    0.044
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.06,
+    "height": 2.4,
+    "offsets": [
+     [
+      -0.4,
+      0.0,
+      0.1
+     ],
+     [
+      0.4,
+      0.0,
+      0.1
+     ]
+    ]
+   },
+   "placement": [
+    "roadside"
+   ],
+   "footprint_radius": 0.601,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 160,
+   "materials": [
+    "Galvanized",
+    "Ink",
+    "Yellow_Sign"
+   ],
+   "nodes": [
+    "corner_chevron_left"
+   ]
+  },
+  {
+   "name": "corner_chevron_right",
+   "file": "res://assets/models/props/corner_chevron_right.glb",
+   "category": "corner_sign",
+   "size": [
+    1.2,
+    2.4,
+    0.159
+   ],
+   "aabb_center": [
+    0.0,
+    1.2,
+    0.044
+   ],
+   "collision": {
+    "type": "cylinder",
+    "radius": 0.06,
+    "height": 2.4,
+    "offsets": [
+     [
+      -0.4,
+      0.0,
+      0.1
+     ],
+     [
+      0.4,
+      0.0,
+      0.1
+     ]
+    ]
+   },
+   "placement": [
+    "roadside"
+   ],
+   "footprint_radius": 0.601,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 160,
+   "materials": [
+    "Galvanized",
+    "Ink",
+    "Yellow_Sign"
+   ],
+   "nodes": [
+    "corner_chevron_right"
+   ]
+  },
+  {
+   "name": "corner_chevron_rail_left",
+   "file": "res://assets/models/props/corner_chevron_rail_left.glb",
+   "category": "corner_sign",
+   "size": [
+    0.9,
+    1.66,
+    0.195
+   ],
+   "aabb_center": [
+    0.0,
+    1.13,
+    0.101
+   ],
+   "collision": {
+    "type": "none"
+   },
+   "placement": [
+    "roadside"
+   ],
+   "footprint_radius": 0.457,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 152,
+   "materials": [
+    "Galvanized",
+    "Ink",
+    "Yellow_Sign"
+   ],
+   "nodes": [
+    "corner_chevron_rail_left"
+   ]
+  },
+  {
+   "name": "corner_chevron_rail_right",
+   "file": "res://assets/models/props/corner_chevron_rail_right.glb",
+   "category": "corner_sign",
+   "size": [
+    0.9,
+    1.66,
+    0.195
+   ],
+   "aabb_center": [
+    0.0,
+    1.13,
+    0.101
+   ],
+   "collision": {
+    "type": "none"
+   },
+   "placement": [
+    "roadside"
+   ],
+   "footprint_radius": 0.457,
+   "seasons": [
+    "spring",
+    "autumn"
+   ],
+   "tris": 152,
+   "materials": [
+    "Galvanized",
+    "Ink",
+    "Yellow_Sign"
+   ],
+   "nodes": [
+    "corner_chevron_rail_right"
    ]
   }
  ]

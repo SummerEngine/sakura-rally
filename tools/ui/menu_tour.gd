@@ -1,10 +1,11 @@
 extends SceneTree
-## Windowed tour of the title hub in the real game (live 3D flyover, the real menu car): hub,
+## Offscreen tour of the title hub in the real game (live 3D flyover, the real menu car): hub,
 ## Time Attack, the garage with every livery painted onto the parked car (one frame caught
-## mid-sweep), a car switch, and back to the flyover with the chosen car. Navigates with the
+## mid-sweep), a car switch on the car strip (old car driving off, new one parking), and back to the flyover with the chosen car. Navigates with the
 ## player's ui_* actions; saves <out>/menu_<shot>_<aspect>.png and prints MENU_TOUR lines.
 ##
-##   timeout 300 $S --disable-crash-handler --path . -s res://tools/ui/menu_tour.gd -- aspect=16x9 out=/tmp/menu_tour
+##   timeout 300 $S --summer-offscreen --audio-driver Dummy --disable-crash-handler --path . \
+##       -s res://tools/ui/menu_tour.gd -- aspect=16x9 out=/tmp/menu_tour
 
 const ASPECTS := {"16x9": Vector2i(1600, 900), "16x10": Vector2i(1440, 900), "21x9": Vector2i(2100, 900)}
 
@@ -51,14 +52,15 @@ func _run() -> void:
 	await _press(&"ui_cancel")
 	await _seconds(1.0)
 
-	# Garage: the menu car parks on the start grid under the showroom orbit.
+	# Garage: the menu car stands on the workshop's display spot under the showroom orbit.
 	ui.title._garage_item.grab_focus()
 	await _press(&"ui_accept")
 	await _until(func() -> bool: return str(game.menu_view) == "garage", 5.0)
 	await _seconds(2.2)
 	_check(main.autopilot == null, "garage stops the autopilot")
 	_check(main.car.launch_hold, "garage parks the car")
-	_check(main.car.global_position.distance_to(main.map.spawn.origin) < 2.0, "car parked at the spawn (%.2f m)" % main.car.global_position.distance_to(main.map.spawn.origin))
+	var spot: Vector3 = main.menu_stage.display_spot().origin
+	_check(main.car.global_position.distance_to(spot) < 0.5, "car on the display spot (%.2f m)" % main.car.global_position.distance_to(spot))
 	await _shot("garage")
 	var panel: Node = ui.title._garage
 	panel.livery_picker.grab_focus()
@@ -81,10 +83,14 @@ func _run() -> void:
 		await _seconds(0.3)
 		var before: Node = main.car
 		await _press(&"ui_right")
-		await _seconds(0.25)
-		await _shot("garage_switch")
-		await _seconds(2.0)
-		_check(main.car != before and is_instance_valid(main.car), "car switch respawns the car")
+		await _seconds(1.5)
+		await _shot("garage_switch_leave")
+		await _seconds(3.0)
+		await _shot("garage_switch_arrive")
+		await _until(func() -> bool: return not main.menu_stage.arriving(), 15.0)
+		await _seconds(0.5)
+		_check(main.car != before and is_instance_valid(main.car), "car switch brings in another car")
+		_check(main.car.global_position.distance_to(spot) < 0.3, "new car parked on the display spot (%.2f m)" % main.car.global_position.distance_to(spot))
 		_check(str(game.get_setting("car_id")) == str(panel._cars[1]["id"]), "car choice saved")
 		_check(main.car.scene_file_path == str(panel._cars[1]["scene"]), "switched car runs the chosen scene")
 		_check(_paint_color(main.car).is_equal_approx(colors[colors.size() - 1]["primary"]), "switched car wears the livery")

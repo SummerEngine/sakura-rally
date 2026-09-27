@@ -5,13 +5,15 @@ extends SceneTree
 ## FPS, and saves frames at the key moments.
 ##
 ##   S=/Applications/Summer.app/Contents/MacOS/Summer
-##   timeout 600 $S --disable-crash-handler --path . -s res://tools/game/playthrough.gd -- \
+##   timeout 600 $S --summer-offscreen --audio-driver Dummy --disable-crash-handler --path . \
+##       -s res://tools/game/playthrough.gd -- \
 ##       map=hanami mode=time_trial out=/tmp/playthrough speed=2 shots=8
 ##
 ## map: hanami | momiji. mode: time_trial | free_roam (free roam drives `lap_s` seconds) |
-## campaign (a fresh campaign from the title: every leg driven by the autopilot, the journey
-## map, results Continue, the arrival, the finale and its end card, back to the title; `map`
-## is ignored, FPS is reported per leg).
+## campaign (a fresh campaign from the title in one continuous drive: SS1, results Continue,
+## the gate opening, the liaison, the arrival on Momiji's grid, SS2's start card and countdown
+## on the spot, SS2, the finale and its end card, back to the title; every leg is driven by the
+## autopilot, `map` is ignored, FPS is reported per leg).
 ## speed: Engine.time_scale while the autopilot drives (the flow itself runs in real time).
 ## record=1: capture the end of the Master bus to <out>/playthrough.wav with
 ## <out>/playthrough_events.json (states, gears, surfaces, checkpoints) for
@@ -152,23 +154,22 @@ func _run_campaign() -> void:
 	game.request_campaign(true)
 	for li in game.CAMPAIGN.size():
 		var leg: Dictionary = game.CAMPAIGN[li]
-		await _until_state(&"JOURNEY", 60.0)
-		await _seconds(1.5)
-		await _shot("journey_%d" % li)
-		_mark()
-		await _until_state(&"INTRO", 60.0)
-		await _seconds(1.6)
-		await _shot("intro_%d" % li)
-		var car: Car = game.player_car
 		var driving: int
 		if leg["kind"] == "stage":
+			await _until_state(&"INTRO", 60.0)
+			await _seconds(1.6)
+			await _shot("intro_%d" % li)
 			await _until_state(&"RACING", 30.0)
 			driving = game.State.RACING
 		else:
+			# Results Continue: the gate opens over the resting car, then the drive on.
+			await _seconds(1.4)
+			await _shot("gate_%d" % li)
 			await _until_state(&"LIAISON", 30.0)
 			driving = game.State.LIAISON
 			await _seconds(1.5)
 			await _shot("liaison_%d" % li)
+		var car: Car = game.player_car
 		_drive(car)
 		Engine.time_scale = float(opts["speed"])
 		fps_samples.clear()
@@ -183,12 +184,8 @@ func _run_campaign() -> void:
 			await _shot("results_%d" % li)
 			ui.results._continue.pressed.emit()
 		else:
-			await _seconds(2.5)
+			await _seconds(1.5)
 			await _shot("arrival_%d" % li)
-	await _until_state(&"JOURNEY", 60.0)
-	await _seconds(1.5)
-	await _shot("journey_goal")
-	_mark()
 	await _until_state(&"FINALE", 60.0)
 	await _seconds(5.5)
 	await _shot("finale_board")
@@ -205,7 +202,7 @@ func _run_campaign() -> void:
 	game.request_quit()
 
 
-## The autopilot takes the player car (Main drops it at a liaison's arrival).
+## The autopilot takes the player car (Main drops it at the liaison's arrival and the finish).
 func _drive(car: Car) -> void:
 	car.controlled_by_player = false
 	var ap := Autopilot.new()

@@ -1,16 +1,17 @@
 extends SceneTree
-## Windowed capture of the car on the proving ground for visual review.
+## Offscreen capture of the car on the proving ground for visual review.
 ## Writes PNG frames to docs/renders/ (physics_*.png) and frame strips to /tmp/sakura_capture/.
 ##
 ##   S=/Applications/Summer.app/Contents/MacOS/Summer
-##   timeout 300 $S --disable-crash-handler --fixed-fps 120 --path . -s res://tools/physics/capture.gd [-- only=corner,slide]
+##   timeout 300 $S --summer-offscreen --audio-driver Dummy --disable-crash-handler --fixed-fps 120 --path . \
+##       -s res://tools/physics/capture.gd [-- only=corner,slide]
 ##
 ## Shots: corner (autopilot on the tarmac loop, chase cam), slide (gravel handbrake flick, high
 ## side view), jump (side view sequence over the kicker), wheels (front wheel close-up while
 ## steering and rolling), bumps (suspension over the bumpy lane), modes (all four camera modes),
 ## crash (25° guardrail hit at 110 km/h and a quarter-overlap pole hit at 80 km/h on the tarmac
 ## plaza: an overhead contact sheet of each in /tmp/sakura_capture/ and a chase frame of the scrape).
-## Runs offscreen with `--summer-offscreen` (real renderer, no window) as well as windowed.
+## Needs the real renderer: run it with `--summer-offscreen`, never in a plain window.
 
 const DT := 1.0 / 120.0
 const OUT_DIR := "res://docs/renders/"

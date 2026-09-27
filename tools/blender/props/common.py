@@ -227,13 +227,18 @@ def grad_z(z0: float, z1: float, c0: Sequence[float], c1: Sequence[float] = WHIT
 
 def canopy_shade(z0: float, z1: float, cool: Sequence[float] = (0.80, 0.80, 0.93),
                  tint: Sequence[float] = WHITE) -> ColorFn:
-    """Canopy gradient: cooler/darker at the bottom, plus face-normal term (undersides cooler)."""
+    """Canopy gradient: cooler/darker at the bottom, plus a normal term (undersides cooler).
+    Marked `vertex_normal`: Kit.add feeds it the smoothed vertex normal instead of the face
+    normal, so every corner of a leaf mass has one colour. Per-face colours split each corner
+    into five or six vertices and Godot's importer then cannot simplify the canopy: the LOD
+    chain comes out empty or stops after one step, and far trees draw at full detail."""
     span = max(1e-4, z1 - z0)
 
     def fn(co: Vector, n: Vector) -> tuple[float, float, float, float]:
         t = (co.z - z0) / span * 0.75 + (n.z * 0.5 + 0.5) * 0.25
         c = lerp_col(cool, WHITE, t)
         return (c[0] * tint[0], c[1] * tint[1], c[2] * tint[2], 1.0)
+    fn.vertex_normal = True
     return fn
 
 
@@ -251,6 +256,7 @@ def mul_col(fn: ColorFn | Sequence[float] | None, tint: Sequence[float]) -> Colo
         else:
             base = fn
         return (base[0] * tint[0], base[1] * tint[1], base[2] * tint[2], 1.0)
+    out.vertex_normal = getattr(fn, "vertex_normal", False)
     return out
 
 
@@ -440,15 +446,21 @@ class Kit:
     def add(self, src: bmesh.types.BMesh, mat: str | Callable[[Vector, Vector], str],
             m: Matrix | None = None, color: ColorFn | Sequence[float] | None = None) -> None:
         """Merge `src` transformed by `m`. `mat` may be a callable(center, normal) -> name
-        to assign materials per face (e.g. moss on upward faces)."""
+        to assign materials per face (e.g. moss on upward faces). A colour callable gets the
+        face normal, or the smoothed vertex normal when it is marked `vertex_normal`
+        (canopy_shade)."""
         src.normal_update()
         mi_fixed = None if callable(mat) else self.mat(mat)
         m = m if m is not None else Matrix.Identity(4)
         flip = m.to_3x3().determinant() < 0
         nm = m.to_3x3().inverted_safe().transposed()
+        smooth = callable(color) and getattr(color, "vertex_normal", False)
         vmap = {}
+        vnrm = {}
         for v in src.verts:
             vmap[v] = self.bm.verts.new(m @ v.co)
+            if smooth:
+                vnrm[vmap[v]] = (nm @ v.normal).normalized()
         for f in src.faces:
             vs = [vmap[v] for v in f.verts]
             if flip:
@@ -467,7 +479,7 @@ class Kit:
                 if color is None:
                     c = WHITE
                 elif callable(color):
-                    c = color(loop.vert.co, n)
+                    c = color(loop.vert.co, vnrm[loop.vert] if smooth else n)
                 else:
                     c = color
                 loop[self.col] = (c[0], c[1], c[2], 1.0)

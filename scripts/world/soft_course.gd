@@ -13,6 +13,9 @@ extends Node3D
 ##
 ## Everything comes back on a stage restart (a new car), a reset to the track (the car jumps)
 ## and a map reload (a new MapWorld builds a new SoftCourse).
+##
+## Spectators are knockable people, not smashables: the child `crowd` (scripts/world/crowd.gd)
+## gets each car's box from the same per-tick scan and costs speed through `slow_car()`.
 
 ## Speed share lost on a hit, sound, how readily the prop is flung (1 = with the car), and the
 ## colour of the chips thrown with it.
@@ -26,12 +29,18 @@ const SMASHABLE := {
 	"flag_pole_blue": {"loss": 0.03, "sfx": &"impact_light", "db": -6.0, "fling": 0.95, "chip": Color("6aa8e8")},
 	"koinobori": {"loss": 0.03, "sfx": &"impact_light", "db": -6.0, "fling": 0.9, "chip": Color("e44a30")},
 	"scarecrow": {"loss": 0.035, "sfx": &"thump", "db": -6.0, "fling": 0.9, "chip": Color("f2c552")},
-	"chevron_left": {"loss": 0.04, "sfx": &"impact_light", "db": -4.0, "fling": 0.9, "chip": Color("f5f2ea")},
-	"chevron_right": {"loss": 0.04, "sfx": &"impact_light", "db": -4.0, "fling": 0.9, "chip": Color("f5f2ea")},
 	"distance_board_100": {"loss": 0.04, "sfx": &"impact_light", "db": -4.0, "fling": 0.9, "chip": Color("f5f2ea")},
 	"distance_board_50": {"loss": 0.04, "sfx": &"impact_light", "db": -4.0, "fling": 0.9, "chip": Color("f5f2ea")},
-	"sign_curve_left": {"loss": 0.04, "sfx": &"impact_light", "db": -4.0, "fling": 0.9, "chip": Color("f2c552")},
-	"sign_curve_right": {"loss": 0.04, "sfx": &"impact_light", "db": -4.0, "fling": 0.9, "chip": Color("f2c552")},
+	"corner_chevron_left": {"loss": 0.04, "sfx": &"impact_light", "db": -4.0, "fling": 0.9, "chip": Color("f5c431")},
+	"corner_chevron_right": {"loss": 0.04, "sfx": &"impact_light", "db": -4.0, "fling": 0.9, "chip": Color("f5c431")},
+	"corner_warn_curve_left": {"loss": 0.05, "sfx": &"thump", "db": -3.0, "fling": 0.8, "chip": Color("f5c431")},
+	"corner_warn_curve_right": {"loss": 0.05, "sfx": &"thump", "db": -3.0, "fling": 0.8, "chip": Color("f5c431")},
+	"corner_warn_sharp_left": {"loss": 0.05, "sfx": &"thump", "db": -3.0, "fling": 0.8, "chip": Color("f5c431")},
+	"corner_warn_sharp_right": {"loss": 0.05, "sfx": &"thump", "db": -3.0, "fling": 0.8, "chip": Color("f5c431")},
+	"corner_warn_hairpin_left": {"loss": 0.05, "sfx": &"thump", "db": -3.0, "fling": 0.8, "chip": Color("f5c431")},
+	"corner_warn_hairpin_right": {"loss": 0.05, "sfx": &"thump", "db": -3.0, "fling": 0.8, "chip": Color("f5c431")},
+	"corner_warn_series_left": {"loss": 0.05, "sfx": &"thump", "db": -3.0, "fling": 0.8, "chip": Color("f5c431")},
+	"corner_warn_series_right": {"loss": 0.05, "sfx": &"thump", "db": -3.0, "fling": 0.8, "chip": Color("f5c431")},
 	"road_mirror": {"loss": 0.04, "sfx": &"impact_light", "db": -4.0, "fling": 0.9, "chip": Color("f29a38")},
 	"fence_wood": {"loss": 0.04, "sfx": &"thump", "db": -4.0, "fling": 0.85, "chip": Color("a47148")},
 	"fence_bamboo": {"loss": 0.04, "sfx": &"thump", "db": -4.0, "fling": 0.85, "chip": Color("c9b26a")},
@@ -100,7 +109,6 @@ var _broken_list: PackedInt32Array
 ## "mm": MultiMesh, "idx": int, "xf": Transform3D, "angle", "vel", "axis": Vector3, "touch": int}
 var _uprights: Array[Dictionary] = []
 var _gates: Array[FabricGate] = []
-var _gate_by_checkpoint: Dictionary = {}
 
 # ---------------------------------------------------------------- cars
 var _cars: Array[Car] = []
@@ -135,6 +143,8 @@ var _settle_in: int = 0
 
 ## Hits since the last restore (read by tools/game/softcourse_probe.gd and stats).
 var hits: int = 0
+## Knockable spectators (MapWorld registers them; scanned and restored with the rest).
+var crowd: Crowd
 ## Warm-up: the first kind index not yet drawn, frames left on the batch on screen.
 var _warm_next: int = -1
 var _warm_hold: int = 0
@@ -143,6 +153,8 @@ var _warmed: bool = false
 
 func _init() -> void:
 	name = "SoftCourse"
+	crowd = Crowd.new()
+	add_child(crowd)
 	_rng.seed = 20260926
 
 
@@ -304,13 +316,15 @@ func add_soft_uprights(mm: MultiMesh, idx: int, e: Array, m: Dictionary) -> int:
 
 ## Fabric gates over the road at the checkpoints. Closed stages: every checkpoint except the one
 ## under the start/finish arch. Open roads (liaisons, untimed): only the final checkpoint, the
-## time control. `arches` are the world positions of start/finish arch instances.
-func build_gates(checkpoints: Array[Dictionary], track: Track, closed: bool, arches: PackedVector3Array) -> void:
-	for g in _gates:
-		g.queue_free()
-	_gates.clear()
-	_gate_by_checkpoint.clear()
-	_uprights = _uprights.filter(func(u: Dictionary) -> bool: return u["gate"] == null)
+## time control. `arches` are the world positions of start/finish arch instances. `clear` removes
+## the gates built before; false adds another route's gates to them.
+func build_gates(checkpoints: Array[Dictionary], track: Track, closed: bool, arches: PackedVector3Array,
+		clear := true) -> void:
+	if clear:
+		for g in _gates:
+			g.queue_free()
+		_gates.clear()
+		_uprights = _uprights.filter(func(u: Dictionary) -> bool: return u["gate"] == null)
 	for n in checkpoints.size():
 		var cp: Dictionary = checkpoints[n]
 		if not closed and n != checkpoints.size() - 1:
@@ -330,7 +344,6 @@ func build_gates(checkpoints: Array[Dictionary], track: Track, closed: bool, arc
 		add_child(gate)
 		gate.setup(Transform3D(Basis(Vector3.UP, float(cp["yaw"])), pos), lat, _gates.size())
 		_gates.append(gate)
-		_gate_by_checkpoint[int(cp["index"])] = gate
 		for side in [-1, 1]:
 			var p := gate.upright_base(side)
 			_uprights.append({
@@ -363,8 +376,12 @@ func gate_count() -> int:
 	return _gates.size()
 
 
-func gate_for_checkpoint(index: int) -> FabricGate:
-	return _gate_by_checkpoint.get(index)
+## The fabric gate standing within 2 m of `pos` (a checkpoint position), or null.
+func gate_near(pos: Vector3) -> FabricGate:
+	for g in _gates:
+		if Vector2(g.global_position.x - pos.x, g.global_position.z - pos.z).length() < 2.0:
+			return g
+	return null
 
 
 func smashable_count() -> int:
@@ -526,6 +543,7 @@ func _scan_car(ci: int, car: Car) -> void:
 			if int(u["touch"]) < _tick - 1:
 				_hit_upright(u, car, ci)
 			u["touch"] = _tick
+	crowd.scan_car(ci, car, c, ax, az, half, cy0, cy1)
 
 
 ## Car box (centre, axes ax / az with half extents hx / hz, all in world xz) against prop id.
@@ -559,8 +577,9 @@ func _overlaps(id: int, x: float, z: float, ax: Vector2, az: Vector2, hx: float,
 	return true
 
 
-## Knocks `loss` of the car's horizontal speed off with a central impulse (no torque, no lift).
-func _slow(car: Car, ci: int, loss: float) -> float:
+## Knocks `loss` of the car's horizontal speed off with a central impulse (no torque, no lift);
+## returns the share taken after the recent-hits budget (Crowd uses it too).
+func slow_car(car: Car, ci: int, loss: float) -> float:
 	loss *= clampf(1.0 - _car_recent[ci] / LOSS_BUDGET, LOSS_FLOOR, 1.0)
 	_car_recent[ci] += loss
 	var v := car.linear_velocity
@@ -573,7 +592,7 @@ func _smash(id: int, car: Car, ci: int) -> void:
 	var v := car.linear_velocity
 	var hv := Vector3(v.x, 0.0, v.z)
 	var speed := hv.length()
-	var loss := _slow(car, ci, float(data["loss"]))
+	var loss := slow_car(car, ci, float(data["loss"]))
 	_broken[id] = 1
 	_broken_list.append(id)
 	hits += 1
@@ -587,9 +606,7 @@ func _smash(id: int, car: Car, ci: int) -> void:
 		_mms[_mm_ref[id]].set_instance_transform(_mm_idx[id], Transform3D(Basis().scaled(Vector3.ZERO), xf.origin))
 		_spawn_debris(_kind_mesh[_kind[id]], xf, v, car.global_position, fling)
 	var point := Vector3(_cx[id], clampf(car.global_position.y + 0.5, _y0[id], _y1[id]), _cz[id])
-	_burst(point, v, data["chip"], speed)
-	_burst_car = car
-	_burst_ticks = 240
+	burst(point, car, data["chip"], speed)
 	var sound := get_node_or_null(^"/root/Sound")
 	if sound != null:
 		var db: float = float(data["db"]) + linear_to_db(clampf(speed / 22.0, 0.2, 1.0))
@@ -601,7 +618,7 @@ func _hit_upright(u: Dictionary, car: Car, ci: int) -> void:
 	var v := car.linear_velocity
 	var hv := Vector3(v.x, 0.0, v.z)
 	var speed := hv.length()
-	var loss := _slow(car, ci, UPRIGHT_LOSS)
+	var loss := slow_car(car, ci, UPRIGHT_LOSS)
 	hits += 1
 	var point := Vector3(u["x"], car.global_position.y + 0.6, u["z"])
 	var push := clampf(speed / 20.0, 0.25, 1.0)
@@ -639,7 +656,10 @@ func _check_gates(ci: int, car: Car) -> void:
 
 
 func _on_checkpoint_passed(index: int, _total: int, _split: float, _delta: float) -> void:
-	var g: FabricGate = _gate_by_checkpoint.get(index)
+	var map := get_parent() as MapWorld
+	if map == null or index < 0 or index >= map.checkpoints.size():
+		return
+	var g := gate_near(map.checkpoints[index]["position"])
 	var game := get_node_or_null(^"/root/Game")
 	if g != null and game != null and game.get(&"player_car") is Car:
 		g.billow((game.player_car as Car).linear_velocity, 1.0)
@@ -780,12 +800,16 @@ func _retire(i: int) -> void:
 	_debris_live -= 1
 
 
-## One low-poly dust puff and a spray of chips in the prop's colour.
-func _burst(point: Vector3, car_v: Vector3, chip_color: Color, speed: float) -> void:
+## One low-poly dust puff and a spray of chips in the prop's colour, thrown along `car`'s
+## travel; the dust keeps the line of sight to the car clear for a while.
+func burst(point: Vector3, car: Car, chip_color: Color, speed: float) -> void:
 	var i := _burst_next
 	_burst_next = (_burst_next + 1) % BURSTS
+	var car_v := car.linear_velocity
 	var dir := Vector3(car_v.x, 0.0, car_v.z)
 	dir = (dir.normalized() + Vector3.UP * 0.8).normalized() if dir.length_squared() > 0.25 else Vector3.UP
+	_burst_car = car
+	_burst_ticks = 240
 	var puff := _puffs[i]
 	puff.global_position = point
 	puff.amount_ratio = clampf(0.4 + speed / 30.0, 0.4, 1.0)
@@ -1000,3 +1024,4 @@ func restore() -> void:
 	_gate_side.fill(0.0)
 	hits = 0
 	_car_recent.fill(0.0)
+	crowd.restore()

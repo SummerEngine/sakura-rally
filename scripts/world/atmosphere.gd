@@ -3,8 +3,16 @@ extends Node3D
 ## Sun, painted sky, aerial fog, ambient and global cel-shading parameters for a
 ## time-of-day preset. The same preset drives the colour grade (PostFX reads
 ## `grade`), so a map's whole palette lives in one dictionary.
+##
+## In the world the look follows the season at the camera: `set_weights(w)` blends the three
+## season presets (SEASON_PRESETS, weights spring / summer / autumn) into `preset` and applies it;
+## `changed` counts the applications so PostFX and the sky rig can follow cheaply.
 
 const SKY_SHADER := preload("res://shaders/sky.gdshader")
+## The presets of the three seasons, in season-weight order (spring, summer, autumn).
+const SEASON_PRESETS := ["spring_noon", "summer_afternoon", "autumn_golden"]
+## Values a preset may leave out.
+const DEFAULTS := {"cloud_tower": 1.0}
 
 const PRESETS := {
 	"spring_noon": {
@@ -73,24 +81,25 @@ var sun: DirectionalLight3D
 var world_env: WorldEnvironment
 var environment: Environment
 var sky_material: ShaderMaterial
+## Applications of a preset so far (build and every set_weights).
+var changed: int = 0
+var weights := Vector3(-1.0, -1.0, -1.0)
 
 
 func _ready() -> void:
+	add_to_group(&"atmosphere")
 	if sun == null:
 		build(preset_name)
 
 
+## Builds the sun, sky and environment for one named preset.
 func build(name_: String) -> void:
 	preset_name = name_
-	preset = PRESETS.get(name_, PRESETS["spring_noon"])
 	for c in get_children():
 		c.queue_free()
 
 	sun = DirectionalLight3D.new()
 	sun.name = "Sun"
-	sun.rotation_degrees = Vector3(preset["sun_pitch"], preset["sun_yaw"], 0.0)
-	sun.light_color = preset["sun_color"]
-	sun.light_energy = preset["sun_energy"]
 	sun.shadow_enabled = true
 	sun.shadow_bias = 0.04
 	sun.shadow_normal_bias = 1.2
@@ -107,28 +116,18 @@ func build(name_: String) -> void:
 
 	sky_material = ShaderMaterial.new()
 	sky_material.shader = SKY_SHADER
-	sky_material.set_shader_parameter("sky_top", preset["sky_top"])
-	sky_material.set_shader_parameter("sky_mid", preset["sky_mid"])
-	sky_material.set_shader_parameter("sky_haze", preset["sky_haze"])
-	sky_material.set_shader_parameter("ground", preset["sky_ground"])
-	sky_material.set_shader_parameter("sun_color", preset["sky_sun"])
-	sky_material.set_shader_parameter("halo", preset["halo"])
-	sky_material.set_shader_parameter("horizon_band", preset["horizon_band"])
 	var sky := Sky.new()
 	sky.sky_material = sky_material
-	sky.process_mode = Sky.PROCESS_MODE_QUALITY
+	# the same result as QUALITY, spread over a few frames when the season shifts the sky
+	sky.process_mode = Sky.PROCESS_MODE_INCREMENTAL
 	sky.radiance_size = Sky.RADIANCE_SIZE_256
 
 	environment = Environment.new()
 	environment.background_mode = Environment.BG_SKY
 	environment.sky = sky
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	environment.ambient_light_color = preset["ambient_color"]
-	environment.ambient_light_energy = preset["ambient_energy"]
-	environment.ambient_light_sky_contribution = preset["ambient_sky"]
 	environment.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	environment.tonemap_mode = Environment.TONE_MAPPER_LINEAR
-	environment.tonemap_exposure = preset["exposure"]
 	environment.glow_enabled = true
 	environment.glow_intensity = 0.45
 	environment.glow_strength = 1.0
@@ -144,27 +143,113 @@ func build(name_: String) -> void:
 	environment.set_glow_level(5, 0.3)
 	environment.fog_enabled = true
 	environment.fog_mode = Environment.FOG_MODE_DEPTH
-	environment.fog_light_color = preset["fog_color"]
 	environment.fog_light_energy = 1.0
-	environment.fog_sun_scatter = preset["fog_sun_scatter"]
-	environment.fog_depth_begin = preset["fog_begin"]
-	environment.fog_depth_end = preset["fog_end"]
-	environment.fog_depth_curve = preset["fog_curve"]
-	environment.fog_aerial_perspective = preset["fog_aerial"]
-	environment.fog_sky_affect = preset["fog_sky_affect"]
-	environment.fog_height = preset["fog_height"]
-	environment.fog_height_density = preset["fog_height_density"]
 	environment.fog_density = 1.0
 
 	world_env = WorldEnvironment.new()
 	world_env.name = "WorldEnvironment"
 	world_env.environment = environment
 	add_child(world_env)
+	_apply(PRESETS.get(name_, PRESETS["spring_noon"]))
 
-	RenderingServer.global_shader_parameter_set("sr_shade_tint", preset["shade_tint"])
-	RenderingServer.global_shader_parameter_set("sr_rim_color", preset["rim_color"])
-	RenderingServer.global_shader_parameter_set("sr_wind", preset["wind"])
-	RenderingServer.global_shader_parameter_set("sr_glow", preset["glow"])
+
+## Blends the season presets by `w` (spring, summer, autumn; any scale) and applies the
+## result. Cheap enough per frame; callers skip it while the weights hold still.
+func set_weights(w: Vector3) -> void:
+	weights = w
+	_apply(blend(w))
+
+
+## The three season presets mixed by `w`. A pure weight returns that preset's values.
+static func blend(w: Vector3) -> Dictionary:
+	var total := w.x + w.y + w.z
+	var k := [w.x / total, w.y / total, w.z / total] if total > 0.0 else [1.0, 0.0, 0.0]
+	var src: Array[Dictionary] = []
+	for n: String in SEASON_PRESETS:
+		src.append(PRESETS[n])
+	var out := _mix(src, k)
+	# the sun: mix directions, not angles (yaws wrap), then back to pitch / yaw
+	var dir := Vector3.ZERO
+	for i in 3:
+		dir += _sun_vector(src[i]["sun_pitch"], src[i]["sun_yaw"]) * float(k[i])
+	dir = dir.normalized()
+	out["sun_pitch"] = rad_to_deg(asin(clampf(-dir.y, -1.0, 1.0)))
+	out["sun_yaw"] = rad_to_deg(atan2(dir.x, dir.z))
+	return out
+
+
+static func _mix(src: Array[Dictionary], k: Array) -> Dictionary:
+	var out := {}
+	var keys: Array = src[0].keys()
+	for d in src:
+		for key in d:
+			if not key in keys:
+				keys.append(key)
+	for key in keys:
+		var first: Variant = src[0].get(key, DEFAULTS.get(key))
+		match typeof(first):
+			TYPE_DICTIONARY:
+				var subs: Array[Dictionary] = []
+				for d in src:
+					subs.append(d[key])
+				out[key] = _mix(subs, k)
+			TYPE_COLOR:
+				var c := Color(0, 0, 0, 0)
+				for i in src.size():
+					var ci: Color = src[i][key]
+					c += ci * float(k[i])
+				out[key] = c
+			TYPE_VECTOR4:
+				var v := Vector4.ZERO
+				for i in src.size():
+					v += (src[i][key] as Vector4) * float(k[i])
+				out[key] = v
+			_:
+				var f := 0.0
+				for i in src.size():
+					f += float(src[i].get(key, DEFAULTS.get(key, 0.0))) * float(k[i])
+				out[key] = f
+	return out
+
+
+## Direction toward the sun for a light rotated by (pitch, yaw) degrees.
+static func _sun_vector(pitch: float, yaw: float) -> Vector3:
+	return Basis.from_euler(Vector3(deg_to_rad(pitch), deg_to_rad(yaw), 0.0)).z
+
+
+func _apply(p: Dictionary) -> void:
+	preset = p
+	sun.rotation_degrees = Vector3(p["sun_pitch"], p["sun_yaw"], 0.0)
+	sun.light_color = p["sun_color"]
+	sun.light_energy = p["sun_energy"]
+
+	sky_material.set_shader_parameter("sky_top", p["sky_top"])
+	sky_material.set_shader_parameter("sky_mid", p["sky_mid"])
+	sky_material.set_shader_parameter("sky_haze", p["sky_haze"])
+	sky_material.set_shader_parameter("ground", p["sky_ground"])
+	sky_material.set_shader_parameter("sun_color", p["sky_sun"])
+	sky_material.set_shader_parameter("halo", p["halo"])
+	sky_material.set_shader_parameter("horizon_band", p["horizon_band"])
+
+	environment.ambient_light_color = p["ambient_color"]
+	environment.ambient_light_energy = p["ambient_energy"]
+	environment.ambient_light_sky_contribution = p["ambient_sky"]
+	environment.tonemap_exposure = p["exposure"]
+	environment.fog_light_color = p["fog_color"]
+	environment.fog_sun_scatter = p["fog_sun_scatter"]
+	environment.fog_depth_begin = p["fog_begin"]
+	environment.fog_depth_end = p["fog_end"]
+	environment.fog_depth_curve = p["fog_curve"]
+	environment.fog_aerial_perspective = p["fog_aerial"]
+	environment.fog_sky_affect = p["fog_sky_affect"]
+	environment.fog_height = p["fog_height"]
+	environment.fog_height_density = p["fog_height_density"]
+
+	RenderingServer.global_shader_parameter_set("sr_shade_tint", p["shade_tint"])
+	RenderingServer.global_shader_parameter_set("sr_rim_color", p["rim_color"])
+	RenderingServer.global_shader_parameter_set("sr_wind", p["wind"])
+	RenderingServer.global_shader_parameter_set("sr_glow", p["glow"])
+	changed += 1
 
 
 func sun_direction() -> Vector3:

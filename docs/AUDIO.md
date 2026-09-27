@@ -45,7 +45,8 @@ the low-passes are swept instead.
 | `play_ui(name)` | `hover` (−4 dB, ±3 % pitch), `click`, `back`, `start`, `toggle`; 4-voice pool on UI bus |
 | `play_music(track, fade)` | `menu`, `drive`, `results`, `liaison`; equal-power crossfade between two players; same track again = no restart |
 | `stop_music(fade)` | equal-power fade out |
-| `play_ambience(map_id, fade)` | `hanami`, `momiji`, `natsu`; crossfade, starts at a random point in the loop; unknown id fades the bed out |
+| `play_ambience(fade)` | the world bed: the `hanami` (spring), `natsu` (summer) and `momiji` (autumn) loops mixed by the season at the camera; equal-power fade in, each loop starts at a random point; playing already: no change |
+| `set_ambience_mix(weights)` | season weights (spring, summer, autumn) at the listener, each loop at the square root of its weight; `MapWorld` calls it as the camera moves, loops at zero weight stop |
 | `stop_ambience(fade)` | fade out |
 | `play_stinger(name)` | `countdown`, `go`, `checkpoint`, `finish`, `record`, `arrived`, `campaign_complete`; UI bus, ducks music for the big ones |
 | `play_3d(name, pos, db)` | names: `impact_light`, `impact_heavy`, `thump`, `stone`, `backfire`, `blowoff`, `shift` (random variant, ±6 % pitch) or any `res://` path; 16-voice AudioStreamPlayer3D pool on World |
@@ -214,6 +215,20 @@ match. Seam kink ≤ 0.71 × p99 (turbo4 worst 0.82).
 | `thump_1..3.wav` | landing thumps (pitch-dropping 52–72 Hz + strut modes + rattle) |
 | `impact_light_1..3.wav` | body knocks (modal panel + plastic crack + low body) |
 | `impact_heavy_1..3.wav` | crashes (pitch-dropping boom + crunch grains + metal modes + debris) |
+
+### Crowd — `assets/audio/crowd/` (synthesised: `tools/audio/synth_crowd.py`)
+
+Played by `scripts/world/crowd.gd` through `Sound.play_3d` (SFX bus) when a car knocks a
+spectator over. Voices are source-filter additive synthesis (a glottal harmonic series under
+moving vowel formants, breath noise); the crowd is 24 such voices with their own pitch, onset,
+vowel and vibrato in a small outdoor room.
+
+| File | What |
+|---|---|
+| `bonk_1..3.wav` | cartoon bonk: hollow wood-block knock, pitch falling from 520–640 Hz to ×0.62, a low thud and a click (0.42 s) |
+| `oof_1..4.wav` | the knocked person: "oof" (low, closing into an f), "wah!" (high), "whoa" (low slide), "ah!" (a child) |
+| `ooh_1..3.wav` | the crowd reacts (at most one every 1.6 s): a rising "ooooh"; "whoa-oh" with a few laughs; an "oh!" breaking into laughter and claps (−18 LUFS) |
+| `hop.wav` | the little rising boing when a knocked person hops back up |
 
 ### Music — `assets/audio/music/` (fal `elevenlabs/music/v2.5`, post: `tools/audio/gen_music.py`)
 
@@ -411,6 +426,7 @@ tools/audio/.venv/bin/python tools/audio/synth_engine.py      # [turbo4|na4], de
 tools/audio/.venv/bin/python tools/audio/synth_world.py
 tools/audio/.venv/bin/python tools/audio/synth_ui.py
 tools/audio/.venv/bin/python tools/audio/synth_stingers.py
+tools/audio/.venv/bin/python tools/audio/synth_crowd.py
 tools/audio/.venv/bin/python tools/audio/gen_music.py       # from tools/audio/cache (fal)
 tools/audio/.venv/bin/python tools/audio/gen_ambience.py    # from tools/audio/cache (fal)
 timeout 180 $S --headless --disable-crash-handler --path . --import

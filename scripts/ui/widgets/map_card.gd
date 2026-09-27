@@ -236,12 +236,6 @@ func refresh() -> void:
 	if _best == null:
 		return
 	var id := str(map.get("id", ""))
-	if bool(map.get("liaison", false)):
-		_best.text = "Open road  ·  no clock"
-		_best.label_settings.font_color = UITheme.INK_SOFT
-		_medal_dot.set_meta(&"medal", "")
-		_medal_dot.queue_redraw()
-		return
 	var best: float = UIApi.game().best_time(id)
 	if is_inf(best):
 		_best.text = "No time set yet"

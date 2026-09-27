@@ -11,6 +11,7 @@ from .meshpack import MeshBuilder
 SURFACES = ("tarmac", "gravel", "dirt", "wood")
 PROFILE = 11  # vertices per cross-section
 LOT_DROP = 0.04  # a lot's paved surface sits this far below the road's carriageway edge
+DECK_RAMP = 8.0  # m over which the carriageway's crown and bank ease into a bridge deck
 
 
 @dataclass
@@ -162,7 +163,7 @@ def build_road(spec: dict) -> Road:
     bank_gain = spec.get("bank_gain", 14.0)
     bank_max = spec.get("bank_max", 0.05)
     bank = geom.smooth(np.clip(curv_s * bank_gain, -bank_max, bank_max), 10.0, closed=closed)
-    bank[bridge != ""] *= 0.2
+    bank *= 1.0 - 0.8 * deck_weight(bridge, closed)
     if lots:
         bank *= 1.0 - on_lot
 
@@ -173,6 +174,22 @@ def build_road(spec: dict) -> Road:
     return Road(pos=pos, dist=dist, length=length, fwd=fwd, right=right, curv=curv_s, bank=bank,
                 half_width=half_width, verge=spec.get("verge", 1.4), surface=surface, bridge=bridge,
                 ford=ford, carve=carve, control_s=control_s, closed=closed, lots=lots, on_lot=on_lot)
+
+
+def deck_weight(bridge: np.ndarray, closed: bool) -> np.ndarray:
+    """1 on bridge samples, easing to 0 over DECK_RAMP m before and after each deck: the deck is
+    flat and nearly unbanked, and the road's crown and bank ease into it instead of changing
+    within one sample (a twist the wheels feel at the carriageway edge)."""
+    on = bridge != ""
+    n = len(on)
+    if not on.any():
+        return np.zeros(n)
+    idx = np.nonzero(on)[0].astype(np.float64)
+    i = np.arange(n, dtype=np.float64)
+    gap = np.abs(i[:, None] - idx[None, :])
+    if closed:
+        gap = np.minimum(gap, n - gap)
+    return 1.0 - geom.smoothstep(0.0, DECK_RAMP, gap.min(axis=1))
 
 
 def surface_at_lateral_offsets(road: Road) -> tuple[np.ndarray, np.ndarray]:
@@ -212,6 +229,8 @@ def surface_at_lateral_offsets(road: Road) -> tuple[np.ndarray, np.ndarray]:
         dy[br, 2] = 0.12
         dy[br, PROFILE - 3] = 0.12
         dy[br, 4:7] = 0.0
+    # the crown eases out into a deck (and back) with the bank
+    dy[:, 4:7] *= (1.0 - deck_weight(road.bridge, road.closed))[:, None]
     # banking tilts the carriageway; verges follow the edge height
     lat_c = np.clip(lat, -hw, hw)
     dy = dy - lat_c * road.bank[:, None]
@@ -279,83 +298,90 @@ def phys_surface(s: int) -> str:
 
 # ------------------------------------------------------------------ dressing
 
-def guardrail_runs(road: Road, drop: np.ndarray, side: int, min_len: int = 24) -> list[tuple[int, int]]:
-    """Index runs where the ground falls away steeply on `side` (+1 right, -1 left)."""
-    want = (drop > 2.6) & (road.bridge == "") & ~road.ford & (road.on_lot < 0.5)
-    n = len(want)
-    # close small gaps, drop short runs (circular on a loop)
-    runs = []
-    if road.closed:
-        start_at = int(np.argmin(want)) if not want.all() else 0
-        order = [(start_at + k) % n for k in range(n)]
-    else:
-        order = range(n)
-    cur = None
-    for k in order:
-        if want[k]:
-            if cur is None:
-                cur = [k, k]
-            else:
-                cur[1] = k
-        else:
-            if cur is not None:
-                runs.append(cur)
-                cur = None
-    if cur is not None:
-        runs.append(cur)
-    merged = []
-    for r in runs:
-        gap = n
-        if merged:
-            gap = (r[0] - merged[-1][1]) % n if road.closed else r[0] - merged[-1][1]
-        if gap < 14:
-            merged[-1][1] = r[1]
-        else:
-            merged.append(list(r))
-    out = []
-    for a, b in merged:
-        if road.closed:
-            a = (a - 6) % n
-            b = (b + 6) % n
-        else:
-            a = max(0, a - 6)
-            b = min(n - 1, b + 6)
-        if (b - a) % n >= min_len:
-            out.append((a, b))
-    return out
+@dataclass
+class RailRun:
+    """One continuous guardrail on one side of a road, sample a to sample b (forward, wrapping
+    on a loop). Ends: "flare" (leading end: the first `flare` m bend away from the road and the
+    beam dips into the ground), "trail" (trailing end: straight on, the beam dips into the
+    ground over RAIL_BURY m), "bridge" (tapers in to meet the bridge parapet) or "loop" (a rail
+    all round)."""
+    a: int
+    b: int
+    side: int      # -1 left, +1 right of the driving direction
+    a_end: str = "flare"
+    b_end: str = "trail"
+    flare: int = 8
 
 
-def build_guardrails(road: Road, runs: list[tuple[int, int, int]], mb: MeshBuilder, boxes: list,
+RAIL_FACE = -0.45      # m past the verge: the rail's face line
+RAIL_FLARE_OUT = 1.6   # m a flared end bends away from the road
+RAIL_BURY = 4.0        # m over which a flared end's beam dips into the ground
+RAIL_COLLIDER_TOP = 1.25     # collider top above the rail's base (the beam's top is at 0.77)
+RAIL_COLLIDER_BOTTOM = -0.35
+RAIL_COLLIDER_THICK = 0.5    # into the verge side it is flush with the beam; the rest is behind it
+
+
+def build_guardrails(road: Road, runs: list[RailRun], mb: MeshBuilder, boxes: list,
                      post_color, rail_color) -> None:
+    """W-beam guardrails for lib.roadside.rail_runs: posts every 4 m, the beam, and collision
+    boxes (map.json collision_boxes, the runtime's rigid Barriers) tall and thick enough that a
+    car cannot hop or pass through them, contiguous along the run."""
     n = len(road.pos)
-    for a, b, side in runs:
-        count = (b - a) % n
-        idxs = [(a + k) % n for k in range(0, count + 1, 2)]
-        pts = []
-        for i in idxs:
-            lat = side * (road.half_width[i] + road.verge - 0.45)
+    for r in runs:
+        count = (r.b - r.a) % n if road.closed else r.b - r.a
+        if r.a_end == "loop":
+            count = n
+        ks = list(range(0, count + 1, 2))
+        if ks[-1] != count:
+            ks.append(count)
+        idxs = [(r.a + k) % n if road.closed else min(r.a + k, n - 1) for k in ks]
+        pts, beam, keep_col = [], [], []
+        for k, i in zip(ks, idxs):
+            base = road.half_width[i] + road.verge + RAIL_FACE
+            lat = base
+            h = 1.0  # beam height factor
+            for d, kind in ((k, r.a_end), (count - k, r.b_end)):
+                if kind == "flare" and d < r.flare:
+                    u = 1.0 - d / r.flare
+                    lat = max(lat, base + RAIL_FLARE_OUT * u * u)
+                if kind in ("flare", "trail") and d < RAIL_BURY:
+                    h = min(h, 0.15 + 0.85 * d / RAIL_BURY)
+                elif kind == "bridge" and d < 6:
+                    lat = min(lat, road.half_width[i] + 0.35 + (base - road.half_width[i] - 0.35) * d / 6.0)
+            lat *= r.side
             y = road_height_at(road, np.array([i]), np.array([lat]))[0] - 0.12
-            x = road.pos[i, 0] + road.right[i, 0] * lat
-            z = road.pos[i, 2] + road.right[i, 1] * lat
-            pts.append((x, y, z))
+            pts.append((road.pos[i, 0] + road.right[i, 0] * lat, y, road.pos[i, 2] + road.right[i, 1] * lat))
+            beam.append(h)
         pts = np.array(pts)
         for k in range(0, len(pts), 2):
+            if beam[k] < 0.5:
+                continue
             p = pts[k]
-            mb.box((p[0], p[1] + 0.38, p[2]), (0.12, 0.8, 0.12),
-                   _yaw_of(road.fwd[idxs[k]]), post_color)
+            mb.box((p[0], p[1] + 0.38, p[2]), (0.12, 0.8, 0.12), _yaw_of(road.fwd[idxs[k]]), post_color)
         for k in range(len(pts) - 1):
             p0, p1 = pts[k], pts[k + 1]
+            h0, h1 = beam[k], beam[k + 1]
             mid = (p0 + p1) / 2
             d = p1 - p0
             L = np.linalg.norm(d[[0, 2]])
             if L < 1e-3:
                 continue
             yaw = np.arctan2(-d[0], -d[2])
-            pitch = np.arctan2(d[1], L)
-            mb.box((mid[0], mid[1] + 0.62, mid[2]), (0.06, 0.3, L + 0.05), yaw, rail_color, pitch=pitch)
+            # the beam's centre line dips with the height factor at a buried end
+            c0, c1 = p0[1] + 0.62 * h0, p1[1] + 0.62 * h1
+            pitch = np.arctan2(c1 - c0, L)
+            mb.box((mid[0], (c0 + c1) / 2, mid[2]), (0.06, 0.3, L + 0.05), yaw, rail_color, pitch=pitch)
             if k % 2 == 0:  # every other segment, doubled length: contiguous cover
-                boxes.append([round(float(mid[0]), 3), round(float(mid[1] + 0.45), 3), round(float(mid[2]), 3),
-                              0.25, 1.0, round(float(2 * L + 0.1), 3), round(float(yaw), 4)])
+                hm = min(h0, h1)
+                top = RAIL_COLLIDER_TOP if hm >= 0.999 else max(0.6, 0.77 * hm + 0.1)
+                i = idxs[k]
+                out = r.side * (RAIL_COLLIDER_THICK - 0.25) / 2.0  # inner face stays on the beam
+                cx = mid[0] + road.right[i, 0] * out
+                cz = mid[2] + road.right[i, 1] * out
+                cy = mid[1] + (top + RAIL_COLLIDER_BOTTOM) / 2.0
+                boxes.append([round(float(cx), 3), round(float(cy), 3), round(float(cz), 3),
+                              RAIL_COLLIDER_THICK, round(top - RAIL_COLLIDER_BOTTOM, 3), round(float(2 * L + 0.1), 3),
+                              round(float(yaw), 4)])
 
 
 def _yaw_of(f2: np.ndarray) -> float:
@@ -363,8 +389,9 @@ def _yaw_of(f2: np.ndarray) -> float:
     return float(np.arctan2(-f2[0], -f2[1]))
 
 
-def build_delineators(road: Road, mb: MeshBuilder, white, red, black) -> list[dict]:
-    """Marker posts on the outside of corners and chevron boards at tight bends."""
+def build_delineators(road: Road, mb: MeshBuilder, white, red, skip: np.ndarray | None = None) -> list[dict]:
+    """Marker posts on the outside of corners (the corner signs' chevrons and the guardrails
+    replace them where skip[i, side] is set: [:, 0] left, [:, 1] right)."""
     n = len(road.pos)
     placed = []
     last = -999
@@ -375,8 +402,10 @@ def build_delineators(road: Road, mb: MeshBuilder, white, red, black) -> list[di
         spacing = 30 if abs(c) < 1.0 / 60.0 else 16
         if road.dist[i] - last < spacing:
             continue
-        last = road.dist[i]
         side = -1 if c > 0 else 1  # outside of a right turn is the left
+        if skip is not None and skip[i, 0 if side < 0 else 1]:
+            continue
+        last = road.dist[i]
         lat = side * (road.half_width[i] + road.verge + 0.25)
         y = road_height_at(road, np.array([i]), np.array([lat]))[0] - 0.3
         x = road.pos[i, 0] + road.right[i, 0] * lat
@@ -385,37 +414,6 @@ def build_delineators(road: Road, mb: MeshBuilder, white, red, black) -> list[di
         mb.box((x, y + 0.55, z), (0.1, 1.1, 0.1), yaw, white)
         mb.box((x, y + 0.95, z), (0.11, 0.14, 0.11), yaw, red)
         placed.append({"i": i, "side": side})
-    # chevrons at the apex of tight bends
-    tight = (np.abs(road.curv) > 1.0 / 32.0) & (road.on_lot < 0.2)
-    i = 0
-    while i < n:
-        if tight[i]:
-            j = i
-            while j < n and tight[j]:
-                j += 1
-            apex = (i + j) // 2
-            c = road.curv[apex]
-            side = -1 if c > 0 else 1
-            for k, off in enumerate((-10, 0, 10)):
-                a = (apex + off) % n if road.closed else int(np.clip(apex + off, 0, n - 1))
-                lat = side * (road.half_width[a] + road.verge + 1.6)
-                y = road_height_at(road, np.array([a]), np.array([lat]))[0] - 0.3
-                x = road.pos[a, 0] + road.right[a, 0] * lat
-                z = road.pos[a, 2] + road.right[a, 1] * lat
-                # board faces the approaching driver
-                yaw = _yaw_of(road.fwd[a]) + np.pi
-                mb.box((x, y + 0.5, z), (0.08, 1.0, 0.08), yaw, black)
-                cx = x - road.fwd[a, 0] * 0.06
-                cz = z - road.fwd[a, 1] * 0.06
-                for s in range(3):
-                    col = red if s % 2 == 0 else white
-                    off_l = (s - 1) * 0.3
-                    bx = cx + road.right[a, 0] * off_l
-                    bz = cz + road.right[a, 1] * off_l
-                    mb.box((bx, y + 1.25, bz), (0.3, 0.55, 0.04), yaw, col)
-            i = j
-        else:
-            i += 1
     return placed
 
 

@@ -5,8 +5,26 @@ extends Camera3D
 ## trauma shake from impacts/landings plus surface rumble. Modes: chase, chase_far, hood, bumper
 ## (cycle with `camera_next`, persisted in the "camera" setting). Runs in _process on the
 ## target's interpolated transform (physics interpolation is on), so it is itself not interpolated.
+##
+## The chase rig pitches with the road: on a descent (or before a crest) it swings up behind the
+## car and looks down along the slope (`slope_descent_gain` times the grade), so the road ahead
+## shows over the roof. The slope comes from the road profile ahead of the car (`road`, else the
+## session's track) while the car is on or near that road and heading along it, else from the
+## car's own pitch (low-passed, easing to level in the air). Uphill it follows only `slope_uphill_follow` of the
+## grade, capped at `slope_max_up`, so it never stares at the sky.
+## docs/PHYSICS.md, "Chase camera".
 
 const MODES: Array[String] = ["chase", "chase_far", "hood", "bumper"]
+## Distances (m) ahead of the car at which the road profile is read for the rig's slope, at up
+## to SLOPE_AHEAD_SPEED; faster they stretch with the speed (up to twice), so a crest is seen
+## coming the same time ahead.
+const SLOPE_AHEAD: PackedFloat32Array = [6.0, 12.0, 18.0, 26.0, 36.0]
+const SLOPE_AHEAD_SPEED := 25.0
+## The road's slope at the car is its chord from this far behind to this far ahead of it (m).
+const SLOPE_AT_CAR := 6.0
+## Low-pass rate (1/s) of the car's own pitch grade (used off the road), and its decay to level
+## in the air.
+const OWN_GRADE_RATE := 1.5
 
 ## The car to follow (Car / any RigidBody3D). Falls back to Game.player_car when empty.
 @export var target: RigidBody3D
@@ -27,6 +45,22 @@ const MODES: Array[String] = ["chase", "chase_far", "hood", "bumper"]
 @export var height_rate: float = 7.0
 @export var look_ahead: float = 3.5
 
+@export_group("Slope")
+## Share of the slope the chase rig pitches with (0 = the level rig of episode 2, 1 = full).
+@export var slope_follow: float = 1.0
+## Grades within this of level are taken as level, so flat roads keep the level rig.
+@export var slope_deadband: float = 0.015
+## A downhill grade is followed this many times over: the road ahead shows above the roof
+## with some margin instead of just clearing it.
+@export var slope_descent_gain: float = 1.5
+## Share of an uphill grade followed (the road ahead rising is visible anyway).
+@export var slope_uphill_follow: float = 0.5
+## Limits of the followed grade (rise over run): down, up.
+@export var slope_max_down: float = 0.4
+@export var slope_max_up: float = 0.08
+## Smoothing time (s) of the rig's slope (critically damped).
+@export var slope_smooth_time: float = 0.45
+
 @export_group("Lens")
 @export var fov_min: float = 70.0
 @export var fov_max: float = 82.0
@@ -37,6 +71,9 @@ const MODES: Array[String] = ["chase", "chase_far", "hood", "bumper"]
 @export var shake_max_angle_deg: float = 2.2
 @export var shake_max_offset: float = 0.06
 @export var rumble_amount: float = 0.35
+
+## Road whose profile ahead sets the rig's slope; null = the `track` of Game.session, if any.
+var road: Track
 
 var _yaw_dir: Vector3 = Vector3.FORWARD
 var _height: float = 0.0
@@ -49,6 +86,13 @@ var _last_target_pos: Vector3 = Vector3.ZERO
 var _prev_speed: float = 0.0
 var _needs_snap: bool = true
 var _connected_to: Object = null
+## Followed grade (rise over run along the heading, - = downhill) and its rate.
+var _slope: float = 0.0
+var _slope_rate: float = 0.0
+var _road_idx: int = -1
+var _road_seen: Track = null
+## The car's own grade along the heading, held while it is airborne.
+var _own_grade: float = 0.0
 
 
 func _ready() -> void:
@@ -108,7 +152,7 @@ func _process(delta: float) -> void:
 	if mode == "hood" or mode == "bumper":
 		cam_xf = _mounted(xf, mode == "hood")
 	else:
-		cam_xf = _chase(xf, vel, speed, delta, mode == "chase_far")
+		cam_xf = _chase(car, xf, vel, speed, delta, mode == "chase_far")
 	_needs_snap = false
 
 	var base_fov := fov_min + (fov_max - fov_min) * smoothstep(0.0, fov_full_speed_kmh, kmh)
@@ -154,7 +198,7 @@ func _on_landed(strength: float) -> void:
 	shake(clampf(strength * 0.45, 0.0, 0.6))
 
 
-func _chase(xf: Transform3D, vel: Vector3, speed: float, delta: float, far: bool) -> Transform3D:
+func _chase(car: RigidBody3D, xf: Transform3D, vel: Vector3, speed: float, delta: float, far: bool) -> Transform3D:
 	var dist := far_distance if far else chase_distance
 	var height := far_height if far else chase_height
 	var car_fwd := -xf.basis.z
@@ -166,11 +210,14 @@ func _chase(xf: Transform3D, vel: Vector3, speed: float, delta: float, far: bool
 	if flat_vel.length() > 3.0 and fwd_speed > 0.0:
 		var w := velocity_bias * smoothstep(3.0, 14.0, flat_vel.length())
 		desired = car_fwd.slerp(flat_vel.normalized(), w).normalized()
+	var slope_target := _slope_target(car, xf, speed, delta) * slope_follow if slope_follow > 0.0 else 0.0
 	if _needs_snap:
 		_yaw_dir = desired
 		_height = xf.origin.y
 		_dist_extra = 0.0
 		_prev_speed = speed
+		_slope = slope_target
+		_slope_rate = 0.0
 	else:
 		var angle := _yaw_dir.signed_angle_to(desired, Vector3.UP)
 		_yaw_dir = _yaw_dir.rotated(Vector3.UP, angle * (1.0 - exp(-yaw_rate * delta))).normalized()
@@ -179,13 +226,83 @@ func _chase(xf: Transform3D, vel: Vector3, speed: float, delta: float, far: bool
 		var accel := (speed - _prev_speed) / maxf(delta, 1e-4)
 		_prev_speed = speed
 		_dist_extra = lerpf(_dist_extra, clampf(accel * 0.05, -0.5, 0.5), 1.0 - exp(-3.0 * delta))
+		_smooth_slope(slope_target, delta)
 	dist += speed * 0.012 + _dist_extra
+	# The rig (offset and look target) turns about the heading's right axis by the followed slope:
+	# a steady grade frames like a flat road, a crest ahead lifts the camera before the drop.
+	var pitch := atan(_slope)
+	var fwd := _yaw_dir * cos(pitch) + Vector3.UP * sin(pitch)
+	var up := Vector3.UP * cos(pitch) - _yaw_dir * sin(pitch)
 	var pivot := Vector3(xf.origin.x, _height, xf.origin.z)
-	var look_at_point := pivot + Vector3.UP * look_height + _yaw_dir * clampf(speed * 0.1, 0.0, look_ahead)
-	var desired_pos := pivot - _yaw_dir * dist + Vector3.UP * height
+	var look_at_point := pivot + up * look_height + fwd * clampf(speed * 0.1, 0.0, look_ahead)
+	var desired_pos := pivot - fwd * dist + up * height
 	var pos := _avoid_terrain(xf.origin + Vector3.UP * 1.1, desired_pos)
 	var basis := Basis.looking_at((look_at_point - pos).normalized(), Vector3.UP)
 	return Transform3D(basis, pos)
+
+
+## Grade the rig should follow (before smoothing): the steeper of the road's slope at the car and
+## its steepest drop within SLOPE_AHEAD, only partly followed uphill. Off the road (or across it)
+## it blends to the car's own pitch, low-passed (OWN_GRADE_RATE) so a kicker or a bump barely
+## registers, and easing back to level while the car is airborne.
+func _slope_target(car: RigidBody3D, xf: Transform3D, speed: float, delta: float) -> float:
+	var grounded: Variant = car.get(&"grounded_wheels")
+	if grounded == null or int(grounded) >= 3 or _needs_snap:
+		var nose := -xf.basis.z
+		var run := maxf(Vector2(nose.x, nose.z).length(), 0.2)
+		var pitch_grade := nose.y / run if nose.dot(_yaw_dir) >= 0.0 else -nose.y / run
+		_own_grade = pitch_grade if _needs_snap else lerpf(_own_grade, pitch_grade, 1.0 - exp(-OWN_GRADE_RATE * delta))
+	else:
+		_own_grade *= exp(-OWN_GRADE_RATE * delta)
+	var grade := _own_grade
+	var track := _resolve_road()
+	if track != null:
+		var p := xf.origin
+		_road_idx = track.nearest(p, _road_idx if not _needs_snap else -1)
+		var i := _road_idx
+		var along := track.forward(i).dot(_yaw_dir)
+		var off := absf(track.lateral(i, p)) - track.half_width(i)
+		var w := (1.0 - smoothstep(1.0, 8.0, off)) * smoothstep(0.35, 0.7, absf(along))
+		w *= 1.0 - smoothstep(3.0, 6.0, absf(p.y - track.point(i).y))
+		if w > 0.0:
+			var dir := 1.0 if along >= 0.0 else -1.0
+			var s := track.abs_s(i, p)
+			var y0 := track.position_at_abs(s).y
+			var at_car := (track.position_at_abs(s + dir * SLOPE_AT_CAR).y
+					- track.position_at_abs(s - dir * SLOPE_AT_CAR).y) / (2.0 * SLOPE_AT_CAR)
+			var ahead := INF
+			var stretch := clampf(speed / SLOPE_AHEAD_SPEED, 1.0, 2.0)
+			for k: float in SLOPE_AHEAD:
+				var d := k * stretch
+				ahead = minf(ahead, (track.position_at_abs(s + dir * d).y - y0) / d)
+			grade = lerpf(_own_grade, minf(at_car, ahead), w)
+	grade = signf(grade) * maxf(absf(grade) - slope_deadband, 0.0)
+	grade *= slope_uphill_follow if grade > 0.0 else slope_descent_gain
+	return clampf(grade, -slope_max_down, slope_max_up)
+
+
+## Critically damped follow of the rig's slope (frame-rate independent).
+func _smooth_slope(target_slope: float, delta: float) -> void:
+	var omega := 2.0 / maxf(slope_smooth_time, 0.01)
+	var x := omega * delta
+	var decay := 1.0 / (1.0 + x + 0.48 * x * x + 0.235 * x * x * x)
+	var change := _slope - target_slope
+	var temp := (_slope_rate + omega * change) * delta
+	_slope_rate = (_slope_rate - omega * temp) * decay
+	_slope = target_slope + (change + temp) * decay
+
+
+func _resolve_road() -> Track:
+	var track := road
+	if track == null:
+		var game := get_node_or_null(^"/root/Game")
+		var session: Object = game.get(&"session") if game != null else null
+		if session != null and is_instance_valid(session):
+			track = session.get(&"track") as Track
+	if track != _road_seen:
+		_road_seen = track
+		_road_idx = -1
+	return track
 
 
 func _mounted(xf: Transform3D, hood: bool) -> Transform3D:
