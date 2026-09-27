@@ -327,7 +327,8 @@ the look target (`up * look_height + fwd * look_ahead`) use the pitched axes, th
 world up (no roll). A steady grade then frames like a flat road; `slope_descent_gain` 1.5 follows
 descents 1.5× over so the road ahead shows above the roof with margin. The followed grade is
 the steeper of the road's slope at the car (chord ±6 m) and its steepest drop to 6, 12, 18, 26
-and 36 m ahead, so a crest lifts the camera before the car tips over it. Grades within
+and 36 m ahead (stretched with the speed above 25 m/s, up to twice, so a crest shows up the same
+time ahead), so a crest lifts the camera before the car tips over it. Grades within
 `slope_deadband` (1.5 %) of level count as level (flats keep the ep2 framing); uphill follows
 `slope_uphill_follow` 0.5 of the grade capped at `slope_max_up` 8 % (≤ 4.6°, the rising road
 is visible anyway, so it never looks at the sky); downhill is capped at `slope_max_down` 0.4. A
@@ -341,41 +342,48 @@ moves with every bump, jump and landing (the view would nod in the air). The roa
 static, sampled every 2 m and smooth, reaches ahead, and ignores what the car does. `Track` has
 no slope API, so the camera reads heights with `position_at_abs(s ± d)` around
 `nearest(car, hint)` (windowed like RaceSession). The road is `ChaseCamera.road` if set, else
-`Game.session.track`. It is weighted by how close the car is to it (full within 1 m beyond the
-edge, none beyond 8 m), how well the heading lines up with it (|cos| 0.35 → 0.7; driving the wrong
-way reads the road backwards) and the height difference (3-6 m, e.g. under a bridge); the rest
+`Game.session.track`: in the one world that is the selected route's track (`hanami`, `momiji`
+or the open `liaison`; a route change resets the search). It is weighted by how close the car is
+to it (full within 1 m beyond the edge, none beyond 8 m), how well the heading lines up with it
+(|cos| 0.35 → 0.7; driving the wrong way reads the road backwards) and the height difference
+(3-6 m, e.g. under a bridge); the rest
 comes from the car's own pitch along the heading, low-passed at 1.5/s while three or more wheels
 touch and easing back to level at the same rate in the air (a kicker's pitch is not the slope it
 lands on). Off the road, in the garage or on the proving ground (no session) the camera follows
 that low-passed pitch.
 
-**Measured** with `tools/physics/camera_probe.gd` (autopilot lap, Sakura unless noted; a level
-and a slope camera on the same car; the road centreline 10-60 m ahead, every 5 m, projected into
-each camera; visible = inside the frame and not inside the 2D hull of the car's projected mesh
-hulls; blind frame = less than half of those points visible). Descents: the road 40 m ahead
-more than 4 % below; flats: within 1.5 % at the car and ahead.
+**Measured** with `tools/physics/camera_probe.gd` on the world pack (autopilot run of each route,
+Sakura unless noted; a level and a slope camera on the same car; the road centreline 10-60 m
+ahead, every 5 m, projected into each camera; visible = inside the frame and not inside the 2D
+hull of the car's projected mesh hulls; blind frame = less than half of those points visible).
+Descents: the road 40 m ahead more than 4 % below; flats: within 1.5 % at the car and ahead.
 
-| Map | descent visible, level → slope | blind frames | flat visible, level → slope | Hayate descent visible |
+| Route | descent visible, level → slope | blind frames | flat visible, level → slope | Hayate descent visible |
 |---|---|---|---|---|
-| Hanami (42 s of descents) | 56.7 % → 95.5 % | 38.4 % → 1.0 % | 65.5 % → 67.6 % | 84.3 % → 99.5 % |
-| Momiji (23 s) | 55.1 % → 97.3 % | 33.4 % → 1.6 % | 76.2 % → 79.6 % | 86.3 % → 99.8 % |
-| Natsu (34 s) | 61.8 % → 91.7 % | 23.5 % → 2.0 % | 47.3 % → 50.3 % | 91.3 % → 99.8 % |
+| Hanami (42 s of descents) | 56.7 % → 95.8 % | 38.1 % → 1.0 % | 64.6 % → 67.8 % | 84.3 % → 99.6 % |
+| Momiji (23 s) | 54.9 % → 97.5 % | 33.7 % → 1.6 % | 76.0 % → 79.5 % | |
+| Liaison (12 s, run to the arrival in 54.7 s) | 68.3 % → 91.3 % | 12.0 % → 6.8 % | 52.7 % → 54.5 % | |
 
 Every point stays inside the frame (100 %). The remaining blind frames on Hanami are one crest
-taken at 154 km/h where the car leaves the ground (0.4 s). The flats barely move (the deadband);
-Momiji's flat blind frames drop 16.6 → 4.0 % because the crest after a flat already counts. The
-Natsu run stops at the 300 s limit (the open road has no finish line for the lap runner). Camera
-pitch rate p95 goes from 1.5 to 2.4-3.5 °/s, peaks 8-10 °/s on the steepest crests (level rig
-4.3 °/s, from the launch); the pitch acceleration RMS (shake and rumble included) is unchanged
-(36 / 49 / 10 °/s²). Contact sheets of the steepest descents (level left, slope right, points
-green / red behind the car / yellow behind terrain): `/tmp/ep3/camera/<map>_descents.png` from an
-offscreen run.
+taken at 154 km/h where the car leaves the ground (0.4 s). On the liaison they are the first
+half second of two gentle crests at 130-150 km/h, where the road drops away from a flat that the
+level framing already hides (its flats are blind 54 % of the time with either camera): lowering
+the deadband to 0 takes them to 4.2 % but tilts the flats, so the flat framing stays. The flats
+barely move (the deadband); Momiji's flat blind frames drop 16.6 → 3.6 % because the crest after
+a flat already counts. Camera pitch rate p95 goes from 1.0-1.6 to 2.4-3.5 °/s, peaks 5-10 °/s
+on the steepest crests (level rig 4.3 °/s, from the launch); the pitch acceleration RMS (shake
+and rumble included) is unchanged (37 / 49 / 10 °/s²). The v1 packs (Hanami, Momiji, Natsu)
+measured the same within 0.3 points on the stages. Contact sheets of the steepest descents
+(level left, slope right, points green / red behind the car / yellow behind terrain):
+`/tmp/ep3/camera/world/<route>_descents.png` from an offscreen run.
 
 The other proofs were re-rendered after the change (`capture.gd -- only=corner,slide,jump,modes`:
 `docs/renders/physics_corner_0`, `physics_slide_gravel*`, `physics_jump_*`, `physics_cam_*`) and
 compared with the same shots rendered with `slope_follow = 0`: on the flat proving ground the
 corner, slide and camera-mode frames are identical; in the chase frame of the kicker jump the car
 sits a few pixels higher (the car's pitch off the ramp, low-passed, then easing to level in the air).
+The proving ground has no session and no road, so the world pack and the speed-stretched
+look-ahead leave these shots as they are.
 
 ## Proving ground (`scenes/test/physics_test.tscn`)
 Flat 2.4 km grass plane (meta `surface = grass`, group `track`) with: 900 m tarmac and gravel
