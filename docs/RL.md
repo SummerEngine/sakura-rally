@@ -59,9 +59,9 @@ caffeinate -i nice -n 10 uv run --python 3.12 train.py --run gen1 --car sakura,h
 
 ```sh
 S=/Applications/Summer.app/Contents/MacOS/Summer
-timeout 600 nice -n 10 $S --headless --disable-crash-handler --fixed-fps 120 --audio-driver Dummy \
+timeout -k 10 600 nice -n 10 $S --headless --disable-crash-handler --fixed-fps 120 --audio-driver Dummy \
     --path . -s res://tools/rl/eval.gd -- policy=tools/rl/runs/gen1/policies/latest.json routes=hanami,momiji cars=2
-timeout 900 nice -n 10 $S --headless --disable-crash-handler --audio-driver Dummy --fixed-fps 60 \
+timeout -k 10 900 nice -n 10 $S --headless --disable-crash-handler --audio-driver Dummy --fixed-fps 60 \
     --path . -s res://tools/rl/watch.gd -- route=hanami cycle=8
 ```
 
@@ -82,3 +82,6 @@ shots in one run.
 
 Copy the chosen policy to `assets/ai/driver.json` (auto-drive and `NeuralPilot`'s default) and
 a few milestones to `assets/ai/generations/NN_<steps>.json` (the ghosts, oldest first).
+The default export filter (all resources) packs these `.json` files: a data pack exported that
+way drove hanami from the pack alone with the driver and all ghosts. The maps' `map.bin` files are
+not resources and need `include_filter="*.bin"` in the preset, or an exported game has no world.
