@@ -60,9 +60,9 @@ var _lake_level: float = -INF
 ## The world's rivers (pack `water.rivers`): per river its centreline and half width.
 var _rivers: Array[PackedVector3Array] = []
 var _river_halves := PackedFloat32Array()
-## Driveable area on the ground plane (x, z); leaving it resets the car. The world pack's
-## `bounds` (its terrain rectangle), or a v1 pack's `play_half` square plus 40 m.
-var _area := Rect2(-640.0, -640.0, 1280.0, 1280.0)
+## Driveable area on the ground plane (x, z): the world pack's `bounds` (its terrain
+## rectangle); leaving it resets the car.
+var _area: Rect2
 var _tick: int = 0
 
 
@@ -77,12 +77,8 @@ func setup(new_map: MapWorld, new_car: Car, new_mode: String) -> void:
 	mode = new_mode
 	checkpoint_total = map.checkpoints.size()
 	best_time = _game().best_time(map.route_id) if _game() else INF
-	var b: Array = map.info.get("bounds", [])
-	if b.size() == 4:
-		_area = Rect2(float(b[0]), float(b[1]), float(b[2]) - float(b[0]), float(b[3]) - float(b[1]))
-	else:
-		var half := float(map.info.get("play_half", 600.0)) + 40.0
-		_area = Rect2(-half, -half, 2.0 * half, 2.0 * half)
+	var b: Array = map.info["bounds"]
+	_area = Rect2(float(b[0]), float(b[1]), float(b[2]) - float(b[0]), float(b[3]) - float(b[1]))
 	var water: Dictionary = map.info.get("water", {})
 	var lake: Dictionary = water.get("lake", {})
 	_lake_poly = PackedVector2Array()
