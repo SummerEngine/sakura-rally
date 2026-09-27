@@ -5,8 +5,9 @@ extends SceneTree
 ## flow=core (default): free roam in the world (every gate open), pause and resume through the
 ## UI's input path, a manual car reset, the other roads of the world in free roam (the branch
 ## and the Momiji loop: no off-route notice, R lands on the road the car is beside), restart
-## during the countdown, launch control on the start line, camera cycling, all three quality presets (FPS measured on the same stretch of
-## road), and a Time Trial start on each stage (its route, its grid, gates closed).
+## during the countdown, launch control on the start line, camera cycling, all three quality
+## presets (FPS measured on the same stretch of each stage, both stages in one run), and a Time
+## Trial start on each stage (its route, its grid, gates closed).
 ##
 ## flow=campaign: the whole campaign from the title to the finale in one continuous drive. The
 ## autopilot drives both stages and the liaison; results Continue, the finale and its end card
@@ -131,28 +132,30 @@ func _run_core() -> void:
 	for spot: Array in [["liaison", 0.5], ["liaison", 0.8], ["momiji", 0.3], ["momiji", 0.7]]:
 		await _roam_road_check(car, spot[0], spot[1])
 
-	# quality presets: same road stretch, 4 s of autopilot each
-	var fps := {}
-	for q in ["low", "medium", "high"]:
-		game.set_setting("quality", q)
-		car.reset_to(track.transform_at_progress(track.length * 0.3, 0.0, 0.3))
-		car.controlled_by_player = false
-		var ap := Autopilot.new()
-		ap.curve = track.to_curve()
-		car.add_child(ap)
-		await _seconds(1.5)
-		var samples: Array[float] = []
-		var start := Time.get_ticks_msec()
-		while Time.get_ticks_msec() - start < 4000:
-			await process_frame
-			samples.append(1.0 / maxf(root.get_process_delta_time(), 1e-4))
-		samples.sort()
-		fps[q] = [samples[samples.size() / 10], samples[samples.size() / 2]]
-		_log("QUALITY %s: p10=%.0f median=%.0f msaa=%d scale=%.2f shadow=%s" % [q, fps[q][0], fps[q][1],
-				root.msaa_3d, root.scaling_3d_scale, main.map.atmosphere.sun.directional_shadow_max_distance])
-		await shot("quality_%s" % q)
-		ap.queue_free()
-		car.controlled_by_player = true
+	# quality presets: the same stretch of each stage (free roam drives every road), 4 s of
+	# autopilot each
+	for id: String in ["hanami", "momiji"]:
+		var stage: Track = main.map.routes[id]["track"]
+		for q in ["low", "medium", "high"]:
+			game.set_setting("quality", q)
+			car.reset_to(stage.transform_at_progress(stage.length * 0.3, 0.0, 0.3))
+			car.controlled_by_player = false
+			var ap := Autopilot.new()
+			ap.curve = stage.to_curve()
+			car.add_child(ap)
+			await _seconds(1.5)
+			var samples: Array[float] = []
+			var start := Time.get_ticks_msec()
+			while Time.get_ticks_msec() - start < 4000:
+				await process_frame
+				samples.append(1.0 / maxf(root.get_process_delta_time(), 1e-4))
+			samples.sort()
+			_log("QUALITY %s %s: p10=%.0f median=%.0f msaa=%d scale=%.2f shadow=%s" % [id, q,
+					samples[samples.size() / 10], samples[samples.size() / 2], root.msaa_3d,
+					root.scaling_3d_scale, main.map.atmosphere.sun.directional_shadow_max_distance])
+			await shot("quality_%s_%s" % [id, q])
+			ap.queue_free()
+			car.controlled_by_player = true
 	_check(root.msaa_3d == Viewport.MSAA_4X and is_equal_approx(root.scaling_3d_scale, 1.0), "high preset restores 4x MSAA, full scale")
 
 	# ---------------------------------------------------------------- restart into time trial countdown
