@@ -438,7 +438,9 @@ func _on_node_added(n: Node) -> void:
 
 
 func _add_car(car: Car) -> void:
-	if car in _cars or not car.is_inside_tree():
+	# A `ghost_car` (AutoDrive's training ghosts) takes no part in the run: it passes through the
+	# soft course, the gates and the crowd, and its arrival or reset restores nothing.
+	if car in _cars or not car.is_inside_tree() or car.is_in_group(&"ghost_car"):
 		return
 	var box := AABB()
 	var first := true
