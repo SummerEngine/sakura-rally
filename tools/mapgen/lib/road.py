@@ -11,6 +11,7 @@ from .meshpack import MeshBuilder
 SURFACES = ("tarmac", "gravel", "dirt", "wood")
 PROFILE = 11  # vertices per cross-section
 LOT_DROP = 0.04  # a lot's paved surface sits this far below the road's carriageway edge
+DECK_RAMP = 8.0  # m over which the carriageway's crown and bank ease into a bridge deck
 
 
 @dataclass
@@ -162,7 +163,7 @@ def build_road(spec: dict) -> Road:
     bank_gain = spec.get("bank_gain", 14.0)
     bank_max = spec.get("bank_max", 0.05)
     bank = geom.smooth(np.clip(curv_s * bank_gain, -bank_max, bank_max), 10.0, closed=closed)
-    bank[bridge != ""] *= 0.2
+    bank *= 1.0 - 0.8 * deck_weight(bridge, closed)
     if lots:
         bank *= 1.0 - on_lot
 
@@ -173,6 +174,22 @@ def build_road(spec: dict) -> Road:
     return Road(pos=pos, dist=dist, length=length, fwd=fwd, right=right, curv=curv_s, bank=bank,
                 half_width=half_width, verge=spec.get("verge", 1.4), surface=surface, bridge=bridge,
                 ford=ford, carve=carve, control_s=control_s, closed=closed, lots=lots, on_lot=on_lot)
+
+
+def deck_weight(bridge: np.ndarray, closed: bool) -> np.ndarray:
+    """1 on bridge samples, easing to 0 over DECK_RAMP m before and after each deck: the deck is
+    flat and nearly unbanked, and the road's crown and bank ease into it instead of changing
+    within one sample (a twist the wheels feel at the carriageway edge)."""
+    on = bridge != ""
+    n = len(on)
+    if not on.any():
+        return np.zeros(n)
+    idx = np.nonzero(on)[0].astype(np.float64)
+    i = np.arange(n, dtype=np.float64)
+    gap = np.abs(i[:, None] - idx[None, :])
+    if closed:
+        gap = np.minimum(gap, n - gap)
+    return 1.0 - geom.smoothstep(0.0, DECK_RAMP, gap.min(axis=1))
 
 
 def surface_at_lateral_offsets(road: Road) -> tuple[np.ndarray, np.ndarray]:
@@ -212,6 +229,8 @@ def surface_at_lateral_offsets(road: Road) -> tuple[np.ndarray, np.ndarray]:
         dy[br, 2] = 0.12
         dy[br, PROFILE - 3] = 0.12
         dy[br, 4:7] = 0.0
+    # the crown eases out into a deck (and back) with the bank
+    dy[:, 4:7] *= (1.0 - deck_weight(road.bridge, road.closed))[:, None]
     # banking tilts the carriageway; verges follow the edge height
     lat_c = np.clip(lat, -hw, hw)
     dy = dy - lat_c * road.bank[:, None]
