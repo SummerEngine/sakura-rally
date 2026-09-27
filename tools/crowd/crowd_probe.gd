@@ -1,8 +1,10 @@
 extends SceneTree
-## Crowd probe: spectator looks and knock-overs on a real map, offscreen.
+## Crowd probe: spectator looks and knock-overs in the world, offscreen. `map=` is a route id
+## (hanami, momiji, liaison); only spectators within 80 m of that route's road count. It prints
+## how many spectators stand along each route (CROWD COUNTS).
 ##
-## shots  Finds the spectator crowd on the outside of the tightest corner (the hairpin crowd)
-##        and renders it close up, at racing distance from the road (45 m and 25 m before the
+## shots  Finds the spectator crowd on the outside of the tightest corner (the hairpin crowd;
+##        `near=x,z` takes the crowd nearest that point instead) and renders it close up, at racing distance from the road (45 m and 25 m before the
 ##        apex, chase height) and from the side of the crowd, with the map's post FX.
 ## lineup Every people model (two dyes of each) lined up on the road ahead of the start, close
 ##        up, through the same materials, custom data and motion as in a crowd;
@@ -36,6 +38,7 @@ const MONITORS := [
 
 var opts := {"map": "hanami", "mode": "all", "dir": "/tmp/ep3/people/probe", "car": "sakura", "kmh": "45"}
 var map: MapWorld
+var _people: Array = [] ## the selected route's spectators
 var game: Node
 var cam: Camera3D
 var post: Node3D
@@ -105,7 +108,8 @@ func _run() -> void:
 	root.add_child(post)
 	post.apply_preset(map.atmosphere.preset, map.sun_dir)
 	crowd = map.soft_course.get(&"crowd") if map.soft_course != null else null
-	var spot := _hairpin_crowd()
+	_route_counts()
+	var spot := _crowd_near(opts["near"]) if opts.has("near") else _hairpin_crowd()
 	if spot.is_empty():
 		failures.append("no spectator crowd found")
 	else:
@@ -140,8 +144,22 @@ func _run() -> void:
 
 # ---------------------------------------------------------------- the hairpin crowd
 
-## Every spectator instance of the pack: [position, yaw].
+## Spectators farther than this from a route's road are not that route's crowd (m).
+const ROUTE_REACH := 80.0
+
+
+## Every spectator instance of the world along the selected route: [position, yaw, name].
 func _spectators() -> Array:
+	if not _people.is_empty():
+		return _people
+	var track := map.track
+	for p in _all_spectators():
+		if (p[0] as Vector3).distance_to(track.point(track.nearest(p[0]))) <= ROUTE_REACH:
+			_people.append(p)
+	return _people
+
+
+func _all_spectators() -> Array:
 	var out := []
 	var inst: Dictionary = map.info["instances"]
 	for n: String in inst:
@@ -150,6 +168,54 @@ func _spectators() -> Array:
 		for e in inst[n]:
 			out.append([Vector3(e[0], e[1], e[2]), float(e[3]), n])
 	return out
+
+
+## How many spectators stand along each route of the world (within ROUTE_REACH of its road;
+## a crowd between two roads counts for both) and how many belong to none.
+func _route_counts() -> void:
+	var all := _all_spectators()
+	var parts: Array[String] = []
+	var claimed := {}
+	for id: String in map.routes:
+		var t: Track = map.routes[id]["track"]
+		var n := 0
+		for k in all.size():
+			var q: Vector3 = all[k][0]
+			if q.distance_to(t.point(t.nearest(q))) <= ROUTE_REACH:
+				n += 1
+				claimed[k] = true
+		parts.append("%s %d" % [id, n])
+	print("CROWD COUNTS  world %d spectators (Crowd %d people)  per route: %s  off every route %d" % [
+			all.size(), crowd.person_count() if crowd != null else 0, ", ".join(parts), all.size() - claimed.size()])
+
+
+## `near=x,z`: the crowd around that point instead of the tightest hairpin crowd.
+func _crowd_near(xz: String) -> Dictionary:
+	var v := xz.split(",")
+	var at := Vector3(float(v[0]), 0.0, float(v[1]))
+	var people := _all_spectators()
+	var best := {}
+	var best_d := INF
+	for p in people:
+		var c: Vector3 = p[0]
+		var d := Vector2(c.x - at.x, c.z - at.z).length()
+		if d >= best_d:
+			continue
+		var n := 0
+		var sum := Vector3.ZERO
+		for q in people:
+			if (q[0] as Vector3).distance_to(c) < 14.0:
+				n += 1
+				sum += q[0]
+		if n < 4:
+			continue
+		var centre := sum / n
+		var i := map.track.nearest(centre)
+		var s := map.track.dist(i)
+		var turn := absf(map.track.forward_at_abs(s - 12.0).signed_angle_to(map.track.forward_at_abs(s + 12.0), Vector3.UP))
+		best_d = d
+		best = {"c": centre, "n": n, "i": i, "s": s, "radius": 24.0 / maxf(turn, 1e-3)}
+	return best
 
 
 ## The crowd (≥ 6 spectators within 14 m) whose nearest road point turns tightest.
@@ -311,38 +377,49 @@ func _lineup() -> void:
 # ---------------------------------------------------------------- knock-over
 
 func _knock(_spot: Dictionary) -> void:
-	var run := _knock_run()
+	var scene := "res://scenes/car/car_hayate.tscn" if opts["car"] == "hayate" else "res://scenes/car/car.tscn"
+	car = (load(scene) as PackedScene).instantiate() as Car
+	car.name = "ProbeCar"
+	root.add_child(car)
+	# pass 0: the drive with nobody to knock (the crowd's hash emptied for it), so the pipelines
+	# the car and the map need along the line (tyre dust, shadow splits) are built before the
+	# timed pass and every compilation left there belongs to the knocks. It also proves the
+	# line: something the rays miss (a kerb, a ditch) that stops the car rules the spot out.
+	var run := {}
+	var tried: Array[Vector3] = []
+	var cells: Dictionary = crowd._cells
+	crowd._cells = {}
+	while tried.size() < 6:
+		run = _knock_run(tried)
+		if run.is_empty():
+			break
+		tried.append(run["target"])
+		car.place_at_rest(Transform3D(Basis.looking_at(-run["face"], Vector3.UP), run["start"]))
+		for i in 10:
+			await physics_frame
+		cam.fov = 55.0
+		cam.global_position = run["eye"]
+		cam.look_at(run["target"] + Vector3.UP * 0.7 - run["face"] * 2.5)
+		await _drive(run["target"], run["face"], 7.5, false)
+		if (car.global_position - run["target"]).dot(-run["face"]) > 0.0:
+			break
+		print("KNOCK RUN at %s: the car did not get through, next spot" % run["target"])
+		run = {}
+	crowd._cells = cells
 	if run.is_empty():
 		failures.append("no spectator with a flat, open 24 m approach")
 		return
 	var target: Vector3 = run["target"]
 	var face: Vector3 = run["face"]
 	var start: Vector3 = run["start"]
-	print("KNOCK RUN at (%.1f, %.1f, %.1f)  approach drop %.2f m" % [target.x, target.y, target.z, run["drop"]])
 	var heading := Basis.looking_at(-face, Vector3.UP)
-	var scene := "res://scenes/car/car_hayate.tscn" if opts["car"] == "hayate" else "res://scenes/car/car.tscn"
-	car = (load(scene) as PackedScene).instantiate() as Car
-	car.name = "ProbeCar"
-	root.add_child(car)
-	car.place_at_rest(Transform3D(heading, start))
-	for i in 10:
-		await physics_frame
+	print("KNOCK RUN at (%.1f, %.1f, %.1f)  approach drop %.2f m" % [target.x, target.y, target.z, run["drop"]])
 	crowd.knocked.connect(func(prop: String, point: Vector3, speed: float, loss: float) -> void:
 		_knocks.append({"prop": prop, "point": point, "v": speed, "loss": loss, "usec": Time.get_ticks_usec()})
 		if _knocks.size() <= 2:
 			_mark("knock %d (%s)" % [_knocks.size(), prop]))
-	# fixed camera beside the line, looking across it at the spectator
-	# the tumble lands a few metres past the spectator, along the car's travel
-	cam.fov = 55.0
-	cam.global_position = run["eye"]
-	cam.look_at(target + Vector3.UP * 0.7 - face * 2.5)
-	# pass 0: the same drive with nobody to knock (the crowd's hash emptied for it), so the
-	# pipelines the car and the map need along the line (tyre dust, shadow splits) are built
-	# before the timed pass and every compilation left there belongs to the knocks
-	var cells: Dictionary = crowd._cells
-	crowd._cells = {}
-	await _drive(target, face, 7.5, false)
-	crowd._cells = cells
+	# the camera stays beside the line, looking across it at the spectator (the tumble lands a
+	# few metres past, along the car's travel)
 	await _reset(heading, start)
 	# pass 1, timed: the first knocks of the session, nothing saved
 	_logging = true
@@ -366,42 +443,96 @@ func _knock(_spot: Dictionary) -> void:
 ## Rolls the car straight at `target` along -`face` for `secs`, braking to a stop past it.
 ## The spectator to drive into: the flattest 24 m straight approach from the road side with
 ## nothing rigid in the way, and a camera spot 7-9 m to the side that sees the spectator.
-func _knock_run() -> Dictionary:
+## Tall props (posts, poles, signs, trees; the soft ones have no collider for the rays) in
+## 10 m buckets: xz positions for the knock camera's line of sight.
+func _tall_props() -> Dictionary:
+	var cells := {}
+	var inst: Dictionary = map.info["instances"]
+	for n: String in inst:
+		var m: Dictionary = map.manifest.get(n, {})
+		if n.begins_with("spectator_") or float((m.get("size", [0, 0, 0]) as Array)[1]) < 1.2:
+			continue
+		for e in inst[n]:
+			var key := Vector2i(floori(e[0] / 10.0), floori(e[2] / 10.0))
+			if not cells.has(key):
+				cells[key] = PackedVector2Array()
+			(cells[key] as PackedVector2Array).append(Vector2(e[0], e[2]))
+	return cells
+
+
+## Whether a tall prop stands within 1.2 m of the camera's line from `a` to `b`.
+func _blocked(cells: Dictionary, a: Vector3, b: Vector3) -> bool:
+	var a2 := Vector2(a.x, a.z)
+	var b2 := Vector2(b.x, b.z)
+	var lo := Vector2i(floori(minf(a2.x, b2.x) / 10.0) - 1, floori(minf(a2.y, b2.y) / 10.0) - 1)
+	var hi := Vector2i(floori(maxf(a2.x, b2.x) / 10.0) + 1, floori(maxf(a2.y, b2.y) / 10.0) + 1)
+	for x in range(lo.x, hi.x + 1):
+		for z in range(lo.y, hi.y + 1):
+			for q in cells.get(Vector2i(x, z), PackedVector2Array()):
+				if Geometry2D.get_closest_point_to_segment(q, a2, b2).distance_to(q) < 1.2:
+					return true
+	return false
+
+
+## The best knock line whose spectator is not in `skip`.
+func _knock_run(skip: Array[Vector3]) -> Dictionary:
+	var run := _knock_run_where(true, skip)
+	return run if not run.is_empty() else _knock_run_where(false, skip)
+
+
+## `off_gates`: only spectators 25 m or more from a checkpoint (its fabric gate is a node, not
+## an instance: it would stand in the shot).
+func _knock_run_where(off_gates: bool, skip: Array[Vector3]) -> Dictionary:
 	var space := map.get_world_3d().direct_space_state
+	var tall := _tall_props()
 	var best := {}
 	for p in _spectators():
 		var target: Vector3 = p[0]
-		var face := -Basis(Vector3.UP, p[1]).z
-		face.y = 0.0
-		face = face.normalized()
-		var start := target + face * 24.0
-		start.y = map.ground_height(start.x, start.z, target.y + 30.0)
-		var drop := absf(start.y - target.y)
-		# the ground along the way must not bump more than the straight line
-		var bumpy := false
-		for k in range(1, 6):
-			var q := target + face * 4.0 * k
-			var gy := map.ground_height(q.x, q.z, target.y + 30.0)
-			if absf(gy - lerpf(target.y, start.y, 4.0 * k / 24.0)) > 0.6:
-				bumpy = true
-		if bumpy or drop > float(best.get("drop", 3.0)):
+		if target in skip:
 			continue
-		# nothing rigid (props, walls) between the start and the spectator
-		var ray := PhysicsRayQueryParameters3D.create(start + Vector3.UP * 0.7, target + Vector3.UP * 0.7 - face * 3.0,
-				MapWorld.LAYER_PROPS | MapWorld.LAYER_WORLD)
-		if not space.intersect_ray(ray).is_empty():
+		# the fabric gates (nodes, not instances) stand at the checkpoints: keep them out of shot
+		var by_gate := false
+		for cp in (map.checkpoints if off_gates else []):
+			if Vector2(target.x - cp["position"].x, target.z - cp["position"].z).length() < 25.0:
+				by_gate = true
+		if by_gate:
 			continue
-		var side := face.cross(Vector3.UP).normalized()
-		for cand in [[side, 7.0], [-side, 7.0], [side, 9.0], [-side, 9.0]]:
-			var eye: Vector3 = target + face * 2.0 + cand[0] * cand[1]
-			eye.y = map.ground_height(eye.x, eye.z, target.y + 30.0) + 1.7
-			var look := PhysicsRayQueryParameters3D.create(eye, target + Vector3.UP * 1.0,
+		var front := -Basis(Vector3.UP, p[1]).z
+		front.y = 0.0
+		front = front.normalized()
+		# from the front (the road side) first; barriers and slopes often close it off, so
+		# from the sides and behind too
+		for turn in [0.0, 60.0, -60.0, 120.0, -120.0, 180.0]:
+			var face := front.rotated(Vector3.UP, deg_to_rad(turn))
+			var start := target + face * 24.0
+			start.y = map.ground_height(start.x, start.z, target.y + 30.0)
+			var drop := absf(start.y - target.y)
+			# the ground along the way must not bump more than the straight line
+			var bumpy := false
+			for k in range(1, 6):
+				var q := target + face * 4.0 * k
+				var gy := map.ground_height(q.x, q.z, target.y + 30.0)
+				if absf(gy - lerpf(target.y, start.y, 4.0 * k / 24.0)) > 0.6:
+					bumpy = true
+			if bumpy or drop > float(best.get("drop", 3.0)):
+				continue
+			# nothing rigid (props, walls) between the start and the spectator
+			var ray := PhysicsRayQueryParameters3D.create(start + Vector3.UP * 0.7, target + Vector3.UP * 0.7 - face * 3.0,
 					MapWorld.LAYER_PROPS | MapWorld.LAYER_WORLD)
-			var look2 := PhysicsRayQueryParameters3D.create(eye, start + Vector3.UP * 1.0 - face * 8.0,
-					MapWorld.LAYER_PROPS | MapWorld.LAYER_WORLD)
-			if space.intersect_ray(look).is_empty() and space.intersect_ray(look2).is_empty():
-				best = {"target": target, "face": face, "start": start, "drop": drop, "eye": eye}
-				break
+			if not space.intersect_ray(ray).is_empty():
+				continue
+			var side := face.cross(Vector3.UP).normalized()
+			for cand in [[side, 7.0], [-side, 7.0], [side, 9.0], [-side, 9.0]]:
+				var eye: Vector3 = target + face * 2.0 + cand[0] * cand[1]
+				eye.y = map.ground_height(eye.x, eye.z, target.y + 30.0) + 1.7
+				var look := PhysicsRayQueryParameters3D.create(eye, target + Vector3.UP * 1.0,
+						MapWorld.LAYER_PROPS | MapWorld.LAYER_WORLD)
+				var look2 := PhysicsRayQueryParameters3D.create(eye, start + Vector3.UP * 1.0 - face * 8.0,
+						MapWorld.LAYER_PROPS | MapWorld.LAYER_WORLD)
+				if space.intersect_ray(look).is_empty() and space.intersect_ray(look2).is_empty() \
+						and not _blocked(tall, eye, target) and not _blocked(tall, eye, start - face * 8.0):
+					best = {"target": target, "face": face, "start": start, "drop": drop, "eye": eye}
+					break
 	return best
 
 
