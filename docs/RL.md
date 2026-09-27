@@ -112,7 +112,21 @@ from gen2 7M with the liaison weighted) fixed neither.
 ## Shipping
 
 Copy the chosen policy to `assets/ai/driver.json` (auto-drive and `NeuralPilot`'s default) and
-a few milestones to `assets/ai/generations/NN_<steps>.json` (the ghosts, oldest first).
+a few milestones to `assets/ai/generations/NN_<steps>.json` (the ghosts, oldest first). `train.py`
+also saves the untrained network (`<run>_0.json`) at the start of a fresh run. The ghosts now:
+untrained and 100k steps from `demo` (the gen1 recipe run again from scratch, saved every 100k
+steps: gen1 saved only every 1M, by which time it already drove), gen1 at 1M, 3M and 6M, and the
+shipped driver (gen2 7M).
 The default export filter (all resources) packs these `.json` files: a data pack exported that
 way drove hanami from the pack alone with the driver and all ghosts. The maps' `map.bin` files are
 not resources and need `include_filter="*.bin"` in the preset, or an exported game has no world.
+
+## The video
+
+`tools/rl/render_film.sh` films how it learned, in the real game, offscreen and muted, and cuts
+`/tmp/sakura_film/sakura_ai_learns.mp4` (about 25 min in all under `nice`; `--cut-only` recuts):
+every generation driven from the same standstill into the same Hanami corners, the learning
+curve (`tools/rl/plot_training.py`, which also plots any run to a PNG), the shipped driver with
+its rays and road points drawn over the road, one race of every generation as ghosts, and Momiji.
+`tools/rl/film.gd` shoots it and logs what each car did (where it left the road, how fast), and
+`cut_film.py` captions each clip from that log only.
