@@ -1,21 +1,21 @@
 extends SceneTree
-## Missed corners: for every corner of a map (map.json `corners`, written by mapgen's
-## lib/roadside.py), a car arrives on the road and stops turning - once at turn-in and once
+## Missed corners: for every corner of a route of the world (map.json `routes.<id>.corners`,
+## written by mapgen's lib/roadside.py), a car arrives on the road and stops turning - once at turn-in and once
 ## halfway from turn-in to the apex - at the corner's plausible entry speed, its approach speed
 ## (no braking at all) and 1.2 x that, then coasts straight on with the wheel centred. The
 ## probe reports where it ends up: kept on the road by a rail (`rail`), held by the ground
 ## (`ground`: it left the road but stopped at most DROP m below it, inside the play area), or
 ## `FLYOFF` (ended more than DROP m below the road - the corner's own stretch, or the stretch it
 ## came to rest beside -, fell more than DROP m below the road's level in one jump, ended outside
-## the play area, or on its roof).
+## the play area - the pack's `bounds` rectangle -, or on its roof).
 ##
 ##   S=/Applications/Summer.app/Contents/MacOS/Summer
 ##   timeout 1800 nice -n 5 $S --headless --disable-crash-handler --fixed-fps 60 --path . \
-##       -s res://tools/physics/flyoff_probe.gd -- map=momiji [car=sakura] [corners=/abs/path.json] \
+##       -s res://tools/physics/flyoff_probe.gd -- map=hanami|momiji|liaison [car=sakura] [corners=/abs/path.json] \
 ##       [only=0,3] [json=/tmp/flyoff_momiji.json] [trace=1]
 ##
-## corners= reads the corner list from a file instead of the pack (the same `corners` array;
-## lets the probe judge an older pack that has none). only= limits the run to corner indices;
+## map= is a route id. corners= reads the corner list from a file instead of the pack (the
+## same `corners` array; lets the probe judge a pack built without the road safety pass). only= limits the run to corner indices;
 ## trace=1 prints the car every 0.125 s after the release.
 ## Each run: 60 m of run-up on the road holding the speed (lane-kept on the centre line), the
 ## release, then at most 10 s coasting (stops early once the car is still or clearly gone).
@@ -33,7 +33,8 @@ const V_CAP_KMH := 185.0
 var opts := {"map": "hanami", "car": "sakura", "corners": "", "only": "", "json": "", "trace": ""}
 var map: MapWorld
 var car: Car
-var play_half := 600.0
+## The world pack's play area [x0, z0, x1, z1] (map.json `bounds`).
+var bounds := Rect2(-800.0, -800.0, 1600.0, 1600.0)
 
 
 func _initialize() -> void:
@@ -47,8 +48,9 @@ func _initialize() -> void:
 func _run() -> void:
 	var game := root.get_node("Game")
 	map = await MapLapRunner.build_map(self, opts["map"])
-	play_half = float(map.info.get("play_half", 600.0))
-	var corners: Array = map.info.get("corners", [])
+	var b: Array = map.info.get("bounds", [-800.0, -800.0, 800.0, 800.0])
+	bounds = Rect2(b[0], b[1], b[2] - b[0], b[3] - b[1])
+	var corners: Array = ((map.info.get("routes", {}) as Dictionary).get(map.route_id, {}) as Dictionary).get("corners", [])
 	if opts["corners"] != "":
 		corners = JSON.parse_string(FileAccess.get_file_as_string(opts["corners"]))
 	var only := {}
@@ -201,7 +203,7 @@ func _miss(c: Dictionary, pose: Dictionary, kmh: float) -> Dictionary:
 					t, track.abs_s(ti, pos), track.lateral(ti, pos), pos.x, pos.y, pos.z, car.speed_kmh, ref[0] - pos.y,
 					res["rail"], car.airborne_time])
 		var drop: float = ref[0] - pos.y
-		if drop > DROP + 5.0 or maxf(absf(pos.x), absf(pos.z)) > play_half + 20.0:
+		if drop > DROP + 5.0 or not bounds.grow(20.0).has_point(Vector2(pos.x, pos.z)):
 			break # clearly gone
 		still = still + DT if car.linear_velocity.length() < 1.0 else 0.0
 		if still > 0.5:
@@ -216,7 +218,7 @@ func _miss(c: Dictionary, pose: Dictionary, kmh: float) -> Dictionary:
 	res["drop"] = maxf(minf(ref_end[0], beside) - end.y, 0.0)
 	if not is_nan(take_off_y):
 		res["fall"] = maxf(res["fall"], take_off_y - end.y)
-	var outside := maxf(absf(end.x), absf(end.z)) > play_half
+	var outside := not bounds.has_point(Vector2(end.x, end.z))
 	var on_roof := car.global_basis.y.y < 0.3
 	if res["drop"] > DROP or res["fall"] > DROP or outside or on_roof:
 		res["outcome"] = "FLYOFF"
