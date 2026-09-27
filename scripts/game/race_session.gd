@@ -54,15 +54,17 @@ var _wrong_way_time: float = 0.0
 var _wrong_way_shown: bool = false
 var _off_route_time: float = 0.0
 var _off_route_shown: bool = false
+## Free roam: the car is on a road of the world other than the session's route.
+var _on_other_road: bool = false
 var _water_time: float = 0.0
 var _lake_poly: PackedVector2Array
 var _lake_level: float = -INF
 ## The world's rivers (pack `water.rivers`): per river its centreline and half width.
 var _rivers: Array[PackedVector3Array] = []
 var _river_halves := PackedFloat32Array()
-## Driveable area on the ground plane (x, z); leaving it resets the car. The world pack's
-## `bounds` (its terrain rectangle), or a v1 pack's `play_half` square plus 40 m.
-var _area := Rect2(-640.0, -640.0, 1280.0, 1280.0)
+## Driveable area on the ground plane (x, z): the world pack's `bounds` (its terrain
+## rectangle); leaving it resets the car.
+var _area: Rect2
 var _tick: int = 0
 
 
@@ -77,12 +79,8 @@ func setup(new_map: MapWorld, new_car: Car, new_mode: String) -> void:
 	mode = new_mode
 	checkpoint_total = map.checkpoints.size()
 	best_time = _game().best_time(map.route_id) if _game() else INF
-	var b: Array = map.info.get("bounds", [])
-	if b.size() == 4:
-		_area = Rect2(float(b[0]), float(b[1]), float(b[2]) - float(b[0]), float(b[3]) - float(b[1]))
-	else:
-		var half := float(map.info.get("play_half", 600.0)) + 40.0
-		_area = Rect2(-half, -half, 2.0 * half, 2.0 * half)
+	var b: Array = map.info["bounds"]
+	_area = Rect2(float(b[0]), float(b[1]), float(b[2]) - float(b[0]), float(b[3]) - float(b[1]))
 	var water: Dictionary = map.info.get("water", {})
 	var lake: Dictionary = water.get("lake", {})
 	_lake_poly = PackedVector2Array()
@@ -120,6 +118,7 @@ func reset_progress() -> void:
 	distance_left = track.length - _last_p
 	_wrong_way_time = 0.0
 	_off_route_time = 0.0
+	_on_other_road = false
 	_water_time = 0.0
 
 
@@ -130,15 +129,45 @@ func start_timer() -> void:
 
 
 ## Called by Car.reset_to_track(): the last legitimately reached point of the route in
-## a time trial, the nearest road in free roam.
+## a time trial, the nearest point of the route on a liaison, the nearest road of the world
+## (any route's track) in free roam.
 func nearest_reset_transform(from: Vector3) -> Transform3D:
-	var roam := mode != "time_trial"
-	var i := track.nearest(from) if roam else _idx
+	var road := track
+	var i := _idx
+	if mode == "free_roam":
+		var hit := _nearest_road(from)
+		road = hit[0]
+		i = hit[1]
+	elif mode != "time_trial":
+		i = track.nearest(from)
 	# Nudge back a little so the car does not land on the obstacle it just hit.
-	var xf := track.transform_at_abs(track.dist(i) - 4.0, 0.0, 0.35)
-	if roam:
+	var xf := road.transform_at_abs(road.dist(i) - 4.0, 0.0, 0.35)
+	if mode != "time_trial" and road == track:
 		_reanchor(track.nearest(xf.origin, i, SEARCH_WINDOW), xf.origin)
 	return xf
+
+
+## Free roam: the nearest road of the world, [Track, sample index]: over every route's
+## track, the sample nearest to `pos` (height counts, so a road on a bridge above wins only
+## for a car up there).
+func _nearest_road(pos: Vector3) -> Array:
+	var best: Array = [track, track.nearest(pos)]
+	var best_d := pos.distance_squared_to(track.point(best[1]))
+	for r: Dictionary in map.routes.values():
+		var t: Track = r["track"]
+		if t == track:
+			continue
+		var j := t.nearest(pos)
+		var d := pos.distance_squared_to(t.point(j))
+		if d < best_d:
+			best_d = d
+			best = [t, j]
+	return best
+
+
+## True when `pos` is on the carriageway or verge of sample i of road t (and near its height).
+func _on_road(t: Track, i: int, pos: Vector3) -> bool:
+	return absf(t.lateral(i, pos)) < t.half_width(i) + t.verge and absf(pos.y - t.point(i).y) < 4.0
 
 
 ## Free roam: carry on along the route from sample i. The skipped (or doubled-back)
@@ -167,10 +196,20 @@ func _physics_process(delta: float) -> void:
 		top_speed_kmh = maxf(top_speed_kmh, kmh)
 	var i := track.nearest(pos, _idx, SEARCH_WINDOW)
 	var on_route := absf(track.lateral(i, pos)) < track.half_width(i) + track.verge + ROUTE_MARGIN
-	if not on_route and mode != "time_trial" and _tick % REANCHOR_TICKS == 0:
+	if on_route:
+		_on_other_road = false
+	elif mode != "time_trial" and _tick % REANCHOR_TICKS == 0:
+		# Rejoining the route re-anchors the lap on it; in free roam another road of the world
+		# (the branch, the other loop) is not "off the route" either.
+		var road: Track = track
 		var g := track.nearest(pos)
-		if absf(track.lateral(g, pos)) < track.half_width(g) + track.verge \
-				and absf(pos.y - track.point(g).y) < 4.0:
+		if mode == "free_roam":
+			var hit := _nearest_road(pos)
+			road = hit[0]
+			g = hit[1]
+		var on_road := _on_road(road, g, pos)
+		_on_other_road = on_road and road != track
+		if on_road and road == track:
 			_reanchor(g, pos)
 			i = g
 			on_route = true
@@ -189,6 +228,9 @@ func _physics_process(delta: float) -> void:
 		else:
 			progress = clampf(p / track.length, 0.0, 1.0)
 			distance_left = track.length - p
+	elif _on_other_road:
+		_off_route_time = 0.0
+		_off_route_shown = false
 	else:
 		_off_route_time += delta
 		if _off_route_time > 3.0 and not _off_route_shown and kmh < 25.0:

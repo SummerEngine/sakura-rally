@@ -53,6 +53,7 @@ func _run(ids: Array) -> void:
 	var map := MapWorld.new()
 	vp.add_child(map)
 	map.build()
+	_lift_view_ranges(map)
 	var failed := 0
 	for id: String in ids:
 		if not map.routes.has(id):
@@ -61,6 +62,19 @@ func _run(ids: Array) -> void:
 			continue
 		await _capture(vp, map, id)
 	root.get_node("Game").request_quit(1 if failed > 0 else 0)
+
+
+## The whole frame is in view from straight above, far past the game's LOD distances: every
+## mesh shows at any distance, and the far terrain stand-ins (visible only beyond their begin
+## distance) are hidden under the full-detail chunks.
+func _lift_view_ranges(node: Node) -> void:
+	for c in node.get_children():
+		if c is GeometryInstance3D:
+			var gi := c as GeometryInstance3D
+			if gi.visibility_range_begin > 0.0:
+				gi.visible = false
+			gi.visibility_range_end = 0.0
+		_lift_view_ranges(c)
 
 
 func _capture(vp: SubViewport, map: MapWorld, id: String) -> void:
@@ -94,12 +108,15 @@ func _capture(vp: SubViewport, map: MapWorld, id: String) -> void:
 	else:
 		size.y = size.x / aspect
 	var centre := (lo + hi) * 0.5
-	# Keep the frame on the terrain (the map pack is `size` metres square around the origin):
-	# slide it inwards where the widened side would show the world's edge.
-	var half := float(map.info.get("size", 1600.0)) * 0.5
+	# Keep the frame on the terrain (the world pack's `bounds` rectangle): slide it inwards where
+	# the widened side would show the world's edge.
+	var b: Array = map.info["bounds"]
+	var area_lo := Vector2(float(b[0]), float(b[1]))
+	var area_hi := Vector2(float(b[2]), float(b[3]))
 	for axis in 2:
-		var room := half - size[axis] * 0.5
-		centre[axis] = clampf(centre[axis], -room, room) if room > 0.0 else 0.0
+		var lo_c := area_lo[axis] + size[axis] * 0.5
+		var hi_c := area_hi[axis] - size[axis] * 0.5
+		centre[axis] = clampf(centre[axis], lo_c, hi_c) if lo_c <= hi_c else (area_lo[axis] + area_hi[axis]) * 0.5
 	var origin := centre - size * 0.5
 
 	# Clean ground: no fog or glow haze, no clouds or petals, shadows reach the whole frame.

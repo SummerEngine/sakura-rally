@@ -3,8 +3,9 @@ extends SceneTree
 ## exits non-zero on failures. Headless or windowed (windowed also saves frames to `out`).
 ##
 ## flow=core (default): free roam in the world (every gate open), pause and resume through the
-## UI's input path, a manual car reset, restart during the countdown, launch control on the
-## start line, camera cycling, all three quality presets (FPS measured on the same stretch of
+## UI's input path, a manual car reset, the other roads of the world in free roam (the branch
+## and the Momiji loop: no off-route notice, R lands on the road the car is beside), restart
+## during the countdown, launch control on the start line, camera cycling, all three quality presets (FPS measured on the same stretch of
 ## road), and a Time Trial start on each stage (its route, its grid, gates closed).
 ##
 ## flow=campaign: the whole campaign from the title to the finale in one continuous drive. The
@@ -15,7 +16,8 @@ extends SceneTree
 ## the road sign HUD, the arrival at rest on Momiji's grid, SS2's start card and countdown on
 ## the spot, no LOADING and no cover from SS1 to SS2, SS2 at rest on Momiji's finish stop, the
 ## classification, the title's finished state; then a save resumed at each leg (SS1 grid, the
-## liaison at Hanami's finish stop with the gate open, SS2 grid) and quitting mid-liaison.
+## liaison at Hanami's finish stop with the gate open and R on the branch landing on the branch,
+## SS2 grid) and quitting mid-liaison.
 ##
 ##   timeout 400 $S --headless --disable-crash-handler --path . -s res://tools/game/flows.gd -- map=hanami
 ##   timeout 900 $S --headless --disable-crash-handler --path . -s res://tools/game/flows.gd -- \
@@ -123,6 +125,11 @@ func _run_core() -> void:
 	var k := track.nearest(car.global_position)
 	var ds := absf(wrapf(track.progress_of(k, car.global_position) - far_s, -track.length * 0.5, track.length * 0.5))
 	_check(ds < 20.0, "R in free roam lands on the nearest road (%.0f m along from the rejoin point)" % ds)
+
+	# every road of the world is a road in free roam: parked on the branch or the Momiji loop,
+	# no off-route notice; R from beside it lands back on that road, not on the Hanami loop
+	for spot: Array in [["liaison", 0.5], ["liaison", 0.8], ["momiji", 0.3], ["momiji", 0.7]]:
+		await _roam_road_check(car, spot[0], spot[1])
 
 	# quality presets: same road stretch, 4 s of autopilot each
 	var fps := {}
@@ -341,6 +348,15 @@ func _campaign_resume(ui: CanvasLayer, li: int) -> void:
 		await _seconds(2.0)
 		Input.action_release(&"throttle")
 		_check(car.speed_kmh > 15.0, "resume liaison: the car drives off (%.0f km/h)" % car.speed_kmh)
+		var lia: Track = main.map.track
+		var off := lia.transform_at_abs(lia.length * 0.5, 14.0, 0.0)
+		car.place_at_rest(off)
+		await _seconds(0.5)
+		await _tap(&"reset_car")
+		await _seconds(0.5)
+		var hit := _road_at(car.global_position)
+		_check(hit[0] == "liaison" and absf(hit[1] - lia.length * 0.5) < 20.0 and off.origin.distance_to(car.global_position) < 25.0,
+				"R beside the branch lands on the branch (%s s=%.0f, moved %.1f m)" % [hit[0], hit[1], off.origin.distance_to(car.global_position)])
 		await _event(&"pause")
 		await _seconds(0.6)
 		_mark()
@@ -479,6 +495,41 @@ func _check(ok: bool, what: String) -> void:
 
 func _log(msg: String) -> void:
 	print("[%7.2f] %s" % [(Time.get_ticks_msec() - t0) / 1000.0, msg])
+
+
+## Free roam on another route's road (`frac` of its length): parked 4 s without the off-route
+## notice, then R from 14 m beside the road lands on that road near the same spot.
+func _roam_road_check(car: Car, route: String, frac: float) -> void:
+	var t: Track = main.map.routes[route]["track"]
+	var s := t.length * frac
+	car.place_at_rest(t.transform_at_abs(s, 0.0, 0.0))
+	var before := notices.size()
+	await _seconds(4.5)
+	_check(not notices.slice(before).has("Off the route — press R to reset"),
+			"free roam: parked on the %s road (s=%.0f), no off-route notice" % [route, s])
+	var off := t.transform_at_abs(s, 14.0, 0.0)
+	car.place_at_rest(off)
+	await _seconds(0.5)
+	await _tap(&"reset_car")
+	await _seconds(0.5)
+	var hit := _road_at(car.global_position)
+	var moved := off.origin.distance_to(car.global_position)
+	_check(hit[0] == route and absf(hit[1] - s) < 20.0 and moved < 25.0,
+			"free roam: R beside the %s road lands on it (%s s=%.0f, moved %.1f m)" % [route, hit[0], hit[1], moved])
+
+
+## The route whose road is nearest to pos, and the distance along it: [id, s].
+func _road_at(pos: Vector3) -> Array:
+	var best: Array = ["", 0.0]
+	var best_d := INF
+	for id: String in main.map.routes:
+		var t: Track = main.map.routes[id]["track"]
+		var j := t.nearest(pos)
+		var d := pos.distance_to(t.point(j))
+		if d < best_d:
+			best_d = d
+			best = [id, t.dist(j)]
+	return best
 
 
 func _seconds(s: float) -> void:
