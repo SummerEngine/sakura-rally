@@ -93,6 +93,12 @@ mesh has them — they multiply the albedo). Name keywords (case-insensitive sub
 Wind sway weight is computed in the shader from object-space height, so foliage meshes should have
 their origin at the ground (tree base).
 
+Tree and bush canopies need a working LOD chain (the world draws thousands of them): the prop kit
+colours a canopy per vertex (`canopy_shade` is evaluated with the smoothed vertex normal), and each
+canopy prop's `.glb.import` sets `lods/normal_merge_angle` 60 for its mesh (`_subresources` →
+`meshes` → `<prop>_<prop>`). Face-coloured, flat-shaded canopies at the default 25° come out of
+Godot's simplifier with no LODs or one step, and far trees then draw at full detail.
+
 ## Surfaces
 
 `StringName`s used by physics, audio and VFX: `&"tarmac"`, `&"gravel"`, `&"dirt"`, `&"grass"`,

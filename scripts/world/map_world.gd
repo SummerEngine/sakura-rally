@@ -676,8 +676,9 @@ func _build_gates() -> void:
 
 # ------------------------------------------------------------------ signs and parked cars
 
-## Painted text on the sign boards the compiler built into the dressing mesh: one
-## Label3D per line, fixed to the board face (no billboard), depth-tested, ink outline.
+## Road signs: each has its own mesh (a `local` pack mesh in the sign's frame) placed at `base`,
+## a soft collider (it breaks like the kit's dressing, SoftCourse.add_sign) and painted text:
+## one Label3D per line, fixed to the board face (no billboard), depth-tested, ink outline.
 func _build_signs() -> void:
 	var signs: Array = info.get("signs", [])
 	if signs.is_empty():
@@ -691,28 +692,28 @@ func _build_signs() -> void:
 			local_meshes[d["name"]] = d
 	for i in signs.size():
 		var s: Dictionary = signs[i]
+		if not (local_meshes.has(s.get("mesh", "")) and s.has("base") and s.has("collider")):
+			push_error("MapWorld: sign %d lacks its mesh, base or collider; skipped" % i)
+			continue
 		var face := Transform3D(Basis(Vector3.UP, s["yaw"]), Vector3(s["pos"][0], s["pos"][1], s["pos"][2]))
-		var holder: Node3D = root
-		if local_meshes.has(s.get("mesh", "")) and s.has("base") and s.has("collider"):
-			# its own mesh and a soft collider: the sign breaks like the kit's dressing
-			holder = Node3D.new()
-			holder.name = "Sign_%d" % i
-			root.add_child(holder)
-			var xf := Transform3D(Basis(Vector3.UP, s["yaw"]), Vector3(s["base"][0], s["base"][1], s["base"][2]))
-			var col: Dictionary = s["collider"]
-			var size := Vector3(col["size"][0], col["size"][1], col["size"][2])
-			var arr := _mesh_arrays(local_meshes[s["mesh"]])
-			var mat: Material = materials["props_vc"]
-			var mesh := ArrayMesh.new()
-			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
-			mesh.surface_set_material(0, mat)
-			var mi := MeshInstance3D.new()
-			mi.name = "Mesh"
-			mi.mesh = mesh
-			mi.transform = xf
-			holder.add_child(mi)
-			soft_course.add_sign(holder, _sign_pieces(arr, size.y, mat), xf, size,
-					Vector3(col["center"][0], col["center"][1], col["center"][2]))
+		var holder := Node3D.new()
+		holder.name = "Sign_%d" % i
+		root.add_child(holder)
+		var xf := Transform3D(Basis(Vector3.UP, s["yaw"]), Vector3(s["base"][0], s["base"][1], s["base"][2]))
+		var col: Dictionary = s["collider"]
+		var size := Vector3(col["size"][0], col["size"][1], col["size"][2])
+		var arr := _mesh_arrays(local_meshes[s["mesh"]])
+		var mat: Material = materials["props_vc"]
+		var mesh := ArrayMesh.new()
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+		mesh.surface_set_material(0, mat)
+		var mi := MeshInstance3D.new()
+		mi.name = "Mesh"
+		mi.mesh = mesh
+		mi.transform = xf
+		holder.add_child(mi)
+		soft_course.add_sign(holder, _sign_pieces(arr, size.y, mat), xf, size,
+				Vector3(col["center"][0], col["center"][1], col["center"][2]))
 		for ln in s["lines"]:
 			var l := Label3D.new()
 			l.text = ln["text"]
