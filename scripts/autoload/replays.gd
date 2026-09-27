@@ -15,8 +15,9 @@ extends Node
 ## lateral offset, the checkpoint and clock, and the camera of the last rendered frame. Events
 ## (state changes, countdown, checkpoints, finish, arrival, notices such as wrong way and
 ## off-route, impacts, landings, resets, smashes, pauses, camera and settings changes) carry
-## their time. Frames and events go to a memory buffer; every BLOCK_SECONDS it is compressed and
-## appended to the file on a worker thread, so nothing on the main thread touches the disk.
+## their time. Frames and events go to a ReplayWriter (the encoder tools that record cars of their
+## own use too); every BLOCK_SECONDS its buffer is compressed and appended to the file on a worker
+## thread, so nothing on the main thread touches the disk.
 ##
 ## Player runs record by default. Tool runs (`-s` scripts) never record unless a tool asks:
 ## `Replays.record_to(dir)`, or the command-line user argument `replays=<dir>`; either way never
@@ -36,8 +37,6 @@ const TAIL_SECONDS := 4.0
 const BLOCK_SECONDS := 10.0
 ## A tick in which the car moves this much farther than its speed explains was a teleport.
 const RESET_JUMP := 4.0
-## Road samples searched around the last one per tick for the route distance.
-const SEARCH_WINDOW := 12
 const DRIVE_STATES: Array[String] = ["COUNTDOWN", "RACING", "LIAISON", "FREE_ROAM"]
 const TAIL_STATES: Array[String] = ["FINISHED", "ARRIVED"]
 
@@ -73,24 +72,14 @@ var _gate_open: Dictionary = {}
 var _t: float = 0.0
 var _dt: float = 1.0 / 120.0
 var _ticks: int = 0
-var _frames: int = 0
 var _tail_time: float = 0.0
-## Frames (FRAME_SIZE bytes each) and event records since the last block.
-var _fbuf := PackedByteArray()
-var _flen: int = 0
-var _ebuf := PackedByteArray()
-var _elen: int = 0
+## The recording's frames and events (null when idle).
+var _w: ReplayWriter
 var _block_start: float = 0.0
-var _raw_total: int = 0
 var _edges: int = 0
-var _ti: int = -1
 var _last_pos: Vector3
 var _last_vel: Vector3
-var _surfaces: Dictionary = {} ## surface name -> id (1-based in frames)
 var _cameras: Dictionary = {} ## "name|mode" -> id
-var _cam_id: int = F.NO_CAMERA
-var _cam_xf: Transform3D
-var _cam_fov: float = 70.0
 var _cam_t: float = 0.0
 var _settings: Dictionary = {}
 var _outcome: Dictionary = {} ## the finish or the arrival, repeated in the "end" event
@@ -267,19 +256,20 @@ func _process(_delta: float) -> void:
 func _sample_camera() -> void:
 	var cam := get_viewport().get_camera_3d()
 	if cam == null:
-		_cam_id = F.NO_CAMERA
+		_w.cam_id = F.NO_CAMERA
 		return
-	_cam_xf = cam.get_global_transform_interpolated() if cam.is_physics_interpolated_and_enabled() \
+	_w.cam_xf = cam.get_global_transform_interpolated() if cam.is_physics_interpolated_and_enabled() \
 			else cam.global_transform
-	_cam_fov = cam.fov
+	_w.cam_fov = cam.fov
 	_cam_t = _t + Engine.get_physics_interpolation_fraction() * _dt
+	_w.cam_t = _cam_t
 	var mode: String = str(cam.get(&"mode")) if &"mode" in cam else ""
 	var key := "%s|%s" % [cam.name, mode]
 	if not _cameras.has(key):
 		_cameras[key] = _cameras.size()
 		_event({"type": "camera", "id": _cameras[key], "name": String(cam.name), "mode": mode,
 				"near": cam.near, "far": cam.far, "h_offset": cam.h_offset, "v_offset": cam.v_offset})
-	_cam_id = _cameras[key]
+	_w.cam_id = _cameras[key]
 
 
 # ---------------------------------------------------------------- recording
@@ -298,20 +288,12 @@ func _open(car: Car) -> void:
 		_gate_open[id] = bool(_gates[id].get(&"is_open"))
 	_t = 0.0
 	_ticks = 0
-	_frames = 0
 	_tail_time = 0.0
-	_flen = 0
-	_elen = 0
 	_block_start = 0.0
-	_raw_total = 0
 	_edges = 0
-	_ti = -1
 	_last_pos = car.global_position
 	_last_vel = car.linear_velocity
-	_surfaces.clear()
 	_cameras.clear()
-	_cam_id = F.NO_CAMERA
-	_cam_xf = Transform3D.IDENTITY
 	_cam_t = 0.0
 	_cost_sum = 0
 	_cost_max = 0
@@ -319,11 +301,7 @@ func _open(car: Car) -> void:
 	_cost_over = 0
 	_want_new = false
 	_outcome = {}
-	var block_frames := int(BLOCK_SECONDS * Engine.physics_ticks_per_second / F.TICKS_PER_FRAME) + 8
-	if _fbuf.size() < block_frames * F.FRAME_SIZE:
-		_fbuf.resize(block_frames * F.FRAME_SIZE)
-	if _ebuf.size() < 16 * 1024:
-		_ebuf.resize(16 * 1024)
+	_w = ReplayWriter.new(_track, int(BLOCK_SECONDS * Engine.physics_ticks_per_second / F.TICKS_PER_FRAME) + 8)
 	_settings = (_game.settings as Dictionary).duplicate()
 	var route: String = str(_game.map_id)
 	if map != null:
@@ -389,7 +367,7 @@ func _open(car: Car) -> void:
 func _close(reason: String) -> void:
 	var dur := _t
 	stats = {"ticks": _ticks, "mean_us": float(_cost_sum) / maxf(_ticks, 1), "max_us": _cost_max, "max_at": _cost_max_t, "over_1ms": _cost_over,
-			"frames": _frames, "bytes_raw": _raw_total + _flen + _elen, "seconds": dur}
+			"frames": _w.frames_written, "bytes_raw": _w.bytes_taken + _w.pending_bytes(), "seconds": dur}
 	var end := stats.duplicate()
 	end["type"] = "end"
 	end["reason"] = reason
@@ -414,6 +392,7 @@ func _close(reason: String) -> void:
 	current_path = ""
 	header = {}
 	_car = null
+	_w = null
 	_session = null
 	_track = null
 	_soft = null
@@ -429,7 +408,7 @@ func _tick() -> void:
 	if _ticks > 1 and pos.distance_to(_last_pos) > RESET_JUMP + maxf(vel.length(), _last_vel.length()) * _dt * 2.0:
 		var key := _edges & (1 << F.BUTTONS.find(&"reset_car")) != 0 or Input.is_action_pressed(&"reset_car")
 		_event({"type": "reset", "from": _last_pos, "to": pos, "key": key, "s": route_s_hint()})
-		_ti = -1
+		_w.hint = -1
 	_last_pos = pos
 	_last_vel = vel
 	if (_ticks - 1) % F.TICKS_PER_FRAME == 0:
@@ -438,7 +417,7 @@ func _tick() -> void:
 			if open != _gate_open[id]:
 				_gate_open[id] = open
 				_event({"type": "gate", "id": id, "open": open})
-		_write_frame(pos, vel)
+		_write_frame()
 		if _t - _block_start >= BLOCK_SECONDS:
 			_flush_block()
 			_block_start = _t
@@ -446,121 +425,38 @@ func _tick() -> void:
 
 ## Route distance of the last frame (for events).
 func route_s_hint() -> float:
-	return _track.progress_of(_ti, _car.global_position) if _track != null and _ti >= 0 else -1.0
+	return _w.route_s(_car.global_position) if _w != null else -1.0
 
 
-func _write_frame(pos: Vector3, vel: Vector3) -> void:
-	if _fbuf.size() < _flen + F.FRAME_SIZE:
-		_fbuf.resize(_fbuf.size() * 2)
-	# Written straight into the member: a local copy of a packed array would copy on write.
-	var o := _flen
-	var car := _car
+func _write_frame() -> void:
 	var buttons := _edges
 	for i in F.HELD_BUTTONS:
 		if Input.is_action_pressed(F.BUTTONS[i]):
 			buttons |= 1 << i
 	_edges = 0
-	var flags := 0
-	if car.controlled_by_player:
-		flags |= F.F_PLAYER
-	if car.launch_hold:
-		flags |= F.F_LAUNCH_HOLD
-	if car.is_shifting:
-		flags |= F.F_SHIFTING
-	if car.player_input.analog_steer:
-		flags |= F.F_ANALOG
-	var s := -1.0
-	var lat := 0.0
-	var half := 0.0
-	if _track != null:
-		_ti = _track.nearest(pos, _ti, SEARCH_WINDOW) if _ti >= 0 else _track.nearest(pos)
-		s = _track.progress_of(_ti, pos)
-		lat = _track.lateral(_ti, pos)
-		half = _track.half_width(_ti)
-		if absf(lat) <= half:
-			flags |= F.F_ON_ROAD
 	var checkpoint := 0
 	var elapsed := 0.0
+	var running := false
 	if _session != null and is_instance_valid(_session):
 		checkpoint = int(_session.get(&"checkpoint_index"))
 		elapsed = float(_session.get(&"elapsed"))
-		if _session.get(&"running"):
-			flags |= F.F_RUNNING
-	_fbuf.encode_float(o + F.O_T, _t)
-	_fbuf.encode_u16(o + F.O_BUTTONS, buttons)
-	_fbuf.encode_u16(o + F.O_FLAGS, flags)
-	_fbuf[o + F.O_STATE] = clampi(_game.state, 0, 255)
-	_fbuf.encode_s8(o + F.O_GEAR, clampi(car.gear, -127, 127))
-	_fbuf.encode_s8(o + F.O_IN_STEER, int(roundf(clampf(car.input_steer, -1.0, 1.0) * 127.0)))
-	_fbuf[o + F.O_IN_THROTTLE] = int(roundf(clampf(car.input_throttle, 0.0, 1.0) * 255.0))
-	_fbuf[o + F.O_IN_BRAKE] = int(roundf(clampf(car.input_brake, 0.0, 1.0) * 255.0))
-	_fbuf.encode_s8(o + F.O_STEER, int(roundf(clampf(car.steer, -1.0, 1.0) * 127.0)))
-	_fbuf[o + F.O_HANDBRAKE] = int(roundf(clampf(car.handbrake, 0.0, 1.0) * 255.0))
-	_fbuf[o + F.O_GROUNDED] = clampi(car.grounded_wheels, 0, 255)
-	_fbuf.encode_float(o + F.O_POS, pos.x)
-	_fbuf.encode_float(o + F.O_POS + 4, pos.y)
-	_fbuf.encode_float(o + F.O_POS + 8, pos.z)
-	F.quat_encode(_fbuf, o + F.O_ROT, car.global_basis.get_rotation_quaternion())
-	_fbuf.encode_half(o + F.O_LIN, vel.x)
-	_fbuf.encode_half(o + F.O_LIN + 2, vel.y)
-	_fbuf.encode_half(o + F.O_LIN + 4, vel.z)
-	var ang := car.angular_velocity
-	_fbuf.encode_half(o + F.O_ANG, ang.x)
-	_fbuf.encode_half(o + F.O_ANG + 2, ang.y)
-	_fbuf.encode_half(o + F.O_ANG + 4, ang.z)
-	_fbuf.encode_u16(o + F.O_RPM, clampi(int(car.rpm), 0, 65535))
-	_fbuf.encode_half(o + F.O_KMH, car.speed_kmh)
-	_fbuf.encode_half(o + F.O_SLIP, car.body_slip)
-	for w in 4:
-		var ws: WheelState = car.wheels[w]
-		var wo := o + F.O_WHEELS + w * F.WHEEL_SIZE
-		_fbuf[wo + F.W_SURFACE] = _surface_id(ws.surface) if ws.contact else 0
-		_fbuf[wo + F.W_COMPRESSION] = int(roundf(clampf(ws.compression, 0.0, 1.0) * 255.0))
-		_fbuf.encode_u16(wo + F.W_SPIN_ANGLE, int(fposmod(ws.spin_angle, TAU) / TAU * 65536.0) & 0xffff)
-		_fbuf.encode_half(wo + F.W_SPIN_SPEED, ws.spin_speed)
-		_fbuf.encode_half(wo + F.W_STEER, ws.steer_angle)
-		_fbuf.encode_half(wo + F.W_OFFSET, ws.offset_y)
-	_fbuf.encode_float(o + F.O_S, s)
-	_fbuf.encode_half(o + F.O_LAT, lat)
-	_fbuf[o + F.O_HALF] = clampi(int(roundf(half * 10.0)), 0, 255)
-	_fbuf[o + F.O_CHECKPOINT] = clampi(checkpoint, 0, 255)
-	_fbuf[o + F.O_CAMERA] = _cam_id
-	_fbuf[o + F.O_PAD] = 0
-	_fbuf.encode_float(o + F.O_ELAPSED, elapsed)
-	var cam := _cam_xf.origin - pos
-	_fbuf.encode_half(o + F.O_CAM_POS, cam.x)
-	_fbuf.encode_half(o + F.O_CAM_POS + 2, cam.y)
-	_fbuf.encode_half(o + F.O_CAM_POS + 4, cam.z)
-	F.quat_encode(_fbuf, o + F.O_CAM_ROT, _cam_xf.basis.get_rotation_quaternion())
-	_fbuf.encode_half(o + F.O_CAM_FOV, _cam_fov)
-	_fbuf.encode_half(o + F.O_CAM_DT, _cam_t - _t)
-	_flen += F.FRAME_SIZE
-	_frames += 1
-
-
-func _surface_id(surface: StringName) -> int:
-	var id: int = _surfaces.get(surface, 0)
-	if id == 0:
-		id = _surfaces.size() + 1
-		_surfaces[surface] = id
-		_event({"type": "surface", "id": id - 1, "name": String(surface)})
-	return id
+		running = bool(_session.get(&"running"))
+	_w.frame(_t, _car, _game.state, buttons, checkpoint, elapsed, running)
 
 
 func _event(e: Dictionary) -> void:
 	if _car == null:
 		return
-	_elen = F.append_event(_ebuf, _elen, _t, e)
+	_w.event(_t, e)
 
 
 func _flush_block() -> void:
-	if _flen == 0 and _elen == 0:
+	var block := _w.take_block()
+	if block.is_empty():
 		return
-	_raw_total += _flen + _elen
-	_submit({"op": "block", "path": current_path, "frames": _fbuf.slice(0, _flen),
-			"count": _flen / F.FRAME_SIZE, "events": _ebuf.slice(0, _elen)})
-	_flen = 0
-	_elen = 0
+	block["op"] = "block"
+	block["path"] = current_path
+	_submit(block)
 
 
 # ---------------------------------------------------------------- car / course events

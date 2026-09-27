@@ -24,28 +24,36 @@ var _gate_events: Array[Dictionary] = []
 ## built (it must be the recorded route); otherwise the route's map is built here.
 func setup(data: ReplayData, existing_map: MapWorld = null) -> void:
 	replay = data
+	var q := str((data.header.get("settings", {}) as Dictionary).get("quality", "high"))
+	await build_world(str(data.header.get("route", "hanami")), q, existing_map)
+	ghost = ReplayGhost.spawn(self, data.header)
+	_gates_at_start = data.header.get("gates", {})
+	_gate_events = data.events_of("gate")
+
+
+## The world without a replay (awaitable): `route`'s map (unless `existing_map`, which must be
+## that route) with its atmosphere, colour grade and ink lines at quality preset `quality`, and
+## the current camera. setup() starts with it; tools that pose cars of their own call it alone
+## (tools/rl/film.gd: the AI's practice runs).
+func build_world(route: String, quality: String, existing_map: MapWorld = null) -> void:
 	map = existing_map
 	if map == null:
 		map = MapWorld.new()
 		map.name = "Map"
-		map.map_id = str(data.header.get("route", "hanami"))
+		map.map_id = route
 		add_child(map)
 		await map.build()
 	post = PostFX.new()
 	post.name = "ReplayPostFX"
 	add_child(post)
 	post.apply_preset(map.atmosphere.preset, map.sun_dir)
-	var q := str((data.header.get("settings", {}) as Dictionary).get("quality", "high"))
-	Quality.apply(q, get_window(), map)
-	post.apply_quality(q)
-	ghost = ReplayGhost.spawn(self, data.header)
+	Quality.apply(quality, get_window(), map)
+	post.apply_quality(quality)
 	camera = Camera3D.new()
 	camera.name = "ReplayCamera"
 	camera.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	add_child(camera)
 	camera.make_current()
-	_gates_at_start = data.header.get("gates", {})
-	_gate_events = data.events_of("gate")
 
 
 ## Poses the car, the camera and the screen passes for replay time t. A jump back or of more
