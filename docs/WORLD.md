@@ -21,8 +21,8 @@ crops `map_hanami.png`, `map_branch.png`, `map_momiji.png`.
 
 Last build (M1 Max, shared with other jobs): about 10 s total (terrain 1.9 s, scatter 2.3 s,
 paint 3.2 s, dressing 0.8 s, preview 0.7 s). 460 meshes, 1.16 M triangles, 67 107 instances of 96
-props, 871 collision boxes, 5 signs, 3 parked cars. `map.bin` 45.0 MB (uncompressed blobs, see
-`lib/meshpack.py`), `map.json` 2.5 MB. Corridor: 27 rigid props in the corridor before, 0 after
+props, 903 collision boxes, 5 signs, 3 parked cars. `map.bin` 45.2 MB (uncompressed blobs, see
+`lib/meshpack.py`), `map.json` 2.6 MB. Corridor: 27 rigid props in the corridor before, 0 after
 (0 smashables on tarmac).
 
 ## Layout

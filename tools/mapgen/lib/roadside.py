@@ -80,6 +80,8 @@ DEFAULTS = {
     "rail_gap": 20,        # m: rail runs closer than this merge
     "rail_min": 24,        # m: shortest rail run
     "flare": 8,            # m of flared end at a free rail end
+    "rails": [],           # (s_from, s_to, side -1 left / +1 right), m along the road: rail a map
+                           # asks for where the miss lines fall short (they run turn-in to apex only)
 }
 
 # prop names (tools/blender/props/corner.py); all but the rail-mounted boards are SMASHABLE
@@ -467,6 +469,8 @@ def rail_runs(road: Road, ground: Ground, corners: list[Corner], bounds, opts: d
             span = _span(road, _idx(road, cn.turn_in - 15), _idx(road, far + 15))
             want[span, 0 if side < 0 else 1] = True
             _scrape_along(road, ground, want, jf, side, vf, bounds, o)
+    for a, b, side in o["rails"]:
+        want[_span(road, _idx(road, int(a)), _idx(road, int(b))), 0 if side < 0 else 1] = True
     ok = (road.bridge == "") & ~road.ford
     if road.on_lot is not None:
         ok &= road.on_lot < 0.5
