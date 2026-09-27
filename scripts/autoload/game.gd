@@ -144,6 +144,9 @@ var persistent := true
 ## Set by the Main scene / race session while a map is loaded.
 var player_car: Node = null ## RigidBody3D with scripts/vehicle/car.gd
 var session: Node = null ## scripts/game/race_session.gd
+## True once the AI driver (scripts/ai/auto_drive.gd) has had the player's car in the run in
+## progress; AutoDrive clears it at each countdown. Such a finish sets no record and no medal.
+var ai_drove: bool = false
 var _quitting := false
 
 ## Campaign: true from request_campaign() until the player is back on the title (or starts a
@@ -279,21 +282,23 @@ func notify_checkpoint(index: int, total: int, split_time: float) -> void:
 
 
 ## result must contain "time" (float) and "splits" (Array[float]); extra keys pass through.
-## Adds "best_time", "previous_best", "is_record", "medal" ("gold"/"silver"/"bronze"/"").
+## Adds "best_time", "previous_best", "is_record", "medal" ("gold"/"silver"/"bronze"/""),
+## "ai_drove" (the AI driver had the car: no record, no medal).
 ## A campaign stage also records the time in the campaign progress and adds "campaign": true,
 ## "leg" (index), "standing" and "field" (rally position after this stage, of how many).
 func notify_finished(result: Dictionary) -> void:
 	var t: float = result.get("time", 0.0)
 	var rec: Dictionary = records.get(map_id, {})
 	var previous: float = rec.get("time", INF)
-	var is_record := t < previous
+	var is_record := t < previous and not ai_drove
 	if is_record:
 		records[map_id] = {"time": t, "splits": result.get("splits", [])}
 	result["previous_best"] = previous
-	result["best_time"] = minf(t, previous)
+	result["best_time"] = previous if ai_drove else minf(t, previous)
 	result["is_record"] = is_record
-	result["medal"] = medal_for(map_id, t)
+	result["medal"] = "" if ai_drove else medal_for(map_id, t)
 	result["map_id"] = map_id
+	result["ai_drove"] = ai_drove
 	var leg := campaign_current_leg()
 	result["campaign"] = leg.get("kind", "") == "stage" and leg["map"] == map_id
 	if result["campaign"]:
