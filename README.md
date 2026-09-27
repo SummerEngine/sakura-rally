@@ -40,6 +40,7 @@ The window opens at 16:9, sized to 80 % of the screen. Fullscreen is in Settings
 | Pause | Esc / P | Start |
 | Horn | H | L3 |
 | Hide the UI for screenshots | F1 | |
+| AI drives your car / AI ghost cars / watch a ghost ([docs/RL.md](docs/RL.md)) | I / G / V | |
 
 During the countdown the car is held on the line. Hold the throttle: launch control keeps the
 engine at 4600 rpm, and at GO the clutch drops into first.
@@ -133,6 +134,7 @@ in [docs/REPLAYS.md](docs/REPLAYS.md).
 | Audio | `tools/audio/`, [docs/AUDIO.md](docs/AUDIO.md) | Synthesised engine loops (8 on load, 8 off load), turbo whistle and blow-off, dog-box gearbox whine, tyre sounds per surface, UI and stingers. Music is ElevenLabs Music via fal; ambience is fal sound-effect beds with synthesised birds and crickets, mixed by season |
 | UI | `scripts/ui/`, [docs/UI.md](docs/UI.md) | Title hub over a flyover whose car drifts the corners, Time Attack cards with top-down maps, garage with the car strip, road-sign HUD between stages, arrival card, settings, ink transitions, countdown, HUD, results, rally classification and pause, all built in code |
 | Replays | `scripts/autoload/replays.gd`, `tools/replay/`, [docs/REPLAYS.md](docs/REPLAYS.md) | Input and state recording of every drive, with a review tool |
+| AI driver | `scripts/ai/`, `tools/rl/`, [docs/RL.md](docs/RL.md) | A small network trained with PPO on headless copies of the physics, seeing only the road ahead from the car (edge rays, centreline points, speed), so it is not tied to one track. I lets it drive, G races the training generations as ghosts |
 
 Shared conventions and the runtime APIs: [docs/CONTRACTS.md](docs/CONTRACTS.md). Rebuild commands:
 

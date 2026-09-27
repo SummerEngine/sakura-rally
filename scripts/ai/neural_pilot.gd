@@ -1,0 +1,61 @@
+class_name NeuralPilot
+extends Node
+## Drives its parent Car with a DrivePolicy trained by tools/rl: every DriveHands.DECISION_TICKS
+## physics ticks it looks through a DriveSense and asks the policy, every tick DriveHands moves
+## the car's inputs - the loop tools/rl/train_env.gd trains in. Add it as a child of the car (as
+## Main does with Autopilot). It never touches `controlled_by_player`: while that is true the
+## player's controls overwrite what it sets, so whoever attaches it hands the car over.
+
+## A car that moved further than this between two decisions was reset: find it on the road anew.
+const JUMP_M := 20.0
+
+var policy: DrivePolicy
+## The route being driven; set it again whenever the route changes.
+var track: Track:
+	set(value):
+		track = value
+		if sense != null:
+			sense.track = value
+			sense.reset()
+## Sample the policy's choices instead of taking the likeliest: a looser, less repeatable driver.
+var sample: bool = false
+var sample_seed: int = 0
+## Physics tick (of every DriveHands.DECISION_TICKS) it decides on. Give pilots on the road at the
+## same time different phases, so their networks do not all run in one tick.
+var phase: int = 0
+
+var car: Car
+var sense: DriveSense
+var hands := DriveHands.new()
+var _obs := PackedFloat32Array()
+var _last_pos := Vector3.INF
+var _rng: RandomNumberGenerator
+
+
+func _ready() -> void:
+	car = get_parent() as Car
+	sense = DriveSense.new(track)
+	_obs.resize(DriveSense.OBS_SIZE)
+	if sample:
+		_rng = RandomNumberGenerator.new()
+		_rng.seed = sample_seed
+	if car == null or policy == null or track == null:
+		push_error("NeuralPilot needs a Car parent, a policy and a track")
+		set_physics_process(false)
+
+
+func _exit_tree() -> void:
+	if car != null and is_instance_valid(car):
+		hands.release(car)
+
+
+func _physics_process(delta: float) -> void:
+	if (Engine.get_physics_frames() + phase) % DriveHands.DECISION_TICKS == 0:
+		var pos := car.global_position
+		if pos.distance_squared_to(_last_pos) > JUMP_M * JUMP_M:
+			sense.reset()
+		_last_pos = pos
+		sense.observe(car, _obs)
+		var a := policy.act(_obs, _rng)
+		hands.set_action(a[0], a[1], a[2])
+	hands.apply(car, delta)
