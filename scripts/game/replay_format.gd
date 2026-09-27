@@ -50,7 +50,8 @@ const O_S := 94 ## f32 distance from the start line along the route (m) at the n
 const O_LAT := 98 ## f16 lateral offset from the centreline (m, + right)
 const O_HALF := 100 ## u8 road half width at that sample, decimetres
 const O_CHECKPOINT := 101 ## u8 RaceSession.checkpoint_index (next checkpoint)
-const O_CAMERA := 102 ## u8 active camera: index into "camera" events (255 = none)
+const O_CAMERA := 102 ## u8 active camera: index into "camera" events (NO_CAMERA = none)
+const NO_CAMERA := 255
 const O_PAD := 103 ## u8 0
 const O_ELAPSED := 104 ## f32 RaceSession.elapsed
 const O_CAM_POS := 108 ## 3 x f16 camera origin (the last rendered frame) minus the car origin

@@ -48,6 +48,8 @@ var folder: String = ""
 ## Path of the recording in progress ("" when idle), and of the last one closed.
 var current_path: String = ""
 var last_path: String = ""
+## Header of the recording in progress (ReplayData.header of the file being written).
+var header: Dictionary = {}
 ## Cost and size of the last recording: {"ticks", "mean_us", "max_us", "max_at" (replay time of
 ## the slowest tick), "over_1ms" (ticks over a millisecond), "frames", "bytes_raw", "seconds"}.
 ## The cost is the main-thread time of this autoload per physics tick while recording.
@@ -65,6 +67,9 @@ var _car: Car
 var _session: Node
 var _track: Track
 var _soft: Node
+## The map's road gates (MapWorld.gates, by id) and whether each was open at the last frame.
+var _gates: Dictionary = {}
+var _gate_open: Dictionary = {}
 var _t: float = 0.0
 var _dt: float = 1.0 / 120.0
 var _ticks: int = 0
@@ -83,7 +88,7 @@ var _last_pos: Vector3
 var _last_vel: Vector3
 var _surfaces: Dictionary = {} ## surface name -> id (1-based in frames)
 var _cameras: Dictionary = {} ## "name|mode" -> id
-var _cam_id: int = 255
+var _cam_id: int = F.NO_CAMERA
 var _cam_xf: Transform3D
 var _cam_fov: float = 70.0
 var _cam_t: float = 0.0
@@ -254,11 +259,15 @@ func _sync(delta: float) -> bool:
 
 
 func _process(_delta: float) -> void:
-	if _car == null:
-		return
+	if _car != null:
+		_sample_camera()
+
+
+## The camera of the frame being drawn: transform, FOV, which camera and when.
+func _sample_camera() -> void:
 	var cam := get_viewport().get_camera_3d()
 	if cam == null:
-		_cam_id = 255
+		_cam_id = F.NO_CAMERA
 		return
 	_cam_xf = cam.get_global_transform_interpolated() if cam.is_physics_interpolated_and_enabled() \
 			else cam.global_transform
@@ -283,6 +292,10 @@ func _open(car: Car) -> void:
 	_track = _session.get(&"track") as Track if _session != null else null
 	var map: Node = _session.get(&"map") if _session != null else null
 	_soft = map.get(&"soft_course") if map != null and &"soft_course" in map else null
+	_gates = (map.get(&"gates") as Dictionary).duplicate() if map != null and &"gates" in map else {}
+	_gate_open.clear()
+	for id: String in _gates:
+		_gate_open[id] = bool(_gates[id].get(&"is_open"))
 	_t = 0.0
 	_ticks = 0
 	_frames = 0
@@ -297,8 +310,9 @@ func _open(car: Car) -> void:
 	_last_vel = car.linear_velocity
 	_surfaces.clear()
 	_cameras.clear()
-	_cam_id = 255
+	_cam_id = F.NO_CAMERA
 	_cam_xf = Transform3D.IDENTITY
+	_cam_t = 0.0
 	_cost_sum = 0
 	_cost_max = 0
 	_cost_max_t = 0.0
@@ -330,7 +344,7 @@ func _open(car: Car) -> void:
 		for cp: Dictionary in map.get(&"checkpoints"):
 			cps.append(float(cp.get("progress", 0.0)))
 		track_info = {"length": _track.length, "closed": _track.closed, "checkpoints": cps}
-	var header := {
+	header = {
 		"game": ProjectSettings.get_setting("application/config/name", ""),
 		"version": _version,
 		"engine": Engine.get_version_info().get("string", ""),
@@ -356,8 +370,11 @@ func _open(car: Car) -> void:
 		"surfaces": [],
 		"track": track_info,
 		"spawn": {"pos": car.global_position, "yaw": car.global_rotation.y},
+		"gates": _gate_open.duplicate(),
 	}
 	_submit({"op": "create", "path": current_path, "bytes": F.header_bytes(header)})
+	# The first frame is written before the next draw: it gets the camera on screen now.
+	_sample_camera()
 	car.impact.connect(_on_impact)
 	car.landed.connect(_on_landed)
 	if _session != null and _session.has_signal(&"reset_needed"):
@@ -395,10 +412,12 @@ func _close(reason: String) -> void:
 	_submit({"op": "done", "path": current_path, "dir": folder})
 	last_path = current_path
 	current_path = ""
+	header = {}
 	_car = null
 	_session = null
 	_track = null
 	_soft = null
+	_gates = {}
 
 
 func _tick() -> void:
@@ -414,6 +433,11 @@ func _tick() -> void:
 	_last_pos = pos
 	_last_vel = vel
 	if (_ticks - 1) % F.TICKS_PER_FRAME == 0:
+		for id: String in _gates:
+			var open := is_instance_valid(_gates[id]) and bool(_gates[id].get(&"is_open"))
+			if open != _gate_open[id]:
+				_gate_open[id] = open
+				_event({"type": "gate", "id": id, "open": open})
 		_write_frame(pos, vel)
 		if _t - _block_start >= BLOCK_SECONDS:
 			_flush_block()

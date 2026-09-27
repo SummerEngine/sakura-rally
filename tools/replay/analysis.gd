@@ -264,6 +264,7 @@ static func analyze(data: ReplayData, track: Track) -> Dictionary:
 	var b := data.frames
 	var verge: float = track.verge if track != null else 1.4
 	var top_kmh := 0.0
+	var auto_s := 0.0 ## seconds in a driving state with the car not under the player's control
 	var off := {}
 	var air_t := NAN
 	var lift_ready := 0.0
@@ -301,6 +302,8 @@ static func analyze(data: ReplayData, track: Track) -> Dictionary:
 		var driving := player and state in ["RACING", "LIAISON", "FREE_ROAM"]
 		if driving:
 			top_kmh = maxf(top_kmh, kmh)
+		elif flags & F.F_PLAYER == 0 and state in ["RACING", "LIAISON", "FREE_ROAM"]:
+			auto_s += dt
 		# route distance driven (resets and wrap-arounds do not count as distance)
 		if s >= 0.0 and driving:
 			if is_finite(prev_s):
@@ -464,6 +467,7 @@ static func analyze(data: ReplayData, track: Track) -> Dictionary:
 		"result": result,
 		"splits": splits,
 		"top_kmh": top_kmh,
+		"autopilot_s": auto_s,
 		"smashes": smashes,
 		"pauses": pauses,
 		"corners": corner_list,
@@ -503,6 +507,8 @@ static func report(summary: Dictionary) -> String:
 		lines.append("RESULT %s  medal %s  best %s%s" % [_clock(float(res.get("time", 0.0))), res.get("medal", "-"),
 				_clock(float(res["best_time"])) if res.get("best_time") != null else "-", "  NEW RECORD" if res.get("is_record", false) else ""])
 	lines.append("top speed %d km/h, %d props smashed, %d pauses" % [roundi(summary["top_kmh"]), summary["smashes"], summary["pauses"]])
+	if float(summary["autopilot_s"]) > 0.5:
+		lines.append("autopilot drove %.1f s (not the player: left out of the speed, hesitations and sectors)" % summary["autopilot_s"])
 	var counts: Dictionary = summary["counts"]
 	var tally: PackedStringArray = []
 	for k in ["crash", "knock", "reset", "off_road", "wrong_way", "off_route", "lift", "brake", "crawl", "zigzag", "jump"]:

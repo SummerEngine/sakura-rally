@@ -290,6 +290,9 @@ func camera_at(t: float) -> Dictionary:
 		i -= 1
 	while i + 1 < count and _cam_t(i + 1) <= t:
 		i += 1
+	# Frames before the first sampled camera (id NO_CAMERA) show the first one.
+	while i + 1 < count and frames[i * F.FRAME_SIZE + F.O_CAMERA] == F.NO_CAMERA:
+		i += 1
 	var j := mini(i + 1, count - 1)
 	var c0 := _cam_t(i)
 	var c1 := _cam_t(j)

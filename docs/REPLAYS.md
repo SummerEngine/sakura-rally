@@ -12,17 +12,20 @@ and renders what the player saw at any moment, offscreen.
 | reader (frames, events, interpolated car and camera) | `scripts/game/replay_data.gd` |
 | playback car (real model, livery, wheels) | `scripts/game/replay_ghost.gd` |
 | playback scene (map, screen passes, camera) | `scripts/game/replay_view.gd` |
-| review tool: list, summary, render | `tools/replay/review.gd` |
+| review tool: list, summary, render, compare | `tools/replay/review.gd` |
 | the analysis behind summary and `render --events` | `tools/replay/analysis.gd` |
 | round-trip check (record, read, summarise, render against live frames) | `tools/replay/record_lap.gd` |
+| a game flow recorded, with live frames for `compare` | `tools/replay/capture_flow.gd` |
+| pixel difference and side-by-side pairs of live and replay frames | `tools/replay/pairs.gd` |
 
 ## Where the files are
 
 `user://replays/`, on this Mac
 `~/Library/Application Support/Godot/app_userdata/Sakura Rally/replays/`. One file per driven
 session, named `<date>_<time>_<route>_<mode>.srr` (local time, e.g.
-`2026-09-26_16-03-40_hanami_time_trial.srr`). After each saved replay the folder is pruned to
-the newest 100 files and at most 256 MB (`Replays.MAX_FILES`, `MAX_BYTES`).
+`2026-09-26_16-03-40_hanami_time_trial.srr`). The route is the world pack's route id the session
+drove (`MapWorld.route_id`: `hanami`, `liaison`, `momiji`). After each saved replay the folder is
+pruned to the newest 100 files and at most 256 MB (`Replays.MAX_FILES`, `MAX_BYTES`).
 
 ## What is recorded, and when
 
@@ -35,8 +38,10 @@ The autoload follows the `Game` autoload only (no hooks in Main):
 - It closes 4 s into FINISHED or ARRIVED (the tail shows how the drive ended), on any other state
   (menu, loading, a restart), when `Game.player_car` changes, on the next `session_started`, or
   when the game quits (the file is completed before the tree goes).
-- A campaign that chains legs on one car (SS1 → FINISHED → LIAISON → ARRIVED → COUNTDOWN of SS2)
-  gets one file per leg: entering a driving state from FINISHED or ARRIVED starts a new file.
+- A campaign that chains legs on one car without a respawn (SS1 → FINISHED → LIAISON → ARRIVED →
+  INTRO → COUNTDOWN of SS2) gets one file per leg: `session_started` for the next leg closes the
+  running file, entering a driving state from FINISHED or ARRIVED starts a new one, and each
+  header names the route of its own leg.
 
 Per stored frame (every other physics tick, 60 Hz):
 
@@ -58,14 +63,15 @@ record), `finish` (the whole result: time, splits, medal, record, standing), `ar
 (every HUD notice: wrong way, off the route, car reset, laps), `impact` (strength, point, speed),
 `landed`, `reset` (from, to, whether R was held), `hazard` (the session's water / out-of-bounds
 resets), `smash` and `upright` (roadside props), `pause`, `camera`, `settings` (what changed),
-`surface` (id table for the wheel surfaces) and `end` (why it closed, recording cost).
+`gate` (a road gate opened or closed: id, open), `surface` (id table for the wheel surfaces) and
+`end` (why it closed, recording cost, and again the finish or the arrival).
 
 The header: game name, version (the git branch and commit when run from a checkout, read from
 `.git` once at boot), engine version, date (local, UTC, unix), route id, mode, the Game state it
 opened in, campaign leg, car id and scene, livery (index and both colours), every setting
 (camera, transmission, quality, units, volumes…), tool run or not, tick rate, frame size, the
 names of the states and buttons, the route's length, whether it is a loop and its checkpoints,
-and the spawn pose.
+the spawn pose, and each road gate of the world open or not (`gates`).
 
 ### Tool runs
 
@@ -150,6 +156,7 @@ timeout 60 $S --headless $R list                       # Vel's folder, newest fi
 timeout 120 $S --headless $R summary <file>            # a file name alone is looked up in Vel's folder
 timeout 900 nice -n 5 $S --summer-offscreen --audio-driver Dummy $R render <file> 31.5 36 30
 timeout 1800 nice -n 5 $S --summer-offscreen --audio-driver Dummy $R render <file> --events
+timeout 900 nice -n 5 $S --summer-offscreen --audio-driver Dummy $R compare <capture folder>
 ```
 
 - `list [folder]`: date, route, mode, car, length, size, and how it ended (finished with time
@@ -166,19 +173,27 @@ timeout 1800 nice -n 5 $S --summer-offscreen --audio-driver Dummy $R render <fil
   brake for), crawling under 15 km/h, zig-zag steering. Then the five worst 250 m sectors: time
   taken against a grip-limited reference speed profile of the road, with what happened in them.
   Corners are found from the route's curvature (C1… from the start line, direction, total angle,
-  tightest radius; `hairpin` past 130° under 30 m).
+  tightest radius; `hairpin` past 130° under 30 m). Time in a driving state with the car not
+  under the player's control (the campaign flow's autopilot, a tool's bot) is reported as
+  `autopilot drove … s` and left out of the top speed and the hesitations.
 - `render <file> <t0> <t1> [fps]`: frames from replay second t0 to t1 (default 30 fps) as the
-  player saw them: the route's map with its atmosphere, colour grade and ink lines, the car as a
-  ghost with its real model and livery (wheels turning, steering and on their springs, body lean,
-  pop-up lights), the camera from the recorded transform, FOV and lens. Into `dest=<folder>`
+  player saw them: the world with the recorded route selected, its atmosphere, colour grade and
+  ink lines, the road gates open or closed as they were at that moment, the car as a ghost with
+  its real model and livery (wheels turning, steering and on their springs, body lean, pop-up
+  lights), the camera from the recorded transform, FOV and lens. Into `dest=<folder>`
   (default `/tmp/sakura_replays/<replay name>/`): `frame_NNNN.png`, `sheet.png` (up to 12 frames)
   and `clip.mp4` (ffmpeg). `size=<w>x<h>` sets the resolution (default 1600x900).
 - `render <file> --events [fps]`: a clip from 2.5 s before to 2 s after each notable moment
   (everything the summary weighs as notable, strongest twelve, default 15 fps), each in its own
   folder with its mp4, plus `moments.png` (the frame of each moment) and `moments.txt`.
+- `compare <folder>`: the live frames `tools/replay/capture_flow.gd` saved during a recorded
+  game flow (`<folder>/captures.json`: replay file, replay time, image) against the replay
+  rendered at the same times: `replay_NN.png`, `pair_NN.png` (live left), `pairs.png` and the
+  pixel difference of each pair.
 
 Not in the renders: the HUD, dust and skid marks, props smashed during the drive (the map is as
-built), spectators knocked over. The replay time `t` is the one the summary prints.
+built), spectators knocked over, the swing of a gate (it switches at the time of its event). The
+replay time `t` is the one the summary prints.
 
 ## Verification
 
@@ -196,18 +211,32 @@ the size per minute, and offscreen renders the replay at the times it captured l
 the same run on the same map, side by side with their pixel difference.
 
 A game-flow run records too: `tools/game/flows.gd` takes `replays=<dir>` like any tool run.
+`tools/replay/capture_flow.gd` runs a flow the same way and also saves live frames at chosen
+replay times of one route's recordings; `review.gd compare <folder>` renders the replay at those
+times:
 
-Results, 2026-09-26, M1 Max shared with seven other agents:
+```sh
+timeout 1500 nice -n 5 $S --summer-offscreen --audio-driver Dummy --disable-crash-handler --path . \
+    -s res://tools/replay/capture_flow.gd -- flow=campaign speed=3 replays=/tmp/ep3/replays/campaign \
+    capture=liaison:35,50,65 dest=/tmp/ep3/replays/campaign_live
+timeout 900 nice -n 5 $S --summer-offscreen --audio-driver Dummy $R compare /tmp/ep3/replays/campaign_live
+```
 
-- Hanami, Sakura, offscreen with live captures at 15, 40 and 70 s: 0 failures, lap 1:54.055.
+Results on the one-world pack (routes `hanami`, `liaison`, `momiji`), 2026-09-26, M1 Max shared
+with seven other agents:
+
+- Hanami, Sakura, offscreen with live captures at 15, 40 and 70 s: 0 failures, lap 1:54.039.
   118.6 s recorded in 348 KB, 172 KB per minute (raw frames and events 444 KB per minute).
-  Recording costs 25.7 µs per physics tick on average; 4 of 14 229 ticks took over 1 ms (max
-  5.6 ms), none at a block hand-off or a buffer growth, so most likely the scheduler on a busy
-  machine. Replay renders against the live frames: mean absolute difference 4.5-5.1 / 255,
-  2.6-3.3 % of the pixels off by more than 32 (dust and skid marks are not replayed).
-- Momiji, Hayate, headless: 0 failures, lap 1:45.132, 109.6 s in 325 KB (174 KB per minute),
-  28.1 µs per tick, 3 of 13 156 ticks over 1 ms.
-- `flows.gd -- map=hanami replays=…`: three files, one per driven session (free roam, a time
-  trial restarted during the countdown, the restarted one). `flows.gd -- flow=campaign speed=3
-  replays=…`: four files (SS1 Hanami, the liaison left for the menu after 1 s, the resumed
-  liaison up to the arrival, SS2 Momiji), 0 flow failures.
+  Recording costs 24.8 µs per physics tick on average; 2 of 14 227 ticks took over 1 ms (max
+  1.4 ms). Replay renders against the live frames: mean absolute difference 4.7-4.8 / 255,
+  2.5-2.7 % of the pixels off by more than 32 (the HUD, dust and skid marks are not replayed).
+  On the v1 packs, Momiji with the Hayate headless: 109.6 s in 325 KB (174 KB per minute),
+  28.1 µs per tick, 3 of 13 156 ticks over 1 ms (max 11.7 ms, on a busy machine).
+- The campaign (`flows.gd -- flow=campaign speed=3 replays=…`, headless: 0 flow failures): SS1,
+  the liaison and SS2 are driven on one car without a respawn and give three files, each with
+  its own route, mode, campaign leg, route length and gate states: `hanami` time trial
+  (finished), `liaison` (open route, 2007 m, both branch gates open, ended by the arrival),
+  `momiji` time trial (finished). Each resumed save adds one short file for its leg.
+- The liaison's live frames at 35 and 50 s (`capture_flow.gd`) against its replay: mean absolute
+  difference 9.9-10.0 / 255, 8-10 % of the pixels off by more than 32 (the HUD road sign and
+  speedometer, dust, speed lines).

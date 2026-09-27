@@ -9,6 +9,7 @@ extends SceneTree
 ##   timeout 120 $S --headless $R summary <file> [--json]
 ##   timeout 900 nice -n 5 $S --summer-offscreen --audio-driver Dummy $R render <file> <t0> <t1> [fps]
 ##   timeout 1800 nice -n 5 $S --summer-offscreen --audio-driver Dummy $R render <file> --events [fps]
+##   timeout 900 nice -n 5 $S --summer-offscreen --audio-driver Dummy $R compare <folder>
 ##
 ## list: the default folder is the player's (`user://replays`, i.e. ~/Library/Application
 ##   Support/Godot/app_userdata/Sakura Rally/replays), newest first. A bare file name given to
@@ -22,10 +23,14 @@ extends SceneTree
 ## render --events: a clip around every notable moment (2.5 s before to 2 s after, fps default
 ##   15), each in its own subfolder with an mp4, plus moments.png (the frame of each moment) and
 ##   moments.txt (what each one is).
+## compare <folder>: live frames captured by tools/replay/capture_flow.gd (<folder>/captures.json)
+##   against the replay rendered at the same times: replay_NN.png, pair_NN.png (live left),
+##   pairs.png, and the pixel difference of each pair.
 ## Options: dest=<folder>, size=<w>x<h> (default 1600x900).
 ## (Not `out=`: Summer's offscreen mode takes that one for itself.)
 
 const Analysis := preload("res://tools/replay/analysis.gd")
+const Pairs := preload("res://tools/replay/pairs.gd")
 const PLAYER_FOLDER := "user://replays"
 const WARMUP := 0.7
 
@@ -53,8 +58,10 @@ func _run() -> void:
 			code = await _summary()
 		"render":
 			code = await _render()
+		"compare":
+			code = await _compare()
 		_:
-			print("usage: list [folder] | summary <file> [--json] | render <file> <t0> <t1> [fps] | render <file> --events [fps]")
+			print("usage: list [folder] | summary <file> [--json] | render <file> <t0> <t1> [fps] | render <file> --events [fps] | compare <folder>")
 			code = 2
 	root.get_node("Game").request_quit(code)
 
@@ -188,6 +195,57 @@ func _render() -> int:
 		_mp4(dest, fps)
 		print("RENDERED %d frames t=%.2f..%.2f into %s (sheet.png%s)" % [names.size(), t0, t1, dest,
 				", clip.mp4" if FileAccess.file_exists(dest.path_join("clip.mp4")) else ""])
+	return 0
+
+
+func _compare() -> int:
+	if args.size() < 2:
+		print("usage: compare <folder>")
+		return 2
+	var folder := args[1]
+	var list: Variant = JSON.parse_string(FileAccess.get_file_as_string(folder.path_join("captures.json")))
+	if not list is Array or (list as Array).is_empty():
+		print("ERROR no captures in %s" % folder.path_join("captures.json"))
+		return 1
+	var rows: Array[Image] = []
+	var worst := 0.0
+	var view: ReplayView = null
+	var shown := ""
+	for k in (list as Array).size():
+		var cap: Dictionary = list[k]
+		var live := Image.load_from_file(folder.path_join(str(cap["image"])))
+		if str(cap["replay"]) != shown:
+			if view != null:
+				view.queue_free()
+				await process_frame
+			var data := _load(str(cap["replay"]))
+			if data == null:
+				return 1
+			root.size = live.get_size()
+			view = ReplayView.new()
+			view.name = "ReplayView"
+			root.add_child(view)
+			await view.setup(data)
+			shown = str(cap["replay"])
+		var t := float(cap["t"])
+		# the same warm-up as the live drive had: the body lean and screen passes settle
+		for w in 40:
+			await process_frame
+			view.show_at(t - (40 - w) / 60.0)
+		await process_frame
+		view.show_at(t)
+		await RenderingServer.frame_post_draw
+		var img := root.get_texture().get_image()
+		img.save_png(folder.path_join("replay_%02d.png" % k))
+		var d := Pairs.diff(live, img)
+		var pair := Pairs.pair(live, img)
+		pair.save_png(folder.path_join("pair_%02d.png" % k))
+		rows.append(pair)
+		worst = maxf(worst, d.x)
+		print("PAIR %02d t=%.3f s of %s  mean abs diff %.1f/255  pixels off by >32: %.1f%%" % [k, t,
+				shown.get_file(), d.x, d.y * 100.0])
+	Pairs.stack(rows).save_png(folder.path_join("pairs.png"))
+	print("COMPARED %d pairs into %s (pairs.png), worst mean abs diff %.1f/255" % [rows.size(), folder, worst])
 	return 0
 
 
