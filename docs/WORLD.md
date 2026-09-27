@@ -56,9 +56,13 @@ hills, rivers, keep-out polygons). Natsu's own spec is gone; its content lives i
 - One heightfield (cell 4 m, 939 × 511 vertices) with each region's relief, hills and terraces,
   blended by region weight; one mountain rim around the whole world and none between regions.
   Fine chunks near the roads and coarse far chunks with visibility ranges; collision everywhere a
-  car can reach.
+  car can reach. The rim's crest stays above about 190 m all round the world rectangle, and the
+  backdrop's inner ring lies 15 m under the terrain just inside it, so the world is closed from
+  any camera height (checked from about 450 m over every route).
 - Water: Hanami's lake; `water.rivers[]` `{id, width, points}` run end to end (Momiji's river
-  and the branch's river under the stone bridge drain into Hanami's lake).
+  and the branch's river under the stone bridge drain into Hanami's lake). A river springs from
+  the rim's slope: its channel fades out as it climbs into the rim (it never cuts the crest), and
+  its ribbon and `points` start where the channel opens (the build prints each source).
 - `season_grid`: u8 × 3 (spring, summer, autumn, summing to 255), cell 8 m, 470 × 256, origin
   (-800, -800). Hanami is pure spring, Momiji pure autumn; along the branch sakura runs its first
   ~500 m, summer greens, rice terraces and the village fill the middle, maples start well before
