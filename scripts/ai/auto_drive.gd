@@ -7,24 +7,31 @@ extends Node
 ##      the liaison or free roam and gives it back when pressed again. A Time Attack run it drove
 ##      any part of sets no record or medal (Game.ai_drove); campaign stages, which count for the
 ##      rally classification, it sits out. The game's own takeovers (the finish stop, the liaison
-##      arrival) still win.
+##      arrival) still win. In free roam it keeps to the road the car is on.
 ##   G  ghosts: the training generations (GENERATIONS_DIR, one DrivePolicy file each, oldest
 ##      first) join as ghost cars on a staggered grid behind the player, held on the line with the
 ##      player's car through the countdown: no collisions (cars never collide), their own
-##      liveries, a label over each. A new stage brings them back on its grid.
+##      liveries, a label over each. They leave the soft course alone (group `ghost_car`: no
+##      smashed tape or cones, no knocked spectators, no course restore in the player's run),
+##      park at the end of an open road, and every new run (a new car or a countdown) puts them
+##      back on its grid.
 ##   V  watch: the chase camera goes to the next ghost, and back to the player's car.
 ##
 ## Letters, not F-keys: on a Mac keyboard F7-F12 are media keys that never reach the game.
 ## Command line (after --): `auto-drive` and `ghosts` switch those on from the start,
 ## `policy=<file>` drives with another policy file.
-## A driven car that leaves the road (or stops making progress) for RESCUE_S is put back on it,
-## as the player would with the reset key, which also works while the driver has the car.
+## A driven car that leaves the road (or stops making progress) for RESCUE_S is put back on it:
+## the player's car as with the reset key (which also works while the driver has it), a ghost on
+## its own road.
 
 ## The driver shipped with the game.
 const DRIVER := "res://assets/ai/driver.json"
 const GENERATIONS_DIR := "res://assets/ai/generations"
 const RESCUE_S := 2.5
 const OFF_ROAD_M := 3.0
+## The last stretch of an open road: the road ahead a car sees shrinks onto the end there and it
+## only creeps, so a ghost parks and the player's car in free roam looks for the next road.
+const ROAD_END_M := 15.0
 const GHOST_LIVERIES: Array[Color] = [Color("7fc8f8"), Color("f9a03f"), Color("b388eb"), Color("5fd3a2"),
 		Color("f25f5c"), Color("ffe066")]
 ## Ghost grid (_spawn_ghosts): first slot GRID_BACK_M behind the car, each next one GRID_GAP_M
@@ -101,21 +108,24 @@ func _input(event: InputEvent) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	var new_run := false
 	if Game.state != _state:
 		_state = Game.state
 		if _state == Game.State.COUNTDOWN:
 			Game.ai_drove = false # a new run
+			new_run = true
 	var main := get_parent()
 	var car: Car = main.car if main.car != null and is_instance_valid(main.car) else null
 	var track: Track = main.map.track if main.map != null else null
 	var drivable := car != null and track != null and _drivable_state() and not car.has_node(^"ArrivalStop")
+	var free_roam := Game.state == Game.State.FREE_ROAM
 
 	if auto_drive and drivable and not _campaign_stage():
 		if _pilot == null or _pilot.car != car:
 			_detach(false)
-			_pilot = _make_pilot(policy, track, 0)
+			_pilot = _make_pilot(policy, _road_under(car, track) if free_roam else track, 0)
 			car.add_child(_pilot)
-		elif _pilot.track != track:
+		elif not free_roam and _pilot.track != track:
 			_pilot.track = track
 		if car.controlled_by_player:
 			car.controlled_by_player = false
@@ -129,15 +139,17 @@ func _physics_process(delta: float) -> void:
 	elif _pilot != null:
 		_detach(false)
 
-	if _ghosts_for != null and (car != _ghosts_for or not is_instance_valid(_ghosts_for)):
+	# Ghosts belong to one car and one run: a new car (retry, next map, the title, the finale) or
+	# a new countdown (the campaign's next stage keeps the car) clears them, and they come back on
+	# the new grid. `_ghosts_for != null` is no test: a freed car compares equal to null.
+	if not ghosts.is_empty() and (new_run or car != _ghosts_for or not is_instance_valid(_ghosts_for)):
 		_clear_ghosts()
 	if ghosts_on and drivable and ghosts.is_empty():
-		_spawn_ghosts(car, track)
+		_spawn_ghosts(car, _pilot.track if _pilot != null else (_road_under(car, track) if free_roam else track))
 	for ghost in ghosts: # ghosts exist only for a live `car` (_ghosts_for)
-		ghost.launch_hold = car.launch_hold # on the line with the player through the countdown
 		var pilot := ghost.get_node(^"NeuralPilot") as NeuralPilot
-		if pilot.track != track:
-			pilot.track = track
+		# on the line with the player through the countdown, parked at the end of an open road
+		ghost.launch_hold = car.launch_hold or _road_done(ghost, pilot)
 		_rescue(ghost, pilot, delta)
 
 
@@ -148,6 +160,36 @@ func _drivable_state() -> bool:
 ## A timed campaign stage: its result feeds the rally classification, so the AI never drives it.
 func _campaign_stage() -> bool:
 	return Game.campaign_current_leg().get("kind", "") == "stage"
+
+
+## Free roam, where every road of the world is open: the route whose road is nearest the car
+## (as RaceSession finds it for a reset), other than `exclude`; `fallback` when there is none.
+func _road_under(car: Car, fallback: Track, exclude: Track = null) -> Track:
+	var pos := car.global_position
+	var best := fallback
+	var best_d := INF
+	for r: Dictionary in get_parent().map.routes.values():
+		var t: Track = r["track"]
+		if t == exclude:
+			continue
+		var d := pos.distance_squared_to(t.point(t.nearest(pos)))
+		if d < best_d:
+			best_d = d
+			best = t
+	return best
+
+
+## A ghost at the end of an open road has no road left to drive: it parks there.
+func _road_done(ghost: Car, pilot: NeuralPilot) -> bool:
+	var t := pilot.track
+	return not t.closed and pilot.sense != null and pilot.sense.hint >= 0 \
+			and pilot.sense.road_s(ghost.global_position) >= t.length - ROAD_END_M
+
+
+## True when `pos` is on road t: within its drivable half width plus OFF_ROAD_M, near its height.
+func _on_road(t: Track, pos: Vector3) -> bool:
+	var i := t.nearest(pos)
+	return absf(t.lateral(i, pos)) < t.half_width(i) + t.verge + OFF_ROAD_M and absf(pos.y - t.point(i).y) < 4.0
 
 
 ## `phase`: the player's pilot 0, the ghosts 1, 2, ... (NeuralPilot.phase).
@@ -173,7 +215,9 @@ func _detach(to_player: bool) -> void:
 
 
 ## Puts a driven car back on the road after RESCUE_S off it (OFF_ROAD_M beyond the verge) or
-## without progress; true when it did.
+## without progress; true when it did. The player's car goes where the reset key would put it
+## (RaceSession: in a time trial the last point legitimately reached); a ghost goes back on its
+## own road, so it neither lands next to the player nor touches the player's session.
 func _rescue(car: Car, pilot: NeuralPilot, delta: float) -> bool:
 	if pilot == null or pilot.sense == null or pilot.sense.hint < 0 or car.launch_hold:
 		return false
@@ -187,20 +231,34 @@ func _rescue(car: Car, pilot: NeuralPilot, delta: float) -> bool:
 		ds = wrapf(ds, -sense.track.length * 0.5, sense.track.length * 0.5)
 	st[1] = s
 	var off := absf(sense.road_lateral(pos)) > sense.road_edge() + OFF_ROAD_M
+	var players: bool = car == get_parent().car
+	if players and Game.state == Game.State.FREE_ROAM:
+		# Every road of the world is open: once the player's car is on another road (off this one,
+		# or at the end of an open road) it drives that one. A ghost keeps to its own road and parks
+		# at its end.
+		if off or (not sense.track.closed and s >= sense.track.length - ROAD_END_M):
+			var road := _road_under(car, sense.track, sense.track)
+			if road != sense.track and _on_road(road, pos):
+				pilot.track = road
+				_trouble.erase(id)
+				return false
 	var stuck := ds < 0.05 * delta * 60.0 and Game.state != Game.State.COUNTDOWN
 	st[0] = st[0] + delta if off or stuck else 0.0
 	var rescued: bool = st[0] > RESCUE_S
 	if rescued:
 		st[0] = 0.0
 		st[1] = NAN
-		car.reset_to_track()
+		if players:
+			car.reset_to_track()
+		else:
+			car.reset_to(sense.track.transform_at_abs(s - 4.0, 0.0, 0.35))
 	_trouble[id] = st
 	return rescued
 
 
-## One ghost per generation file on a staggered two-column grid behind `car`, oldest nearest
-## (cars never collide, the grid only keeps them apart on screen). At the start of an open road,
-## where there is no road behind, the grid lines up ahead instead.
+## One ghost per generation file on a staggered two-column grid behind `car` on `track`, oldest
+## nearest (cars never collide, the grid only keeps them apart on screen). At the start of an
+## open road, where there is no road behind, the grid lines up ahead instead.
 func _spawn_ghosts(car: Car, track: Track) -> void:
 	_ghosts_for = car
 	var files := _generation_files()
@@ -217,6 +275,8 @@ func _spawn_ghosts(car: Car, track: Track) -> void:
 		var ghost := scene.instantiate() as Car
 		ghost.name = "Ghost%d" % i
 		ghost.controlled_by_player = false
+		ghost.auto_reset_time = INF # AutoDrive rescues ghosts; the car's own reset asks the player's session
+		ghost.add_to_group(&"ghost_car") # before add_child: SoftCourse looks when the car is ready
 		var mute := Node.new()
 		mute.name = "CarAudio"
 		ghost.add_child(mute)
@@ -243,6 +303,9 @@ func _spawn_ghosts(car: Car, track: Track) -> void:
 		var gs := s - back if track.closed or s - back >= track.first_s else s + back
 		ghost.place_at_rest(track.transform_at_abs(gs, -GRID_LAT_M if i % 2 == 0 else GRID_LAT_M))
 		ghosts.append(ghost)
+	if ghosts.is_empty():
+		Game.post_notice("The AI generations in this build do not load")
+		ghosts_on = false
 
 
 func _generation_files() -> PackedStringArray:

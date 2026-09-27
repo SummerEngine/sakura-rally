@@ -4,7 +4,8 @@ extends Node
 ## physics ticks it looks through a DriveSense and asks the policy, every tick DriveHands moves
 ## the car's inputs - the loop tools/rl/train_env.gd trains in. Add it as a child of the car (as
 ## Main does with Autopilot). It never touches `controlled_by_player`: while that is true the
-## player's controls overwrite what it sets, so whoever attaches it hands the car over.
+## player's controls overwrite what it sets, so whoever attaches it hands the car over. While
+## attached it keeps the car on the automatic box (Car.always_automatic): no gear action.
 
 ## A car that moved further than this between two decisions was reset: find it on the road anew.
 const JUMP_M := 20.0
@@ -43,6 +44,8 @@ var _unsticking := false
 
 func _ready() -> void:
 	car = get_parent() as Car
+	if car != null:
+		car.always_automatic = true
 	sense = DriveSense.new(track)
 	_obs.resize(DriveSense.OBS_SIZE)
 	if sample:
@@ -56,6 +59,7 @@ func _ready() -> void:
 func _exit_tree() -> void:
 	if car != null and is_instance_valid(car):
 		hands.release(car)
+		car.always_automatic = false
 
 
 func _physics_process(delta: float) -> void:

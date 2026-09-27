@@ -17,11 +17,14 @@ classification, so the driver sits them out; liaisons and free roam are fine.
 | V | Watch: the chase camera goes to the next ghost, then back to your car |
 
 `scripts/ai/auto_drive.gd` (one line in `Main._ready`) does this. Cars never collide with each
-other, so ghosts pass through your car (they do hit props and spectators). A driven car that
-stays off the road or stuck for 2.5 s is put back on it, like the reset key. A car standing
-still for 1 s gets full throttle (the network still steers) until 15 km/h: the likeliest action
-at a standstill after a reset can be to wait. Command line: `-- auto-drive`, `ghosts`,
-`policy=<file>`.
+other, so ghosts pass through your car; they hit the rigid world (trees, rails) but leave the
+soft course alone (group `ghost_car`: tape, cones, gates and spectators stay yours), park at the
+end of an open road and come back on the grid of every new run. A driven car that stays off the
+road or stuck for 2.5 s is put back on it: your car as the reset key would, a ghost on its own
+road. A car standing still for 1 s gets full throttle (the network still steers) until 15 km/h:
+the likeliest action at a standstill after a reset can be to wait. The AI drives the automatic
+gearbox whatever the Gearbox setting (`Car.always_automatic`), and in free roam it keeps to the
+road the car is on. Command line: `-- auto-drive`, `ghosts`, `policy=<file>`.
 
 ## What the network sees (`scripts/ai/drive_sense.gd`, 46 numbers)
 

@@ -138,7 +138,9 @@ Signals: `gear_changed(new_gear: int, old_gear: int)`, `backfire`, `rev_limiter`
 
 Control inputs (set by the player input reader or an autopilot):
 `var input_throttle: float`, `var input_brake: float`, `var input_steer: float`,
-`var input_handbrake: bool`, `var controlled_by_player: bool` (reads InputMap actions when true).
+`var input_handbrake: bool`, `var controlled_by_player: bool` (reads InputMap actions when true),
+`var always_automatic: bool` (the automatic box whatever the Gearbox setting; NeuralPilot sets it
+on the car it drives).
 Methods: `reset_to(transform: Transform3D)`, `set_livery(primary: Color, secondary: Color)`,
 `shift_up()`, `shift_down()`.
 
@@ -302,7 +304,8 @@ meets only walls it can scrape along or props it knocks over.
   `assets/models/props/manifest.json` for this: it is generated.
 - SMASHABLE instances get no static collider. Each physics tick SoftCourse tests every `Car` in the
   tree (found through `SceneTree.node_added`, so the player car, the menu flyover car and tool cars
-  alike) against a spatial hash of their footprints (the manifest collider: a box, the span of a
+  alike; cars in group `ghost_car`, AutoDrive's training ghosts, are left out) against a spatial
+  hash of their footprints (the manifest collider: a box, the span of a
   multi-post cylinder, or a circle). A hit applies `car.apply_central_impulse(-v_horizontal ×
   mass × loss)` (cone 1 %, tape 2 %, banner/flag 3 %, sign/fence 4 %, tyre stack 6 %, bales
   8–12 %; hits within ~0.6 s share a 14 % budget), hides the MultiMesh instance, flings a pooled
@@ -404,6 +407,7 @@ From Vel's third playtest. Goals:
 | replays (`Replays`) | `scripts/autoload/replays.gd` (new autoload `Replays`) and its `project.godot` line, `scripts/game/replay_*.gd` (new), `tools/replay/*` (new), `docs/REPLAYS.md` (new) |
 | garage (`Garage`) | `scripts/game/menu_stage.gd`, the garage parts of `scripts/camera/cine_camera.gd`, `scripts/ui/screens/garage_panel.gd`, `scripts/ui/widgets/car_selector.gd` (becomes the car strip), `scripts/game/garage_set.gd` (new), garage props (`tools/blender/props/garage.py`, new, outputs in `assets/models/props/`), the `garage` entry of `tools/mapgen/maps/hanami.py` and its pass-through to `map.json`, `assets/ui/cars/`, the menu functions of `scripts/main.gd` (`_enter_menu`, `_on_settings_changed`, `_on_menu_view_changed`), the garage section of `docs/UI.md` |
 | people (`People`) | `tools/blender/props/people.py` and the spectator outputs, `scripts/world/crowd.gd` (new), the crowd hooks in `soft_course.gd` / `map_world.gd`, the spectator rules in `corridor.py` and `scatter.py` (`_crowd`), crowd sounds |
+| AI driver (`RL`, after ep3) | `scripts/ai/*`, `tools/rl/*`, `assets/ai/`, `docs/RL.md`; the hooks `Game.ai_drove`, the `AutoDrive` line in `Main._ready`, `Car.always_automatic`, the `ghost_car` group in `SoftCourse._add_car` |
 
 Someone else's file: message the owner (`write agent://<Name>`); a hook of a few lines may be
 made by you once the owner agrees. Work in `~/Projects/sakura-rally-wt/ep3-<slice>` on branch
