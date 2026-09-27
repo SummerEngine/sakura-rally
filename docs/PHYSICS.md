@@ -556,10 +556,10 @@ finish stop through the opened gates to Momiji's grid), prints the medal times t
 laps imply, and checks the closed-road gates: a car driven at a closed gate at 60 km/h is stopped
 by it, and drives through once it is open.
 
-Latest results (2026-09-26, Apple M1 Max, headless, both cars): **120/120 PASS**.
+Latest results (2026-09-26, Apple M1 Max, headless, both cars): **129/129 PASS**.
 
 | Test | Result | Target | |
-| --- | --- | --- | --- |
+|---|---|---|---|
 | sakura: 0-100 km/h tarmac | 3.54 s | 3.3-3.9 s | PASS |
 | sakura: 0-60 km/h tarmac | 1.87 s | <= 2.0 s | PASS |
 | sakura: 0-100 km/h gravel | 3.85 s | 3.8-4.6 s | PASS |
@@ -613,7 +613,7 @@ Latest results (2026-09-26, Apple M1 Max, headless, both cars): **120/120 PASS**
 | sakura: autopilot laps (3 flying) | 67.2, 64.7, 64.7, 64.7 s | 3 laps | PASS |
 | sakura: autopilot max line error | 1.06 m, 0 ticks off | wheels on road | PASS |
 | sakura: autopilot crashes | 0 impacts > 0.25 | 0 | PASS |
-| sakura: physics cost per tick (car) | 205 us avg, 3821 us max | < 400 us avg | PASS |
+| sakura: physics cost per tick (car) | 215 us avg, 10916 us max | < 400 us avg | PASS |
 | sakura: soak 309 s (loop, jumps, wall, bumps, banking) | NaN=false vmax=44 m/s wmax=2.9 rad/s | no NaN, v<70, w<15 | PASS |
 | sakura: soak events | 21 impacts (3 hard), 6 landings | signals fire | PASS |
 | hayate: 0-100 km/h tarmac | 4.99 s | 4.3-5.2 s | PASS |
@@ -669,17 +669,26 @@ Latest results (2026-09-26, Apple M1 Max, headless, both cars): **120/120 PASS**
 | hayate: autopilot laps (3 flying) | 69.9, 66.6, 66.6, 66.6 s | 3 laps | PASS |
 | hayate: autopilot max line error | 0.77 m, 0 ticks off | wheels on road | PASS |
 | hayate: autopilot crashes | 0 impacts > 0.25 | 0 | PASS |
-| hayate: physics cost per tick (car) | 209 us avg, 7542 us max | < 400 us avg | PASS |
+| hayate: physics cost per tick (car) | 222 us avg, 52008 us max | < 400 us avg | PASS |
 | hayate: soak 309 s (loop, jumps, wall, bumps, banking) | NaN=false vmax=40 m/s wmax=4.8 rad/s | no NaN, v<70, w<15 | PASS |
 | hayate: soak events | 21 impacts (6 hard), 6 landings | signals fire | PASS |
-| sakura: hanami analog lap | 112.83 s, 0 resets, 0 hard, off 0.0 s | clean | PASS |
-| sakura: hanami keyboard-bot lap | 114.07 s (x1.011), 0 resets, 0 hard, slip 10° | clean, slip < 25°, <= x1.12 | PASS |
-| hayate: hanami analog lap | 118.30 s, 0 resets, 0 hard, off 0.0 s | clean | PASS |
-| hayate: hanami keyboard-bot lap | 119.15 s (x1.007), 0 resets, 0 hard, slip 5° | clean, slip < 25°, <= x1.12 | PASS |
-| sakura: momiji analog lap | 99.53 s, 0 resets, 0 hard, off 0.0 s | clean | PASS |
-| sakura: momiji keyboard-bot lap | 100.79 s (x1.013), 0 resets, 0 hard, slip 9° | clean, slip < 25°, <= x1.12 | PASS |
-| hayate: momiji analog lap | 104.09 s, 0 resets, 0 hard, off 0.0 s | clean | PASS |
-| hayate: momiji keyboard-bot lap | 105.28 s (x1.011), 0 resets, 0 hard, slip 7° | clean, slip < 25°, <= x1.12 | PASS |
+| world build | 2173 ms | loads | PASS |
+| sakura: hanami analog lap | 112.84 s, 0 resets, 0 hard, off 0.0 s | clean | PASS |
+| sakura: hanami keyboard-bot lap | 114.02 s (x1.010), 0 resets, 0 hard, slip 7° | clean, slip < 25°, <= x1.12 | PASS |
+| hayate: hanami analog lap | 118.29 s, 0 resets, 0 hard, off 0.0 s | clean | PASS |
+| hayate: hanami keyboard-bot lap | 119.43 s (x1.010), 0 resets, 0 hard, slip 8° | clean, slip < 25°, <= x1.12 | PASS |
+| sakura: momiji analog lap | 99.56 s, 0 resets, 0 hard, off 0.0 s | clean | PASS |
+| sakura: momiji keyboard-bot lap | 100.81 s (x1.013), 0 resets, 0 hard, slip 7° | clean, slip < 25°, <= x1.12 | PASS |
+| hayate: momiji analog lap | 104.08 s, 0 resets, 0 hard, off 0.0 s | clean | PASS |
+| hayate: momiji keyboard-bot lap | 105.20 s (x1.011), 0 resets, 0 hard, slip 8° | clean, slip < 25°, <= x1.12 | PASS |
+| sakura: liaison analog run | 54.68 s, 0 resets, 0 hard, off 0.0 s | clean | PASS |
+| sakura: liaison keyboard-bot run | 55.14 s (x1.008), 0 resets, 0 hard, slip 5° | clean, slip < 25°, <= x1.12 | PASS |
+| hayate: liaison analog run | 57.41 s, 0 resets, 0 hard, off 0.0 s | clean | PASS |
+| hayate: liaison keyboard-bot run | 57.97 s (x1.010), 0 resets, 0 hard, slip 5° | clean, slip < 25°, <= x1.12 | PASS |
+| sakura: gate hanami_branch closed | stopped, 60 km/h at the gate, reached -2.4 m, hardest hit 2.00 | stops the car | PASS |
+| sakura: gate hanami_branch open | through, 60 km/h at the gate, reached +40.9 m, hardest hit 0.00 | drives through | PASS |
+| sakura: gate momiji_branch closed | stopped, 60 km/h at the gate, reached -2.4 m, hardest hit 2.00 | stops the car | PASS |
+| sakura: gate momiji_branch open | through, 60 km/h at the gate, reached +41.2 m, hardest hit 0.00 | drives through | PASS |
 
 The "max" tick cost is a scheduler outlier (other engines were running in parallel); the average
 is the budget figure.
