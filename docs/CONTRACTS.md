@@ -460,10 +460,13 @@ noisy: report them, the lead re-measures at integration.
   between them carries Natsu's content (terraces, village, stone bridge, time control). One rim
   around the world, none between regions.
 - `map.json` keys:
-  - `bounds` `[x0, z0, x1, z1]`, `cell` (terrain, 4 m), `road_half_width` 3.5.
-  - `roads{id: {length, closed, verge, junctions?}}`: the physical ribbons `hanami`, `momiji`
-    (loops) and `branch` (open). `junctions[{road, end, s, other_s}]`: the branch end (`start` /
-    `end`) at branch `s` meets `road` at its `other_s`, with an apron (no step, no z-fighting).
+  - `bounds` `[x0, z0, x1, z1]`, `cell` (terrain, 4 m).
+  - `roads{id: {length, closed, verge, half_width, junctions?}}`: the physical ribbons `hanami`,
+    `momiji` (loops, 10 m carriageway: `half_width` 5.0) and `branch` (open, 7 m: 3.5); verge
+    1.4 m on all three. `junctions[{road, end, s, other_s}]`: the branch end (`start` / `end`) at
+    branch `s` meets `road` at its `other_s`, with an apron (no step, no z-fighting). Road ribbon
+    and apron meshes carry their `half_width` (the road shader turns uv.x back into metres with
+    it; MapWorld keeps one road material per width).
   - `routes{id: {track, closed, season, atmosphere, road{length, start_s, verge, surfaces,
     bridges, start}, spawn, checkpoints, corners, finish_stop | arrival}}`: what a session
     drives, `track` naming its raw (the v1 ten columns). `hanami` and `momiji` are closed laps
@@ -477,7 +480,9 @@ noisy: report them, the lead re-measures at integration.
     per cell summing to 255. The terrain vertex colours are blended by the same weights and the
     scatter runs sakura → summer greens → maples along the branch.
   - `water{lake{level, poly}, rivers[{id, width, points}]}` (`rivers` replaces v1's `river`).
-  - `garage{pos, yaw, workshop, lot, keep_out, road_side}` (Garage).
+  - `garage{pos, yaw, workshop, lot, keep_out, road_side, road_x, lane}` (Garage): `road_x` the
+    road centreline in garage-local x, `lane` the left lane's centre in lateral metres (the
+    menu's arriving and leaving cars).
   - As in v1, in world coordinates: `collision_boxes`, `signs`, `parked`, `materials`, `meshes`
     (terrain chunks carry `visibility` ranges: fine near, coarse far, beyond the rim), `raw`,
     `instances`. `map.bin` is 45 MB uncompressed.

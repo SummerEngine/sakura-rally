@@ -72,12 +72,12 @@ engine at 4600 rpm, and at GO the clutch drops into first.
 | Hanami Pass 花見峠 | spring noon, tarmac and gravel under the blossom | 2:04.5 / 2:18.0 / 2:41.0 |
 | Momiji Valley 紅葉谷 | autumn golden hour, loose dirt through the maples | 1:49.5 / 2:01.5 / 2:21.5 |
 
-The road between the stages is 2 km of open tarmac on a summer afternoon: it forks off the
-Hanami loop past the finish, passes terraced rice paddies, crosses a stone bridge into a village
-holding its summer festival and joins the Momiji loop before its grid. The seasons blend along
-it, in the trees, the grass, the light, the sky particles (petals, summer fluff, falling
-leaves) and the ambience. The world, its layout and its build are described in
-[docs/WORLD.md](docs/WORLD.md).
+The stage loops are 10 m wide, room for two cars side by side. The road between the stages is
+2 km of 7 m open tarmac on a summer afternoon: it forks off the Hanami loop past the finish,
+passes terraced rice paddies, crosses a stone bridge into a village holding its summer festival
+and joins the Momiji loop before its grid. The seasons blend along it, in the trees, the grass,
+the light, the sky particles (petals, summer fluff, falling leaves) and the ambience. The world,
+its layout and its build are described in [docs/WORLD.md](docs/WORLD.md).
 
 Every corner that needs braking is announced by a big yellow diamond well before the braking
 point, with chevron boards on the outside through the corner. Guardrails run wherever the road

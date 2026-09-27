@@ -11,7 +11,7 @@ render_mode cull_back, depth_draw_opaque;
 #include "res://shaders/inc/toon.gdshaderinc"
 #include "res://shaders/inc/season.gdshaderinc"
 
-uniform float half_width_m = 3.5;
+uniform float half_width_m = 3.5; // the ribbon's carriageway half width: MapWorld sets it per road
 uniform vec4 tarmac_color : source_color = vec4(0.34, 0.36, 0.44, 1.0);
 uniform vec4 tarmac_patch : source_color = vec4(0.29, 0.31, 0.38, 1.0);
 uniform vec4 gravel_color : source_color = vec4(0.76, 0.67, 0.53, 1.0);

@@ -58,6 +58,7 @@ class Terrain:
     H: np.ndarray
     diag: np.ndarray
     road_dist: np.ndarray       # metres to the nearest road centreline (coarse beyond 95 m)
+    road_edge: np.ndarray       # metres beyond the nearest carriageway edge, < 0 on the road (same)
     road_lat: np.ndarray
     road_seg: np.ndarray        # nearest sample index on road road_id (fine field only, -1 beyond)
     road_id: np.ndarray         # index into the road list (-1 beyond the fine field)
@@ -397,6 +398,7 @@ def build_terrain(world: dict, roads: dict[str, Road], water: Water, built: dict
 
     # --- road cut and fill, every road in turn; the nearest road's fields
     best = np.full(X.shape, np.inf)
+    best_edge = np.full(X.shape, np.inf)
     road_seg = np.full(X.shape, -1, dtype=np.int64)
     road_id = np.full(X.shape, -1, dtype=np.int16)
     road_lat = np.zeros(X.shape)
@@ -427,6 +429,9 @@ def build_terrain(world: dict, roads: dict[str, Road], water: Water, built: dict
         cap = y_road - clr * (1.0 - cw) + edge_d * 0.85
         H[near] = np.where(cw < 1.0, np.minimum(H[near], cap), H[near])
         fields[rid] = (rf, near, si)
+        ed = np.full(X.shape, np.inf)
+        ed[near] = rf.dist[near] - hw
+        best_edge = np.minimum(best_edge, ed)
         upd = rf.dist < best
         best[upd] = rf.dist[upd]
         road_id[upd] = k
@@ -434,9 +439,12 @@ def build_terrain(world: dict, roads: dict[str, Road], water: Water, built: dict
         segs = np.where(near, (rf.seg * step) % len(road.pos), -1)
         road_seg[upd] = segs[upd]
     road_dist = np.where(np.isfinite(best), best, D_far)
+    # the roads' widths differ (10 m loops, 7 m branch): roadside rules measure from the edge
+    road_edge = np.where(np.isfinite(best_edge), best_edge,
+                         D_far - min(float(rd.half_width.min()) for rd in roads.values()))
 
     # --- pads: flat ground for buildings and plazas, kept off the road corridor
-    hw_max = max(float(rd.half_width.max() + rd.verge) for rd in roads.values())
+    verge_max = max(float(rd.verge) for rd in roads.values())
     for rid, pad in pads:
         if "road_at" in pad:
             road = roads[rid]
@@ -458,7 +466,7 @@ def build_terrain(world: dict, roads: dict[str, Road], water: Water, built: dict
         jb = min(nz, int((pz + reach - z0) / cell) + 2)
         dpad = np.hypot(X[ja:jb, ia:ib] - px, Z[ja:jb, ia:ib] - pz)
         wpad = 1.0 - geom.smoothstep(r, r + blend, dpad)
-        keep = geom.smoothstep(hw_max + 1.5, hw_max + 5.0, road_dist[ja:jb, ia:ib])
+        keep = geom.smoothstep(verge_max + 1.5, verge_max + 5.0, road_edge[ja:jb, ia:ib])
         sub = H[ja:jb, ia:ib]
         H[ja:jb, ia:ib] = sub + (h0 - sub) * wpad * keep
 
@@ -485,9 +493,9 @@ def build_terrain(world: dict, roads: dict[str, Road], water: Water, built: dict
         cap_under_mesh(H, x0, z0, cell, pos, idx, CARVE_DROP)
 
     diag = cell_diag(nx - 1, nz - 1, seed)
-    return Terrain(cell=cell, ox=x0, oz=z0, X=X, Z=Z, H=H, diag=diag, road_dist=road_dist, road_lat=road_lat,
-                   road_seg=road_seg, road_id=road_id, lake_sd=lake_sd, river_dist=river_dist, river_y=river_y,
-                   water=water, lot_sd=lot_sd, edge=edge, weights=Wt)
+    return Terrain(cell=cell, ox=x0, oz=z0, X=X, Z=Z, H=H, diag=diag, road_dist=road_dist, road_edge=road_edge,
+                   road_lat=road_lat, road_seg=road_seg, road_id=road_id, lake_sd=lake_sd, river_dist=river_dist,
+                   river_y=river_y, water=water, lot_sd=lot_sd, edge=edge, weights=Wt)
 
 
 def grid_normals(ter: Terrain) -> np.ndarray:

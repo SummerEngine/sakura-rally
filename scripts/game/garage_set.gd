@@ -45,8 +45,6 @@ const NOBORI_AT := [Vector3(-6.4, 0.0, 9.0), Vector3(-6.4, 0.0, -9.0), Vector3(-
 		Vector3(-6.2, 0.0, -14.5)]
 const TYRES_AT := [[Vector3(-5.8, 0.0, 11.6), 25.0], [Vector3(-6.0, 0.0, -11.8), -40.0]]
 
-## Left-hand traffic: the lane the cars drive in, metres left of the road centreline.
-const LANE := -1.75
 ## Arriving cars start this far back along the road from the display spot (out of the shot).
 const ARRIVE_BACK := 52.0
 ## Leaving cars follow the road this far past the lay-by before they are gone.
@@ -56,7 +54,10 @@ var map: MapWorld
 ## The display spot (the menu car's pose on the lay-by, heading along the road).
 var display := Transform3D.IDENTITY
 ## Garage-frame x of the road centreline (the lay-by is on the -X side of it).
-var road_x := 11.0
+var road_x := 12.5
+## Left-hand traffic: the lane the cars drive in, lateral metres from the road centreline
+## (negative: left; half the carriageway half width, map.json garage.lane).
+var lane_lat := -2.5
 var workshop: Node3D
 var lights: Array[Light3D] = []
 
@@ -68,22 +69,14 @@ func setup(p_map: MapWorld, info: Dictionary) -> GarageSet:
 			Vector3(info["pos"][0], info["pos"][1], info["pos"][2]))
 	transform = display
 	var shop: Array = info.get("workshop", [-11.0, 0.0])
-	road_x = _road_x(info)
+	road_x = float(info["road_x"])
+	lane_lat = float(info["lane"])
 	_build_workshop(Vector3(float(shop[0]), 0.0, float(shop[1])))
 	for p: Vector3 in NOBORI_AT:
 		_prop(NOBORI, p, -PI * 0.5, 0.06)
 	for t: Array in TYRES_AT:
 		_prop(TYRES, t[0], deg_to_rad(t[1]), 0.75)
 	return self
-
-
-## Garage-frame x of the road centreline, from the lay-by rectangle (its road-side edge is 3 m
-## short of the centreline, garage.py) or the default layout.
-func _road_x(info: Dictionary) -> float:
-	var lot: Array = info.get("lot", [])
-	if lot.size() >= 3:
-		return float(lot[0]) + float(lot[2]) + 3.0
-	return 11.0
 
 
 # ---------------------------------------------------------------- building
@@ -188,7 +181,7 @@ func display_s() -> float:
 ## and along the road until it is well out of the shot. Starts at `from` (the car's position).
 func leave_path(from: Vector3) -> PackedVector3Array:
 	var pts := PackedVector3Array([from])
-	var lane := road_x + LANE
+	var lane := road_x + lane_lat
 	for p: Vector2 in [Vector2(0.0, -6.0), Vector2(1.2, -11.0), Vector2(lane * 0.55, -16.5),
 			Vector2(lane - 0.6, -22.0)]:
 		var w := at(p.x, p.y)
@@ -198,7 +191,7 @@ func leave_path(from: Vector3) -> PackedVector3Array:
 	var s0 := display_s() + 27.0
 	var d := 0.0
 	while d <= LEAVE_ROAD:
-		pts.append(map.track.position_at_abs(s0 + d, LANE))
+		pts.append(map.track.position_at_abs(s0 + d, lane_lat))
 		d += 6.0
 	return pts
 
@@ -206,7 +199,7 @@ func leave_path(from: Vector3) -> PackedVector3Array:
 ## Where an arriving car starts: in the left lane, ARRIVE_BACK metres before the display spot.
 func arrive_start() -> Transform3D:
 	var s := display_s() - ARRIVE_BACK
-	return map.track.transform_at_abs(s, LANE, 0.3)
+	return map.track.transform_at_abs(s, lane_lat, 0.3)
 
 
 ## The arriving car's line: along the lane, into the lay-by's near end and onto the display
@@ -216,9 +209,9 @@ func arrive_path() -> PackedVector3Array:
 	var s := display_s()
 	var d := -ARRIVE_BACK
 	while d < -30.0:
-		pts.append(map.track.position_at_abs(s + d, LANE))
+		pts.append(map.track.position_at_abs(s + d, lane_lat))
 		d += 6.0
-	var lane := road_x + LANE
+	var lane := road_x + lane_lat
 	# Turns in at the lay-by's near end (its paving joins the carriageway there), square to the
 	# spot from 6 m out.
 	for p: Vector2 in [Vector2(lane - 0.3, 26.0), Vector2(lane - 1.3, 19.0), Vector2(4.0, 14.5),

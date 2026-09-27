@@ -50,10 +50,10 @@ POINTS = [
 # ---------------------------------------------------------------------------- dressing
 # Road-relative placement: (control point, metres along the road from it, lateral metres,
 # + = right of the driving direction). Nothing rigid stands in the road corridor (half width +
-# verge + 1.5 m = 6.4 m, wider at tight corners; lib/corridor.py moves offenders out);
-# spectators stand 8 m or more from the road edge (road_clear 8), behind tape or bales. Order
-# matters: singles first (they reserve their footprint), then lines (they skip occupied spots),
-# then groups.
+# verge + 1.5 m = 7.9 m on this 10 m carriageway, wider at tight corners; lib/corridor.py moves
+# offenders out); spectators stand 8 m or more from the road edge (road_clear 8), behind tape or
+# bales. Order matters: singles first (they reserve their footprint), then lines (they skip
+# occupied spots), then groups.
 
 from lib.scatter import SPECTATOR_WEIGHTS, SPECTATORS  # noqa: E402 (the people kit)
 FLAGS = ["flag_pole_pink", "flag_pole", "flag_pole_blue"]
@@ -91,19 +91,19 @@ def gate(k):
     """Checkpoint dressing: a bale and a flag either side of the road (the runtime builds the
     fabric gate itself from map.checkpoints)."""
     off = LAP * k / 6.0
-    return [one("hay_bale_square", 4, off, 7.9, "road_side"), one("hay_bale_square", 4, off, -7.9, "road_side"),
-            one("flag_pole_pink", 4, off + 3.0, 9.0, "road_side"), one("flag_pole_blue", 4, off + 3.0, -9.0, "road_side")]
+    return [one("hay_bale_square", 4, off, 9.4, "road_side"), one("hay_bale_square", 4, off, -9.4, "road_side"),
+            one("flag_pole_pink", 4, off + 3.0, 10.5, "road_side"), one("flag_pole_blue", 4, off + 3.0, -10.5, "road_side")]
 
 
-def hairpin(cp, outside, bales="hay_bale_round", banner=True, crowd_n=12, crowd_lat=19.0):
+def hairpin(cp, outside, bales="hay_bale_round", banner=True, crowd_n=12, crowd_lat=20.5):
     """Outside of a hairpin: bale wall, sponsor banners and a crowd on the bank well back."""
     s = outside
-    f = [row(bales, cp, -24.0, 24.0, 8.4, 1.5 if bales == "hay_bale_round" else 0.9, sides=(s,),
+    f = [row(bales, cp, -24.0, 24.0, 9.9, 1.5 if bales == "hay_bale_round" else 0.9, sides=(s,),
              face="road_side", yaw_add=90.0 if bales == "hay_bale_round" else 0.0)]
     if banner:
-        f.append(row("banner_fence", cp, -9.0, 9.0, 10.6, 2.2, sides=(s,), face="road_side"))
-    f += [row("tape_post", cp, -22.0, -10.0, 10.6, 2.3, sides=(s,), face="road_side"),
-          row("tape_post", cp, 10.0, 22.0, 10.6, 2.3, sides=(s,), face="road_side"),
+        f.append(row("banner_fence", cp, -9.0, 9.0, 12.1, 2.2, sides=(s,), face="road_side"))
+    f += [row("tape_post", cp, -22.0, -10.0, 12.1, 2.3, sides=(s,), face="road_side"),
+          row("tape_post", cp, 10.0, 22.0, 12.1, 2.3, sides=(s,), face="road_side"),
           crowd(cp, 0.0, s * crowd_lat, crowd_n, 6.0),
           crowd(cp, 16.0, s * (crowd_lat - 1.0), crowd_n // 3, 3.0),
           crowd(cp, -16.0, s * (crowd_lat - 1.0), crowd_n // 3, 3.0)]
@@ -124,65 +124,65 @@ def _dressing():
     f = []
     # ------------------------------------------------------------ start / finish (cp 4)
     # road runs east here; right (+) is the lake side, left (-) the village plain
-    f.append(one("start_arch", 4, 0.0, 0.0, "along", scale=1.35, sink=0.15))
-    f += [one("tent", 4, -26.0, -19.0, "road"), one("tent", 4, -19.5, -19.5, "road", yaw_add=4.0),
-          one("tent", 4, 26.0, 21.0, "road"),
-          one("kei_truck", 4, -35.0, -21.0, "road", yaw_add=90.0), one("kei_truck", 4, -12.0, -22.5, "road", yaw_add=-80.0),
-          one("kei_truck", 4, 33.0, 23.0, "road", yaw_add=100.0),
-          one("marshal_post", 4, 6.0, -9.6, "road"), one("marshal_post", 4, -6.0, 9.6, "road"),
-          one("bench", 4, -22.0, -14.8, "road"), one("vending_machine", 4, -30.5, -15.0, "road")]
-    f += bale_stack(4, -46.0, 7.6) + bale_stack(4, -46.0, -7.6) + bale_stack(4, 46.0, 7.6) + bale_stack(4, 46.0, -7.6)
-    f += [row("banner_fence", 4, -43.0, -4.0, 7.4, 3.1, sides=(-1, 1)),
-          row("banner_fence", 4, 4.0, 43.0, 7.4, 3.1, sides=(-1, 1)),
-          row(FLAGS, 4, -40.0, 40.0, 8.8, 8.0, sides=(-1, 1)),
-          row("tape_post", 4, -40.0, 42.0, 11.0, 3.05, sides=(1,)),
-          row("tape_post", 4, -8.0, 16.0, 11.0, 3.05, sides=(-1,)),
-          crowd(4, 4.0, 15.0, 26, 9.0), crowd(4, -24.0, 14.5, 10, 5.0), crowd(4, 3.0, -14.0, 12, 5.0)]
-    f += [one("distance_board_100", 4, -88.0, 6.9, "along", yaw_add=180.0),
-          one("distance_board_50", 4, -50.0, 6.9, "along", yaw_add=180.0)]
+    f.append(one("start_arch", 4, 0.0, 0.0, "along", scale=1.65, sink=0.15))
+    f += [one("tent", 4, -26.0, -20.5, "road"), one("tent", 4, -19.5, -21.0, "road", yaw_add=4.0),
+          one("tent", 4, 26.0, 22.5, "road"),
+          one("kei_truck", 4, -35.0, -22.5, "road", yaw_add=90.0), one("kei_truck", 4, -12.0, -24.0, "road", yaw_add=-80.0),
+          one("kei_truck", 4, 33.0, 24.5, "road", yaw_add=100.0),
+          one("marshal_post", 4, 6.0, -11.1, "road"), one("marshal_post", 4, -6.0, 11.1, "road"),
+          one("bench", 4, -22.0, -16.3, "road"), one("vending_machine", 4, -30.5, -16.5, "road")]
+    f += bale_stack(4, -46.0, 9.1) + bale_stack(4, -46.0, -9.1) + bale_stack(4, 46.0, 9.1) + bale_stack(4, 46.0, -9.1)
+    f += [row("banner_fence", 4, -43.0, -4.0, 8.9, 3.1, sides=(-1, 1)),
+          row("banner_fence", 4, 4.0, 43.0, 8.9, 3.1, sides=(-1, 1)),
+          row(FLAGS, 4, -40.0, 40.0, 10.3, 8.0, sides=(-1, 1)),
+          row("tape_post", 4, -40.0, 42.0, 12.5, 3.05, sides=(1,)),
+          row("tape_post", 4, -8.0, 16.0, 12.5, 3.05, sides=(-1,)),
+          crowd(4, 4.0, 16.5, 26, 9.0), crowd(4, -24.0, 16.0, 10, 5.0), crowd(4, 3.0, -15.5, 12, 5.0)]
+    f += [one("distance_board_100", 4, -88.0, 8.4, "along", yaw_add=180.0),
+          one("distance_board_50", 4, -50.0, 8.4, "along", yaw_add=180.0)]
 
     # ------------------------------------------------------------ village along the lakeside straight
     # west block (between the humped bridge and the start)
-    f += [one("farmhouse_a", 4, -80.0, -23.0, "road", sink=0.35, radius=9.0),
-          one("kura", 4, -67.0, -31.0, "road", sink=0.35, radius=4.5),
-          one("farmhouse_b", 4, -57.0, -22.0, "road", sink=0.35, radius=9.0),
-          one("water_well", 4, -68.5, -17.0, "road"),
-          one("koinobori", 4, -69.0, -24.0, "road", yaw_add=70.0),
-          one("vending_machine", 4, -47.5, -10.2, "road"), one("vending_machine", 4, -46.3, -10.2, "road"),
-          one("shed", 4, -76.0, 15.0, "road", radius=3.4),
-          one("farmhouse_b", 4, -61.0, 20.5, "road", sink=0.35, radius=9.0),
-          one("sakura_young", 4, -70.0, 13.5, "road", scale=1.1),
-          one("sakura_c", 4, -90.0, -16.0, "road"),
-          one("sakura_young", 4, -51.0, -15.5, "road")]
-    f += [row("stone_wall", 4, -89.0, -74.0, -14.8, 2.0, face="road_side"),
-          row("stone_wall", 4, -63.0, -50.0, -14.8, 2.0, face="road_side"),
-          row("fence_bamboo", 4, -72.0, -52.0, 13.2, 2.05, face="road_side"),
-          row("lantern_string", 4, -86.0, -52.0, 9.0, 11.0, sides=(-1, 1))]
+    f += [one("farmhouse_a", 4, -80.0, -24.5, "road", sink=0.35, radius=9.0),
+          one("kura", 4, -67.0, -32.5, "road", sink=0.35, radius=4.5),
+          one("farmhouse_b", 4, -57.0, -23.5, "road", sink=0.35, radius=9.0),
+          one("water_well", 4, -68.5, -18.5, "road"),
+          one("koinobori", 4, -69.0, -25.5, "road", yaw_add=70.0),
+          one("vending_machine", 4, -47.5, -11.7, "road"), one("vending_machine", 4, -46.3, -11.7, "road"),
+          one("shed", 4, -76.0, 16.5, "road", radius=3.4),
+          one("farmhouse_b", 4, -61.0, 22.0, "road", sink=0.35, radius=9.0),
+          one("sakura_young", 4, -70.0, 15.0, "road", scale=1.1),
+          one("sakura_c", 4, -90.0, -17.5, "road"),
+          one("sakura_young", 4, -51.0, -17.0, "road")]
+    f += [row("stone_wall", 4, -89.0, -74.0, -16.3, 2.0, face="road_side"),
+          row("stone_wall", 4, -63.0, -50.0, -16.3, 2.0, face="road_side"),
+          row("fence_bamboo", 4, -72.0, -52.0, 14.7, 2.05, face="road_side"),
+          row("lantern_string", 4, -86.0, -52.0, 10.5, 11.0, sides=(-1, 1))]
     # east block and the village shrine
-    f += [one("torii_large", 4, 62.0, -15.5, "road"),
-          one("shrine", 4, 62.0, -42.0, "road", sink=0.35, radius=7.0),
-          one("shrine_bell", 4, 51.0, -35.0, "road"),
-          one("stone_lantern", 4, 58.5, -20.5, "road"), one("stone_lantern", 4, 65.5, -20.5, "road"),
-          one("stone_lantern", 4, 58.5, -30.0, "road"), one("stone_lantern", 4, 65.5, -30.0, "road"),
-          one("sakura_a", 4, 52.0, -24.0, "road"), one("sakura_b", 4, 73.0, -26.0, "road"),
-          one("sakura_c", 4, 72.0, -44.0, "road")]
-    f += [one("jizo", 4, 68.0 + 0.8 * k, -8.6, "road") for k in range(6)]  # roku jizo by the shrine gate
-    f += [one("farmhouse_a", 4, 88.0, -22.0, "road", sink=0.35, radius=9.0),
-          one("kura", 4, 100.0, -30.0, "road", sink=0.35, radius=4.5),
-          one("koinobori", 4, 97.0, -17.0, "road", yaw_add=60.0),
-          one("bus_stop", 4, 106.0, -9.8, "road"),
-          one("bench", 4, 106.0, -12.6, "road"),
-          one("farmhouse_b", 4, 48.0, 20.5, "road", sink=0.35, radius=9.0),
-          one("farmhouse_a", 4, 75.0, 21.0, "road", sink=0.35, radius=9.0),
-          one("vending_machine", 4, 60.5, 10.0, "road"),
-          one("sakura_young", 4, 61.5, 14.0, "road"),
-          one("kei_truck", 4, 86.0, 12.5, "along", yaw_add=8.0)]
-    f += [row("stone_wall", 4, 79.0, 96.0, -14.8, 2.0, face="road_side"),
-          row("fence_wood", 4, 40.0, 56.0, 13.2, 2.05, face="road_side"),
-          row("fence_wood", 4, 66.0, 84.0, 13.4, 2.05, face="road_side"),
-          row("lantern_string", 4, 52.0, 96.0, 9.0, 11.0, sides=(-1, 1))]
+    f += [one("torii_large", 4, 62.0, -17.0, "road"),
+          one("shrine", 4, 62.0, -43.5, "road", sink=0.35, radius=7.0),
+          one("shrine_bell", 4, 51.0, -36.5, "road"),
+          one("stone_lantern", 4, 58.5, -22.0, "road"), one("stone_lantern", 4, 65.5, -22.0, "road"),
+          one("stone_lantern", 4, 58.5, -31.5, "road"), one("stone_lantern", 4, 65.5, -31.5, "road"),
+          one("sakura_a", 4, 52.0, -25.5, "road"), one("sakura_b", 4, 73.0, -27.5, "road"),
+          one("sakura_c", 4, 72.0, -45.5, "road")]
+    f += [one("jizo", 4, 68.0 + 0.8 * k, -10.1, "road") for k in range(6)]  # roku jizo by the shrine gate
+    f += [one("farmhouse_a", 4, 88.0, -23.5, "road", sink=0.35, radius=9.0),
+          one("kura", 4, 100.0, -31.5, "road", sink=0.35, radius=4.5),
+          one("koinobori", 4, 97.0, -18.5, "road", yaw_add=60.0),
+          one("bus_stop", 4, 106.0, -11.3, "road"),
+          one("bench", 4, 106.0, -14.1, "road"),
+          one("farmhouse_b", 4, 48.0, 22.0, "road", sink=0.35, radius=9.0),
+          one("farmhouse_a", 4, 75.0, 22.5, "road", sink=0.35, radius=9.0),
+          one("vending_machine", 4, 60.5, 11.5, "road"),
+          one("sakura_young", 4, 61.5, 15.5, "road"),
+          one("kei_truck", 4, 86.0, 14.0, "along", yaw_add=8.0)]
+    f += [row("stone_wall", 4, 79.0, 96.0, -16.3, 2.0, face="road_side"),
+          row("fence_wood", 4, 40.0, 56.0, 14.7, 2.05, face="road_side"),
+          row("fence_wood", 4, 66.0, 84.0, 14.9, 2.05, face="road_side"),
+          row("lantern_string", 4, 52.0, 96.0, 10.5, 11.0, sides=(-1, 1))]
     # utility poles along the whole village street, one side only
-    f.append(row("telephone_pole", 3, 12.0, 0.0, -8.4, 34.0, face="road_side", cp_to=6))
+    f.append(row("telephone_pole", 3, 12.0, 0.0, -9.9, 34.0, face="road_side", cp_to=6))
 
     # ------------------------------------------------------------ rice paddies behind the village
     f += [at("scarecrow", -190.0, 262.0, 150.0), at("scarecrow", -312.0, 272.0, 200.0),
@@ -193,132 +193,132 @@ def _dressing():
           ((-200, 285), (-176, 280), (-196, 250), (-166, 244), (-300, 285), (-285, 262), (-320, 252))]
 
     # ------------------------------------------------------------ humped bridge (cp 1 .. 3) and the west hamlet
-    f += [one("stone_lantern", 1, -4.0, 7.2, "road"), one("stone_lantern", 1, -4.0, -7.2, "road"),
-          one("stone_lantern", 3, 5.0, 7.2, "road"), one("stone_lantern", 3, 5.0, -7.2, "road"),
-          one("sakura_c", 1, -12.0, 12.0, "road"), one("sakura_a", 3, 12.0, -13.0, "road")]
-    f += [crowd(2, -22.0, -19.0, 9, 4.5), crowd(2, 22.0, -19.0, 8, 4.5),
-          crowd(2, -24.0, 20.0, 7, 4.0), crowd(2, 24.0, 21.0, 6, 4.0)]
-    f += [one("farmhouse_a", 0, 12.0, 22.0, "road", sink=0.35, radius=9.0),
-          one("kura", 0, 26.0, 19.0, "road", sink=0.35, radius=4.5),
-          one("farmhouse_b", 36, 5.0, 21.0, "road", sink=0.35, radius=9.0),
-          one("shed", 0, -12.0, 18.0, "road", radius=3.4),
-          one("jizo", 0, 38.0, -8.4, "road"), one("hokora", 0, 40.0, -9.0, "road"),
-          one("sakura_young", 0, 20.0, 14.0, "road"),
-          one("kei_truck", 0, 0.0, 13.5, "along", yaw_add=175.0)]
-    f += [row("stone_wall", 0, 4.0, 20.0, 15.0, 2.0, face="road_side"),
-          row("telephone_pole", 36, -20.0, -8.0, -8.4, 36.0, face="road_side", cp_to=1)]
+    f += [one("stone_lantern", 1, -4.0, 8.7, "road"), one("stone_lantern", 1, -4.0, -8.7, "road"),
+          one("stone_lantern", 3, 5.0, 8.7, "road"), one("stone_lantern", 3, 5.0, -8.7, "road"),
+          one("sakura_c", 1, -12.0, 13.5, "road"), one("sakura_a", 3, 12.0, -14.5, "road")]
+    f += [crowd(2, -22.0, -20.5, 9, 4.5), crowd(2, 22.0, -20.5, 8, 4.5),
+          crowd(2, -24.0, 21.5, 7, 4.0), crowd(2, 24.0, 22.5, 6, 4.0)]
+    f += [one("farmhouse_a", 0, 12.0, 23.5, "road", sink=0.35, radius=9.0),
+          one("kura", 0, 26.0, 20.5, "road", sink=0.35, radius=4.5),
+          one("farmhouse_b", 36, 5.0, 22.5, "road", sink=0.35, radius=9.0),
+          one("shed", 0, -12.0, 19.5, "road", radius=3.4),
+          one("jizo", 0, 38.0, -9.9, "road"), one("hokora", 0, 40.0, -10.5, "road"),
+          one("sakura_young", 0, 20.0, 15.5, "road"),
+          one("kei_truck", 0, 0.0, 15.0, "along", yaw_add=175.0)]
+    f += [row("stone_wall", 0, 4.0, 20.0, 16.5, 2.0, face="road_side"),
+          row("telephone_pole", 36, -20.0, -8.0, -9.9, 36.0, face="road_side", cp_to=1)]
 
     # ------------------------------------------------------------ lakeside climb (cp 5 .. 8)
-    f += [one("jizo", 6, -12.0, -8.6, "road"), one("stone_lantern", 6, -14.0, -8.8, "road", scale=0.8)]
-    f += torii_path(6, 18.0, 10.0, 7, 2.4, 1)
-    f += [one("farmhouse_b", 7, 4.0, 24.0, "road", sink=0.35, radius=9.0),
-          one("shed", 7, 18.0, 17.0, "road", radius=3.4),
-          one("kei_truck", 7, 12.0, 14.0, "along", yaw_add=160.0),
-          one("koinobori", 7, -4.0, 16.0, "road", yaw_add=40.0),
-          one("sakura_young", 7, -8.0, 13.0, "road")]
-    f += [one("road_mirror", 8, 10.0, -6.7, "road")]
+    f += [one("jizo", 6, -12.0, -10.1, "road"), one("stone_lantern", 6, -14.0, -10.3, "road", scale=0.8)]
+    f += torii_path(6, 18.0, 11.5, 7, 2.4, 1)
+    f += [one("farmhouse_b", 7, 4.0, 25.5, "road", sink=0.35, radius=9.0),
+          one("shed", 7, 18.0, 18.5, "road", radius=3.4),
+          one("kei_truck", 7, 12.0, 15.5, "along", yaw_add=160.0),
+          one("koinobori", 7, -4.0, 17.5, "road", yaw_add=40.0),
+          one("sakura_young", 7, -8.0, 14.5, "road")]
+    f += [one("road_mirror", 8, 10.0, -8.2, "road")]
     # the village power line keeps climbing with the road; a farm stall where the valley opens
-    f.append(row("telephone_pole", 6, 22.0, -40.0, -8.4, 38.0, face="road_side", cp_to=9))
-    f += [one("shed", 7, 58.0, -22.0, "road", radius=3.4), one("kei_truck", 7, 66.0, -16.0, "along", yaw_add=-10.0),
-          one("hazagi", 7, 82.0, -22.0, "road"), one("scarecrow", 7, 96.0, -26.0, "road"),
-          one("stone_lantern", 7, 100.0, 8.8, "road"), one("jizo", 7, 101.6, 8.5, "road"),
-          one("sakura_young", 7, 104.0, 12.0, "road")]
+    f.append(row("telephone_pole", 6, 22.0, -40.0, -9.9, 38.0, face="road_side", cp_to=9))
+    f += [one("shed", 7, 58.0, -23.5, "road", radius=3.4), one("kei_truck", 7, 66.0, -17.5, "along", yaw_add=-10.0),
+          one("hazagi", 7, 82.0, -23.5, "road"), one("scarecrow", 7, 96.0, -27.5, "road"),
+          one("stone_lantern", 7, 100.0, 10.3, "road"), one("jizo", 7, 101.6, 10.0, "road"),
+          one("sakura_young", 7, 104.0, 13.5, "road")]
 
     # ------------------------------------------------------------ crest after cp 9 and checkpoint 1
     f += gate(1)
-    f += [row("tape_post", 9, 6.0, 36.0, -10.8, 3.05), row("tape_post", 9, 6.0, 36.0, 10.8, 3.05),
-          crowd(9, 20.0, -16.0, 9, 5.0), crowd(9, 24.0, 16.5, 7, 4.0),
-          one("marshal_post", 9, 40.0, 9.8, "road"), one("kei_truck", 9, 30.0, 27.0, "along", yaw_add=12.0)]
-    f += [one("road_mirror", 10, 6.0, 6.7, "road"),
-          one("shed", 11, -8.0, 27.0, "road", radius=3.4), one("log", 11, -20.0, 12.5, "along"),
-          one("log", 11, -20.0, 13.2, "along"), one("log", 11, -19.8, 12.85, "along", y_offset=0.5)]
+    f += [row("tape_post", 9, 6.0, 36.0, -12.3, 3.05), row("tape_post", 9, 6.0, 36.0, 12.3, 3.05),
+          crowd(9, 20.0, -17.5, 9, 5.0), crowd(9, 24.0, 18.0, 7, 4.0),
+          one("marshal_post", 9, 40.0, 11.3, "road"), one("kei_truck", 9, 30.0, 28.5, "along", yaw_add=12.0)]
+    f += [one("road_mirror", 10, 6.0, 8.2, "road"),
+          one("shed", 11, -8.0, 28.5, "road", radius=3.4), one("log", 11, -20.0, 14.0, "along"),
+          one("log", 11, -20.0, 14.7, "along"), one("log", 11, -19.8, 14.35, "along", y_offset=0.5)]
     # a mountain-road rest stop: vending machines, a bench and a lantern before the woods
-    f += [one("vending_machine", 9, 88.0, 11.0, "road"), one("vending_machine", 9, 89.3, 11.0, "road"),
-          one("bench", 9, 92.5, 11.6, "road"),
-          one("stone_lantern", 9, 84.5, 10.5, "road", scale=0.8)]
+    f += [one("vending_machine", 9, 88.0, 12.5, "road"), one("vending_machine", 9, 89.3, 12.5, "road"),
+          one("bench", 9, 92.5, 13.1, "road"),
+          one("stone_lantern", 9, 84.5, 12.0, "road", scale=0.8)]
 
     # ------------------------------------------------------------ hairpins
     f += hairpin(12, 1)  # corner warnings and chevrons: lib/roadside.py
     # fans walking up from their cars to the hairpin
-    f += [one("kei_truck", 13, 40.0, -22.0, "along", yaw_add=170.0), one("kei_truck", 13, 46.0, -22.5, "along", yaw_add=175.0),
-          crowd(13, 34.0, -15.0, 5, 3.0),
-          row(FLAGS, 13, 20.0, 60.0, -9.2, 10.0, sides=(-1,))]
-    f += [one("road_mirror", 12, 26.0, 6.8, "road"), one("marshal_post", 12, 32.0, 10.0, "road"),
-          one("stone_lantern", 14, 0.0, -8.6, "road"), one("jizo", 14, 1.4, -8.4, "road"),
-          one("bench", 14, 5.0, -9.2, "road")]
+    f += [one("kei_truck", 13, 40.0, -23.5, "along", yaw_add=170.0), one("kei_truck", 13, 46.0, -24.0, "along", yaw_add=175.0),
+          crowd(13, 34.0, -16.5, 5, 3.0),
+          row(FLAGS, 13, 20.0, 60.0, -10.7, 10.0, sides=(-1,))]
+    f += [one("road_mirror", 12, 26.0, 8.3, "road"), one("marshal_post", 12, 32.0, 11.5, "road"),
+          one("stone_lantern", 14, 0.0, -10.1, "road"), one("jizo", 14, 1.4, -9.9, "road"),
+          one("bench", 14, 5.0, -10.7, "road")]
     f += hairpin(16, -1, bales="tire_stack", banner=True)
     f += gate(2)
-    f += [one("road_mirror", 16, 26.0, -6.8, "road"),
-          one("hokora", 18, 52.0, -12.5, "road"), one("jizo", 18, 49.8, -8.6, "road"), one("jizo", 18, 50.6, -8.6, "road"),
-          one("stone_lantern", 18, 55.0, -9.0, "road", scale=0.8), one("torii_small", 18, 52.0, -9.4, "road"),
-          one("sakura_young", 18, 58.0, -13.0, "road"), one("bench", 18, 46.0, -9.4, "road"),
-          one("road_mirror", 18, 90.0, 6.8, "road")]
-    f += [one("kei_truck", 18, 34.0, 10.5, "along", yaw_add=4.0), crowd(18, 40.0, 15.0, 4, 2.5)]
+    f += [one("road_mirror", 16, 26.0, -8.3, "road"),
+          one("hokora", 18, 52.0, -14.0, "road"), one("jizo", 18, 49.8, -10.1, "road"), one("jizo", 18, 50.6, -10.1, "road"),
+          one("stone_lantern", 18, 55.0, -10.5, "road", scale=0.8), one("torii_small", 18, 52.0, -10.9, "road"),
+          one("sakura_young", 18, 58.0, -14.5, "road"), one("bench", 18, 46.0, -10.9, "road"),
+          one("road_mirror", 18, 90.0, 8.3, "road")]
+    f += [one("kei_truck", 18, 34.0, 12.0, "along", yaw_add=4.0), crowd(18, 40.0, 16.5, 4, 2.5)]
     f += hairpin(20, 1, bales="hay_bale_square")
-    f += [one("road_mirror", 20, 26.0, 6.8, "road"), one("marshal_post", 20, -32.0, 10.0, "road")]
-    f += [one("torii_small", 21, 40.0, -9.6, "road"), one("hokora", 21, 40.0, -12.8, "road"),
-          one("stone_lantern", 21, 37.5, -10.4, "road", scale=0.8), one("stone_lantern", 21, 42.5, -10.4, "road", scale=0.8),
-          row(FLAGS, 21, 22.0, 54.0, 9.2, 8.0, sides=(1,))]
+    f += [one("road_mirror", 20, 26.0, 8.3, "road"), one("marshal_post", 20, -32.0, 11.5, "road")]
+    f += [one("torii_small", 21, 40.0, -11.1, "road"), one("hokora", 21, 40.0, -14.3, "road"),
+          one("stone_lantern", 21, 37.5, -11.9, "road", scale=0.8), one("stone_lantern", 21, 42.5, -11.9, "road", scale=0.8),
+          row(FLAGS, 21, 22.0, 54.0, 10.7, 8.0, sides=(1,))]
     # masonry retaining walls through the cutting before the summit
-    f += [row("stone_wall", 22, -30.0, 30.0, 9.2, 2.0, sides=(-1, 1)),
-          one("stone_lantern", 22, 34.0, -8.8, "road"), one("jizo", 22, 36.0, -8.5, "road")]
+    f += [row("stone_wall", 22, -30.0, 30.0, 10.7, 2.0, sides=(-1, 1)),
+          one("stone_lantern", 22, 34.0, -10.3, "road"), one("jizo", 22, 36.0, -10.0, "road")]
 
     # ------------------------------------------------------------ summit viewpoint (cp 24)
     # driving west; the view over the lake is on the left (-)
     f += gate(3)
-    f += [one("bench", 24, -6.0, -21.0, "away"), one("bench", 24, 0.0, -22.0, "away"),
-          one("bench", 24, 6.0, -21.0, "away"),
-          one("stone_lantern", 24, -12.0, -11.5, "road"), one("stone_lantern", 24, 12.0, -11.5, "road"),
-          one("torii_small", 24, 16.0, -13.5, "road"), one("hokora", 24, 16.0, -17.5, "road"),
-          one("jizo", 24, 18.0, -16.5, "road"), one("jizo", 24, 18.8, -16.5, "road"),
-          one("kei_truck", 24, -20.0, -15.0, "road", yaw_add=90.0), one("kei_truck", 24, -24.0, -15.5, "road", yaw_add=95.0),
-          one("tent", 24, 26.0, -17.0, "road"), one("vending_machine", 24, -10.0, -15.5, "road"),
-          one("sakura_c", 24, -30.0, -18.0, "road"), one("sakura_a", 24, 32.0, -24.0, "road"),
-          one("marshal_post", 24, 4.0, 9.8, "road")]
-    f += [row(FLAGS, 24, -16.0, 16.0, 9.0, 8.0, sides=(1,)),
-          row("tape_post", 24, -8.0, 10.0, -11.0, 3.05, sides=(-1,)),
-          crowd(24, 0.0, -17.0, 8, 4.5, face="away"), crowd(24, 8.0, -15.0, 5, 3.0)]
+    f += [one("bench", 24, -6.0, -22.5, "away"), one("bench", 24, 0.0, -23.5, "away"),
+          one("bench", 24, 6.0, -22.5, "away"),
+          one("stone_lantern", 24, -12.0, -13.0, "road"), one("stone_lantern", 24, 12.0, -13.0, "road"),
+          one("torii_small", 24, 16.0, -15.0, "road"), one("hokora", 24, 16.0, -19.0, "road"),
+          one("jizo", 24, 18.0, -18.0, "road"), one("jizo", 24, 18.8, -18.0, "road"),
+          one("kei_truck", 24, -20.0, -16.5, "road", yaw_add=90.0), one("kei_truck", 24, -24.0, -17.0, "road", yaw_add=95.0),
+          one("tent", 24, 26.0, -18.5, "road"), one("vending_machine", 24, -10.0, -17.0, "road"),
+          one("sakura_c", 24, -30.0, -19.5, "road"), one("sakura_a", 24, 32.0, -25.5, "road"),
+          one("marshal_post", 24, 4.0, 11.3, "road")]
+    f += [row(FLAGS, 24, -16.0, 16.0, 10.5, 8.0, sides=(1,)),
+          row("tape_post", 24, -8.0, 10.0, -12.5, 3.05, sides=(-1,)),
+          crowd(24, 0.0, -18.5, 8, 4.5, face="away"), crowd(24, 8.0, -16.5, 5, 3.0)]
 
     # ------------------------------------------------------------ high bridge over the ravine (cp 26 .. 27)
-    f += [one("stone_lantern", 26, -4.0, 7.2, "road"), one("stone_lantern", 26, -4.0, -7.2, "road"),
-          one("stone_lantern", 27, 4.0, 7.2, "road"), one("stone_lantern", 27, 4.0, -7.2, "road"),
-          crowd(26, -14.0, 17.0, 9, 4.5), crowd(26, -18.0, -17.0, 7, 4.0), crowd(27, 10.0, 16.5, 8, 4.0),
-          row("tape_post", 26, -26.0, -6.0, 10.8, 3.05, sides=(-1, 1))]
+    f += [one("stone_lantern", 26, -4.0, 8.7, "road"), one("stone_lantern", 26, -4.0, -8.7, "road"),
+          one("stone_lantern", 27, 4.0, 8.7, "road"), one("stone_lantern", 27, 4.0, -8.7, "road"),
+          crowd(26, -14.0, 18.5, 9, 4.5), crowd(26, -18.0, -18.5, 7, 4.0), crowd(27, 10.0, 18.0, 8, 4.0),
+          row("tape_post", 26, -26.0, -6.0, 12.3, 3.05, sides=(-1, 1))]
 
     # ------------------------------------------------------------ gravel stage (cp 28 .. 35)
-    f += [one("tent", 28, -4.0, 15.0, "road"), one("kei_truck", 28, 5.0, 15.5, "road", yaw_add=85.0),
-          one("marshal_post", 28, 0.0, -9.8, "road"), one("traffic_cone", 28, -2.0, 6.4, "road"),
-          one("traffic_cone", 28, 2.0, 6.4, "road"), one("traffic_cone", 28, -2.0, -6.4, "road")]
-    f += bale_stack(28, -8.0, -8.0) + [row(FLAGS, 28, -12.0, 12.0, 9.0, 8.0, sides=(-1, 1)),
-                                       crowd(28, 0.0, 16.0, 7, 4.0)]
-    f += torii_path(29, 20.0, 12.0, 9, 2.5, -1)
+    f += [one("tent", 28, -4.0, 16.5, "road"), one("kei_truck", 28, 5.0, 17.0, "road", yaw_add=85.0),
+          one("marshal_post", 28, 0.0, -11.3, "road"), one("traffic_cone", 28, -2.0, 7.9, "road"),
+          one("traffic_cone", 28, 2.0, 7.9, "road"), one("traffic_cone", 28, -2.0, -7.9, "road")]
+    f += bale_stack(28, -8.0, -9.5) + [row(FLAGS, 28, -12.0, 12.0, 10.5, 8.0, sides=(-1, 1)),
+                                       crowd(28, 0.0, 17.5, 7, 4.0)]
+    f += torii_path(29, 20.0, 13.5, 9, 2.5, -1)
     # fans camping on the bank above the gravel: tent, van and a small crowd behind tape
-    f += [one("tent", 29, 72.0, -22.0, "road"), one("kei_truck", 29, 80.0, -22.5, "along", yaw_add=10.0),
-          crowd(29, 76.0, -17.0, 5, 3.0), row("tape_post", 29, 64.0, 88.0, -11.0, 3.05, sides=(-1,))]
+    f += [one("tent", 29, 72.0, -23.5, "road"), one("kei_truck", 29, 80.0, -24.0, "along", yaw_add=10.0),
+          crowd(29, 76.0, -18.5, 5, 3.0), row("tape_post", 29, 64.0, 88.0, -12.5, 3.05, sides=(-1,))]
     f += gate(4)
     # forestry yard and a mountain shrine in the cedars
-    f += [one("shed", 30, 52.0, -30.0, "road", radius=3.4), one("kei_truck", 30, 44.0, -22.0, "along", yaw_add=15.0, sink=0.25),
-          one("log", 30, 60.0, -18.0, "along"), one("log", 30, 60.0, -18.7, "along"), one("log", 30, 60.0, -19.4, "along"),
-          one("log", 30, 60.3, -18.35, "along", y_offset=0.5), one("log", 30, 60.3, -19.05, "along", y_offset=0.5),
-          one("marshal_post", 30, 30.0, 9.8, "road")]
-    f += [one("torii_large", 31, 70.0, -12.5, "road", sink=0.3), one("stone_lantern", 31, 66.0, -16.0, "road"),
-          one("stone_lantern", 31, 74.0, -16.0, "road"), one("shrine", 31, 70.0, -27.0, "road", sink=0.35, radius=7.0),
-          one("jizo", 31, 62.0, -8.6, "road"), one("jizo", 31, 62.8, -8.6, "road")]
-    f += [one("stone_lantern", 30, 0.0, 8.8, "road"), one("jizo", 30, 2.0, 8.4, "road"),
-          row("tape_post", 31, -10.0, 14.0, 11.0, 3.05, sides=(-1,)), crowd(31, 2.0, -16.0, 8, 4.5),
-          one("shed", 32, 42.0, 24.0, "road", radius=3.4), one("kei_truck", 33, 0.0, -24.0, "along", yaw_add=20.0),
-          one("log", 32, 12.0, 12.5, "along"), one("log", 32, 12.0, 13.2, "along"),
-          one("log", 32, 12.3, 12.85, "along", y_offset=0.5),
-          row("tape_post", 33, -10.0, 14.0, 11.0, 3.05, sides=(1,)), crowd(33, 2.0, 16.5, 8, 4.5),
-          one("hokora", 34, -10.0, -9.2, "road"), one("stone_lantern", 34, -12.0, -8.8, "road", scale=0.8),
-          one("bench", 33, 30.0, -12.0, "road"), one("kei_truck", 33, 40.0, -14.0, "along", yaw_add=-5.0, sink=0.25),
-          crowd(33, 32.0, -16.0, 4, 3.0), one("road_mirror", 33, 58.0, 6.8, "road")]
+    f += [one("shed", 30, 52.0, -31.5, "road", radius=3.4), one("kei_truck", 30, 44.0, -23.5, "along", yaw_add=15.0, sink=0.25),
+          one("log", 30, 60.0, -19.5, "along"), one("log", 30, 60.0, -20.2, "along"), one("log", 30, 60.0, -20.9, "along"),
+          one("log", 30, 60.3, -19.85, "along", y_offset=0.5), one("log", 30, 60.3, -20.55, "along", y_offset=0.5),
+          one("marshal_post", 30, 30.0, 11.3, "road")]
+    f += [one("torii_large", 31, 70.0, -14.0, "road", sink=0.3), one("stone_lantern", 31, 66.0, -17.5, "road"),
+          one("stone_lantern", 31, 74.0, -17.5, "road"), one("shrine", 31, 70.0, -28.5, "road", sink=0.35, radius=7.0),
+          one("jizo", 31, 62.0, -10.1, "road"), one("jizo", 31, 62.8, -10.1, "road")]
+    f += [one("stone_lantern", 30, 0.0, 10.3, "road"), one("jizo", 30, 2.0, 9.9, "road"),
+          row("tape_post", 31, -10.0, 14.0, 12.5, 3.05, sides=(-1,)), crowd(31, 2.0, -17.5, 8, 4.5),
+          one("shed", 32, 42.0, 25.5, "road", radius=3.4), one("kei_truck", 33, 0.0, -25.5, "along", yaw_add=20.0),
+          one("log", 32, 12.0, 14.0, "along"), one("log", 32, 12.0, 14.7, "along"),
+          one("log", 32, 12.3, 14.35, "along", y_offset=0.5),
+          row("tape_post", 33, -10.0, 14.0, 12.5, 3.05, sides=(1,)), crowd(33, 2.0, 18.0, 8, 4.5),
+          one("hokora", 34, -10.0, -10.7, "road"), one("stone_lantern", 34, -12.0, -10.3, "road", scale=0.8),
+          one("bench", 33, 30.0, -13.5, "road"), one("kei_truck", 33, 40.0, -15.5, "along", yaw_add=-5.0, sink=0.25),
+          crowd(33, 32.0, -17.5, 4, 3.0), one("road_mirror", 33, 58.0, 8.3, "road")]
     f += gate(5)
-    f += [one("marshal_post", 35, 0.0, 9.8, "road"), one("traffic_cone", 35, -2.0, 6.4, "road"),
-          one("traffic_cone", 35, 2.0, 6.4, "road")] + bale_stack(35, 6.0, -8.0)
+    f += [one("marshal_post", 35, 0.0, 11.3, "road"), one("traffic_cone", 35, -2.0, 7.9, "road"),
+          one("traffic_cone", 35, 2.0, 7.9, "road")] + bale_stack(35, 6.0, -9.5)
     # back among the farms: a barn, a hay rack and a parked truck on the way to the village
-    f += [one("farmhouse_b", 35, 44.0, 24.0, "road", sink=0.35, radius=9.0), one("hazagi", 35, 30.0, 16.0, "road"),
-          one("kei_truck", 35, 56.0, 14.5, "along", yaw_add=170.0), one("koinobori", 35, 36.0, 22.0, "road", yaw_add=50.0)]
+    f += [one("farmhouse_b", 35, 44.0, 25.5, "road", sink=0.35, radius=9.0), one("hazagi", 35, 30.0, 17.5, "road"),
+          one("kei_truck", 35, 56.0, 16.0, "along", yaw_add=170.0), one("koinobori", 35, 36.0, 23.5, "road", yaw_add=50.0)]
     return f
 
 
@@ -340,18 +340,18 @@ KEEP_OUT = [(-120, 338, 40), (-185, 325, 32), (-45, 322, 42), (-392, 345, 26), (
 # layout assumes these sizes.
 GARAGE = {
     "road_at": 4, "offset_m": -28.0,  # the display spot, along the road
-    "lateral": -11.0,                 # ... and beside it: the car stands 11 m left of the centreline
-    "lot": {"lateral": -10.0, "width": 14.0, "length": 38.0, "corner": 6.0, "surface": "tarmac"},
-    "workshop": {"lateral": -22.0, "width": 15.0, "depth": 11.0, "blend": 8.0},
+    "lateral": -12.5,                 # ... and beside it: the car stands 12.5 m left of the centreline
+    "lot": {"lateral": -11.5, "width": 14.0, "length": 38.0, "corner": 6.0, "surface": "tarmac"},
+    "workshop": {"lateral": -23.5, "width": 15.0, "depth": 11.0, "blend": 8.0},
     "keep_out": 3.0,
     # sakura and lanterns around it (placed like the dressing, outside the keep-out)
     "dressing": [
-        one("sakura_a", 4, -40.0, -36.0, "road"), one("sakura_c", 4, -24.0, -37.5, "road"),
-        one("sakura_b", 4, -12.0, -35.0, "road"), one("sakura_young", 4, -54.0, -24.0, "road"),
-        one("sakura_young", 4, -3.0, -26.0, "road", scale=1.15),
-        one("stone_lantern", 4, -52.5, -8.0, "road"), one("stone_lantern", 4, -4.0, -8.5, "road"),
-        one("lantern_string", 4, -54.0, -14.0, "along", yaw_add=90.0),
-        one("bench", 4, -2.5, -17.0, "road"), one("vending_machine", 4, -2.8, -20.8, "road"),
+        one("sakura_a", 4, -40.0, -37.5, "road"), one("sakura_c", 4, -24.0, -39.0, "road"),
+        one("sakura_b", 4, -12.0, -36.5, "road"), one("sakura_young", 4, -54.0, -25.5, "road"),
+        one("sakura_young", 4, -3.0, -27.5, "road", scale=1.15),
+        one("stone_lantern", 4, -52.5, -9.5, "road"), one("stone_lantern", 4, -4.0, -10.0, "road"),
+        one("lantern_string", 4, -54.0, -15.5, "along", yaw_add=90.0),
+        one("bench", 4, -2.5, -18.5, "road"), one("vending_machine", 4, -2.8, -22.3, "road"),
     ],
 }
 
@@ -366,7 +366,7 @@ SPEC = {
     "play_half": 600.0,
     "road": {
         "points": POINTS,
-        "width": 7.0,
+        "width": 10.0,
         "verge": 1.4,
         "surface": "tarmac",
         "start_cp": 4,
@@ -446,39 +446,39 @@ SPEC = {
     "features": DRESSING,
     "scatter": [
         {"name": "sakura_road", "exclude": KEEP_OUT, "props": ["sakura_a", "sakura_b", "sakura_c"], "weights": {"sakura_c": 0.6},
-         "spacing": 10.0, "density": 0.9, "road_min": 8.5, "road_max": 55.0, "road_peak": (12.0, 55.0),
+         "spacing": 10.0, "density": 0.9, "road_min": 5.0, "road_max": 51.5, "road_peak": (8.5, 51.5),
          "mask": {"scale": 170.0, "threshold": -0.08, "seed": 1}, "slope_max": 30.0, "scale": (0.85, 1.2),
          "sink": 0.3},
         {"name": "sakura_lake", "exclude": KEEP_OUT, "props": ["sakura_a", "sakura_c"], "spacing": 13.0, "density": 0.55,
-         "road_min": 9.0, "regions": [{"circle": (-170, 420, 280)}, {"circle": (40, 230, 150)}],
+         "road_min": 5.5, "regions": [{"circle": (-170, 420, 280)}, {"circle": (40, 230, 150)}],
          "slope_max": 28.0, "scale": (0.9, 1.25), "sink": 0.3},
         {"name": "cedar_forest", "exclude": KEEP_OUT, "props": ["cedar_a", "cedar_b"], "spacing": 8.5, "density": 0.85,
-         "road_min": 12.0, "mask": {"scale": 170.0, "threshold": 0.02, "seed": 1, "sign": -1.0},
+         "road_min": 8.5, "mask": {"scale": 170.0, "threshold": 0.02, "seed": 1, "sign": -1.0},
          "h_min": 35.0, "slope_max": 40.0, "scale": (0.85, 1.3), "sink": 0.3},
-        {"name": "pines", "exclude": KEEP_OUT, "props": ["pine_a", "pine_b"], "spacing": 16.0, "density": 0.35, "road_min": 10.0,
+        {"name": "pines", "exclude": KEEP_OUT, "props": ["pine_a", "pine_b"], "spacing": 16.0, "density": 0.35, "road_min": 6.5,
          "slope_max": 35.0, "scale": (0.8, 1.2), "sink": 0.3},
-        {"name": "bamboo", "exclude": KEEP_OUT, "props": ["bamboo_clump"], "spacing": 13.0, "density": 0.45, "road_min": 9.0,
+        {"name": "bamboo", "exclude": KEEP_OUT, "props": ["bamboo_clump"], "spacing": 13.0, "density": 0.45, "road_min": 5.5,
          "regions": [{"circle": (80, 240, 130)}, {"circle": (-330, -60, 110)}], "scale": (0.9, 1.2), "sink": 0.2},
         {"name": "mountain_forest", "props": ["cedar_a", "cedar_b", "pine_a"], "spacing": 15.0, "density": 0.6,
-         "edge_min": 520.0, "edge_max": 780.0, "bounds": 790.0, "road_min": 60.0, "slope_max": 44.0,
+         "edge_min": 520.0, "edge_max": 780.0, "bounds": 790.0, "road_min": 56.5, "slope_max": 44.0,
          "scale": (1.0, 1.5), "sink": 0.4},
         {"name": "bushes", "exclude": KEEP_OUT, "props": ["bush_a", "bush_b", "azalea"], "weights": {"azalea": 1.4}, "spacing": 7.0,
-         "density": 0.35, "road_min": 6.2, "road_max": 30.0, "slope_max": 35.0, "scale": (0.8, 1.3)},
+         "density": 0.35, "road_min": 2.7, "road_max": 26.5, "slope_max": 35.0, "scale": (0.8, 1.3)},
         {"name": "rocks_slope", "exclude": KEEP_OUT, "props": ["rock_a", "rock_b", "rock_c", "rock_d", "rock_e"], "spacing": 13.0,
-         "density": 0.4, "road_min": 7.0, "slope_min": 16.0, "slope_max": 60.0, "scale": (0.7, 1.6), "sink": 0.3},
-        {"name": "cliffs", "props": ["cliff_a", "cliff_b"], "spacing": 26.0, "density": 0.5, "road_min": 9.0,
+         "density": 0.4, "road_min": 3.5, "slope_min": 16.0, "slope_max": 60.0, "scale": (0.7, 1.6), "sink": 0.3},
+        {"name": "cliffs", "props": ["cliff_a", "cliff_b"], "spacing": 26.0, "density": 0.5, "road_min": 5.5,
          "slope_min": 28.0, "slope_max": 70.0, "scale": (0.8, 1.4), "sink": 0.8},
         {"name": "boulders_river", "props": ["boulder", "rock_a", "rock_d"], "spacing": 9.0, "density": 0.45,
-         "water_max": 9.0, "water_clear": 0.5, "road_min": 8.0, "scale": (0.6, 1.3), "sink": 0.3},
+         "water_max": 9.0, "water_clear": 0.5, "road_min": 4.5, "scale": (0.6, 1.3), "sink": 0.3},
         {"name": "reeds", "props": ["reeds"], "spacing": 3.2, "density": 0.55, "water_max": 5.0,
-         "water_clear": 0.3, "road_min": 7.0, "occupy": False, "scale": (0.8, 1.3), "sink": 0.1},
-        {"name": "ferns", "props": ["fern"], "spacing": 5.0, "density": 0.35, "road_min": 6.0, "road_max": 90.0,
+         "water_clear": 0.3, "road_min": 3.5, "occupy": False, "scale": (0.8, 1.3), "sink": 0.1},
+        {"name": "ferns", "props": ["fern"], "spacing": 5.0, "density": 0.35, "road_min": 2.5, "road_max": 86.5,
          "mask": {"scale": 170.0, "threshold": 0.02, "seed": 1, "sign": -1.0}, "occupy": False, "sink": 0.05},
-        {"name": "logs", "exclude": KEEP_OUT, "props": ["log", "stump"], "spacing": 30.0, "density": 0.35, "road_min": 8.0,
-         "road_max": 70.0, "sink": 0.05},
-        {"name": "grass", "props": ["grass_tuft"], "spacing": 3.4, "density": 0.4, "road_min": 5.8,
-         "road_max": 85.0, "occupy": False, "scale": (0.7, 1.4), "sink": 0.05},
-        {"name": "flowers", "props": ["flowers_patch"], "spacing": 6.0, "density": 0.28, "road_min": 5.8,
-         "road_max": 45.0, "occupy": False, "scale": (0.8, 1.3), "sink": 0.05},
+        {"name": "logs", "exclude": KEEP_OUT, "props": ["log", "stump"], "spacing": 30.0, "density": 0.35, "road_min": 4.5,
+         "road_max": 66.5, "sink": 0.05},
+        {"name": "grass", "props": ["grass_tuft"], "spacing": 3.4, "density": 0.4, "road_min": 2.3,
+         "road_max": 81.5, "occupy": False, "scale": (0.7, 1.4), "sink": 0.05},
+        {"name": "flowers", "props": ["flowers_patch"], "spacing": 6.0, "density": 0.28, "road_min": 2.3,
+         "road_max": 41.5, "occupy": False, "scale": (0.8, 1.3), "sink": 0.05},
     ],
 }

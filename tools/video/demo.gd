@@ -70,11 +70,11 @@ const CUTS := {
 ## own): [lap progress of the peak, half length (m), lead (m), peak lateral offset (m, + right)].
 ## The autopilot's line bends out along a cosine bump; the car answers about `lead` metres late
 ## and swings a little past the peak. Hanami: the left-hand tarmac hairpin under the roadside
-## camera (cut 3) - the car slides wide into the round hay bales lining the outside (lat +8.4,
+## camera (cut 3) - the car slides wide into the round hay bales lining the outside (lat +9.9,
 ## 655-703 m) and ploughs out at ~30 km/h; nothing rigid stands within 9 m of the line there.
 ## Headless (Sakura, demo pace) it smashes a dozen bales and never touches anything rigid.
 const SWERVES := {
-	"hanami": [[672.0, 30.0, 4.0, 5.0]],
+	"hanami": [[672.0, 30.0, 4.0, 6.5]],
 	"momiji": [],
 }
 ## Lap progress where the chase camera and HUD come back on Momiji (before the pause).

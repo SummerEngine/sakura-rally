@@ -329,7 +329,9 @@ func _begin_shot(i: int, side: float, anchor_s: float) -> void:
 			while d > -ahead:
 				sights.push_front(d)
 				d -= 15.0
-			_anchor = _clear_anchor(_anchor_s, _side * 6.5, 1.1, 5.0, sights)
+			# 1.6 m past the verge, whatever the road's width (10 m loops, 7 m branch)
+			var edge := track.half_width(track.index_at_abs(_anchor_s)) + track.verge
+			_anchor = _clear_anchor(_anchor_s, _side * (edge + 1.6), 1.1, 5.0, sights)
 		"scenic":
 			_anchor_s = s + 110.0 if is_nan(anchor_s) else anchor_s
 			_anchor = _clear_anchor(_anchor_s, _side * 38.0, 14.0, 12.0, [-60.0, -35.0, -10.0, 15.0, 40.0])

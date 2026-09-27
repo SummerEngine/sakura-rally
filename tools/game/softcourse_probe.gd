@@ -27,6 +27,13 @@ const WINDOW := 0.6
 ## car runs up to a metre wide of its lane with the nose turned out (on the liaison it reached a
 ## maple 2.3 m behind the bale row).
 const ROW_SWING := 1.2
+## A row pass carries on this far (m) past the row's last prop on the row's offset, so the lane
+## is checked clear that far too (a tree 12 m past a hairpin's tyre wall stopped the car dead).
+const ROW_RUN_OUT := 25.0
+## A row pass moves out onto the row's offset this far (m) before the row, and the lane is checked
+## clear from there: moving out later, into a hairpin wall on the 10 m Hanami loop, the car ran
+## 2-4 m wide of its lane into the trees behind the wall.
+const ROW_MOVE_OUT := 60.0
 
 var opts := {"map": "hanami", "car": "sakura", "kmh": "85"}
 ## Heavy dressing: a light row leaves these out; the heavy row is a tyre or bale wall.
@@ -246,7 +253,7 @@ func _run() -> void:
 			r = {"s0": f[0], "s1": f[1], "lat": f[2], "names": r["names"]}
 		var label := "heavy_row" if heavy else "light_row"
 		print("ROW %s  %s=%.1f,%.1f,%.2f  %d props: %s" % [label, label, r["s0"], r["s1"], r["lat"], r["names"].size(), _tally(r["names"])])
-		var a := await _pass(label, r["s0"] - 90.0, r["s1"] + 25.0, r["lat"], Callable(), r["s0"] - 35.0)
+		var a := await _pass(label, r["s0"] - 90.0, r["s1"] + ROW_RUN_OUT, r["lat"], Callable(), r["s0"] - ROW_MOVE_OUT)
 		if not heavy:
 			row = r
 		if soft != null:
@@ -362,10 +369,10 @@ func _find_row(heavy: bool) -> Dictionary:
 		var reach := sel.size() > best_n and float(f["s"]) > 150.0
 		var l_out := float(f["hw"]) + 0.5
 		while reach and l_out < absf(lat) + 0.5:
-			reach = _lane_clear(float(f["s"]) - 35.0, s1 + 10.0, signf(lat) * minf(l_out, absf(lat)))
+			reach = _lane_clear(float(f["s"]) - ROW_MOVE_OUT, s1 + ROW_RUN_OUT, signf(lat) * minf(l_out, absf(lat)))
 			l_out += 1.0
 		if reach:
-			reach = _lane_clear(float(f["s"]) - 35.0, s1 + 10.0, signf(lat) * (absf(lat) + ROW_SWING))
+			reach = _lane_clear(float(f["s"]) - ROW_MOVE_OUT, s1 + ROW_RUN_OUT, signf(lat) * (absf(lat) + ROW_SWING))
 		if reach:
 			best_n = sel.size()
 			best = {"s0": f["s"], "s1": s1, "lat": lat, "names": sel}
@@ -510,7 +517,28 @@ func _pass(label: String, s_from: float, s_to: float, lat: float, each_tick: Cal
 	return result
 
 
-## Mapgen direction boards (along the liaison road): straight into the first one, from 30 m in front of it.
+## No rigid collider in a car-wide strip from `dist` metres in front of a board to 2 m short of it.
+func _approach_clear(base: Vector3, face: Vector3, yaw: float, dist: float) -> bool:
+	var space := map.get_world_3d().direct_space_state
+	var q := PhysicsShapeQueryParameters3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(2.2, 1.0, 4.0)
+	q.shape = box
+	q.collision_mask = MapWorld.LAYER_PROPS
+	var d := dist
+	while d > 2.0:
+		var p := base + face * d
+		p.y = map.ground_height(p.x, p.z, p.y + 20.0) + 0.8
+		q.transform = Transform3D(Basis(Vector3.UP, yaw), p)
+		if not space.intersect_shape(q, 1).is_empty():
+			return false
+		d -= 3.0
+	return true
+
+
+## Mapgen direction boards (along the liaison road): straight into the first one, from 30 m in
+## front of it, or nearer when a rigid prop stands in that approach (the board stands off the
+## road among the roadside trees; like a row's lane, the run-up must be clear to measure it).
 func _sign_pass() -> void:
 	var sign_id := -1
 	for id in soft.smashable_count():
@@ -525,7 +553,10 @@ func _sign_pass() -> void:
 	var yaw: float = sd["yaw"]
 	var base := Vector3(sd["base"][0], sd["base"][1], sd["base"][2])
 	var face := Basis(Vector3.UP, yaw).z
-	var start := base + face * 30.0
+	var run_up := 30.0
+	while run_up > 10.0 and not _approach_clear(base, face, yaw, run_up):
+		run_up -= 5.0
+	var start := base + face * run_up
 	start.y = map.ground_height(start.x, start.z) + 0.2
 	_cut()
 	car.reset_to(Transform3D(Basis(Vector3.UP, yaw), start))
@@ -560,8 +591,8 @@ func _sign_pass() -> void:
 	for e in events:
 		if e["kind"] == SoftCourse.ROAD_SIGN:
 			ev = e
-	print("SIGN %s  hit %s  speed %.1f km/h  loss %.1f %%  yaw step %.3f rad/s  airborne max %.2f s  debris pieces %d  sign node visible %s (%d text lines, hidden with it)" % [
-		holder.name, hit_t >= 0.0, float(ev.get("v", 0.0)) * 3.6, float(ev.get("loss", 0.0)) * 100.0,
+	print("SIGN %s  run-up %.0f m  hit %s  speed %.1f km/h  loss %.1f %%  yaw step %.3f rad/s  airborne max %.2f s  debris pieces %d  sign node visible %s (%d text lines, hidden with it)" % [
+		holder.name, run_up, hit_t >= 0.0, float(ev.get("v", 0.0)) * 3.6, float(ev.get("loss", 0.0)) * 100.0,
 		max_yaw_step, air, soft.live_debris() - debris0, holder.visible, labels])
 	if hit_t < 0.0 or holder.visible:
 		failures.append("road sign did not break")
@@ -585,7 +616,7 @@ func _restoration(row: Dictionary) -> void:
 	var debris_before: int = soft.live_debris()
 	# break a few again so the check starts dirty
 	if broken_before == 0:
-		await _pass("rebreak", row["s0"] - 90.0, row["s1"] + 25.0, row["lat"], Callable(), row["s0"] - 35.0)
+		await _pass("rebreak", row["s0"] - 90.0, row["s1"] + ROW_RUN_OUT, row["lat"], Callable(), row["s0"] - ROW_MOVE_OUT)
 		broken_before = soft.broken_count()
 		debris_before = soft.live_debris()
 	var signs_before := _hidden_signs()
@@ -599,7 +630,7 @@ func _restoration(row: Dictionary) -> void:
 	if soft.broken_count() != 0 or soft.live_debris() != 0 or hidden != 0 or _hidden_signs() != 0:
 		failures.append("restore after reset_to")
 	# stage restart: Main frees the car and spawns a new one
-	await _pass("rebreak", row["s0"] - 90.0, row["s1"] + 25.0, row["lat"], Callable(), row["s0"] - 35.0)
+	await _pass("rebreak", row["s0"] - 90.0, row["s1"] + ROW_RUN_OUT, row["lat"], Callable(), row["s0"] - ROW_MOVE_OUT)
 	var b2: int = soft.broken_count()
 	var d2: int = soft.live_debris()
 	_cut()
