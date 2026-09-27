@@ -1,14 +1,15 @@
 extends SceneTree
 ## The trained driver in the real game, hands off: the title, then a stage started through
-## Game.request_start with AutoDrive's auto-drive on (and its ghosts, the training generations,
-## racing along) - what a player gets with I / G / V, driven by a harness. A check needs no
-## pixels, so it runs headless:
+## Game.request_start, the I key pressed at the countdown (auto-drive, with its notice) and
+## AutoDrive's ghosts, the training generations, racing along - what a player gets with
+## I / G / V, driven by a harness. A check needs no pixels, so it runs headless:
 ##
-##   timeout 900 nice -n 10 $S --headless --disable-crash-handler --audio-driver Dummy --fixed-fps 60 \
+##   timeout -k 10 900 nice -n 10 $S --headless --disable-crash-handler --audio-driver Dummy --fixed-fps 60 \
 ##       --path . -s res://tools/rl/watch.gd -- route=hanami cycle=8
 ##
-## Pictures need `--summer-offscreen` instead of `--headless`: stills=<dir> saves a PNG just before
-## every camera cut and on the results card, `--write-movie <file>.avi` records footage. Rendered
+## Pictures need `--summer-offscreen` instead of `--headless`: stills=<dir> saves a PNG after the
+## I key, of the grid from the last ghost's camera during the countdown, just before every camera
+## cut and on the results card; `--write-movie <file>.avi` records footage. Rendered
 ## runs currently take focus from fullscreen apps (docs/CONTRACTS.md): shoot everything in one run.
 ##
 ## Options: route, mode (time_trial | free_roam), ghosts (1: the generations race along), cycle
@@ -49,16 +50,29 @@ func _run() -> void:
 		printerr("watch: no driver (%s)" % ai.DRIVER)
 		game.request_quit(2)
 		return
-	ai.auto_drive = true
 	ai.ghosts_on = opts["ghosts"] == "1"
 	await _seconds(2.0)
 	game.request_start(str(opts["route"]), str(opts["mode"]))
 	await _until(func() -> bool: return game.state in [game.State.COUNTDOWN, game.State.RACING, game.State.FREE_ROAM], 90.0)
+	_press(KEY_I)
+	if not ai.auto_drive:
+		printerr("watch: the I key did not turn auto-drive on")
+		game.request_quit(4)
+		return
 	print("WATCH start route=%s mode=%s policy=%s ghosts=%d" % [opts["route"], opts["mode"], ai.policy.path.get_file(), ai.ghosts.size()])
 	var t0 := clock
 	var result := {}
 	game.race_finished.connect(func(r: Dictionary) -> void: result.merge(r))
 	var cycle := float(opts["cycle"])
+	await _seconds(0.3)
+	_still("start")
+	if not ai.ghosts.is_empty() and game.state == game.State.COUNTDOWN:
+		# The grid from the last ghost's camera: every car on the line is ahead of it.
+		for i in ai.ghosts.size():
+			ai.watch_next()
+		await _seconds(0.5)
+		_still("grid")
+		ai.watch_next()
 	var next_cut := t0 + cycle
 	var done := func() -> bool: return game.state in [game.State.FINISHED, game.State.ARRIVED]
 	while clock - t0 < float(opts["seconds"]) and not done.call():
@@ -89,6 +103,17 @@ func _still(label: String) -> void:
 	root.get_texture().get_image().save_png(file)
 	print("WATCH still %s" % file)
 	_shots += 1
+
+
+## One key press and release, delivered to the game's input like a keyboard's (AutoDrive reads
+## physical keys).
+func _press(key: Key) -> void:
+	for down: bool in [true, false]:
+		var ev := InputEventKey.new()
+		ev.physical_keycode = key
+		ev.keycode = key
+		ev.pressed = down
+		root.push_input(ev)
 
 
 func _seconds(s: float) -> void:

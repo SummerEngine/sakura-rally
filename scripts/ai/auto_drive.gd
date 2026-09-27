@@ -32,6 +32,9 @@ const GHOST_LIVERIES: Array[Color] = [Color("7fc8f8"), Color("f9a03f"), Color("b
 const GRID_BACK_M := 12.0
 const GRID_GAP_M := 7.0
 const GRID_LAT_M := 1.6
+## A ghost's label fades out beyond LABEL_RANGE_M from the camera: the labels keep their size and
+## draw through hills, so the tags of ghosts far down the road piled up into one smear.
+const LABEL_RANGE_M := 80.0
 
 var auto_drive: bool = false
 var ghosts_on: bool = false
@@ -228,6 +231,9 @@ func _spawn_ghosts(car: Car, track: Track) -> void:
 		label.outline_size = 8
 		label.position = Vector3(0.0, 2.1, 0.0)
 		label.no_depth_test = true
+		label.visibility_range_end = LABEL_RANGE_M
+		label.visibility_range_end_margin = 20.0
+		label.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 		ghost.add_child(label)
 		get_parent().add_child(ghost)
 		var c := GHOST_LIVERIES[i % GHOST_LIVERIES.size()]
