@@ -1,8 +1,8 @@
 extends CanvasLayer
 ## The whole UI layer (scenes/ui/ui_root.tscn). The Main scene instantiates it once; it
 ## follows the Game autoload (state_changed, session_started, countdown_tick,
-## checkpoint_passed, race_finished, paused_changed, notice, campaign_continue_requested,
-## campaign_finished) and switches screens itself.
+## checkpoint_passed, race_finished, race_classification_changed, paused_changed, notice,
+## campaign_continue_requested, campaign_finished) and switches screens itself.
 ##
 ## API for Main (see docs/UI.md):
 ##   await ui.transition_out(map_id)  # ink covers the screen; load / unload behind it
@@ -85,6 +85,7 @@ func _ready() -> void:
 	game.countdown_tick.connect(_on_countdown_tick)
 	game.checkpoint_passed.connect(_on_checkpoint_passed)
 	game.race_finished.connect(_on_race_finished)
+	game.race_classification_changed.connect(results.update_classification)
 	game.paused_changed.connect(_on_paused_changed)
 	game.notice.connect(_on_notice)
 	game.campaign_finished.connect(finale.open)

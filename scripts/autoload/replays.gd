@@ -14,9 +14,10 @@ extends Node
 ## velocities, gear, rpm, wheels (contact, surface, spin, steer, travel), the route distance and
 ## lateral offset, the checkpoint and clock, and the camera of the last rendered frame. Events
 ## (state changes, countdown, checkpoints, finish, arrival, notices such as wrong way and
-## off-route, impacts, landings, resets, smashes, pauses, camera and settings changes) carry
-## their time. Frames and events go to a memory buffer; every BLOCK_SECONDS it is compressed and
-## appended to the file on a worker thread, so nothing on the main thread touches the disk.
+## off-route, impacts, bumps from other cars, landings, resets, smashes, pauses, camera and
+## settings changes) carry their time. Frames and events go to a memory buffer; every
+## BLOCK_SECONDS it is compressed and appended to the file on a worker thread, so nothing on the
+## main thread touches the disk.
 ##
 ## Player runs record by default. Tool runs (`-s` scripts) never record unless a tool asks:
 ## `Replays.record_to(dir)`, or the command-line user argument `replays=<dir>`; either way never
@@ -376,6 +377,7 @@ func _open(car: Car) -> void:
 	# The first frame is written before the next draw: it gets the camera on screen now.
 	_sample_camera()
 	car.impact.connect(_on_impact)
+	car.bumped.connect(_on_bumped)
 	car.landed.connect(_on_landed)
 	if _session != null and _session.has_signal(&"reset_needed"):
 		_session.reset_needed.connect(_on_reset_needed)
@@ -398,6 +400,8 @@ func _close(reason: String) -> void:
 	if is_instance_valid(_car):
 		if _car.impact.is_connected(_on_impact):
 			_car.impact.disconnect(_on_impact)
+		if _car.bumped.is_connected(_on_bumped):
+			_car.bumped.disconnect(_on_bumped)
 		if _car.landed.is_connected(_on_landed):
 			_car.landed.disconnect(_on_landed)
 	if is_instance_valid(_session) and _session.has_signal(&"reset_needed") \
@@ -567,6 +571,12 @@ func _flush_block() -> void:
 
 func _on_impact(strength: float, point: Vector3) -> void:
 	_event({"type": "impact", "strength": strength, "point": point, "kmh": _car.speed_kmh})
+
+
+## Another car hit the recorded one (a race); `other` is that car's node name.
+func _on_bumped(strength: float, point: Vector3, other: Car) -> void:
+	_event({"type": "bump", "strength": strength, "point": point, "kmh": _car.speed_kmh,
+			"other": String(other.name) if is_instance_valid(other) else ""})
 
 
 func _on_landed(strength: float) -> void:

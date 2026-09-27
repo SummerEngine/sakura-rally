@@ -12,6 +12,8 @@ signal menu_requested
 signal session_started(map_id: String, mode: String)
 signal countdown_tick(value: int) ## 3, 2, 1, then 0 = GO
 signal race_started
+## delta_to_best: in a time trial the split against the record's (NAN: no record); in a race the
+## interval to the car ahead, negative when leading (minus the lead over the second car).
 signal checkpoint_passed(index: int, total: int, split_time: float, delta_to_best: float)
 signal race_finished(result: Dictionary)
 signal paused_changed(paused: bool)
@@ -24,6 +26,9 @@ signal campaign_continue_requested
 signal campaign_leg_started(index: int, leg: Dictionary)
 signal arrived ## the liaison car reached Momiji's grid (re-emitted from RaceSession.arrived)
 signal campaign_finished(summary: Dictionary)
+## Race: the classification changed after the player finished (a rival crossed the line); rows as
+## in RaceField.classification().
+signal race_classification_changed(rows: Array)
 
 ## LIAISON: the untimed drive from Hanami's finish on to Momiji's grid. ARRIVED: the car comes to
 ## rest there and the arrival card waits for the player to start the stage
@@ -36,6 +41,10 @@ const MODE_FREE_ROAM := "free_roam"
 ## Untimed drive between two campaign stages along the world's `liaison` route (open road, ends
 ## at the next stage's grid).
 const MODE_LIAISON := "liaison"
+## Two laps of a stage loop from a standing start against the campaign's rivals (RIVALS, at their
+## pace on that stage), cars colliding (Car.car_contacts); Main builds the grid and the RaceField.
+const MODE_RACE := "race"
+const RACE_LAPS := 2
 
 const SAVE_PATH := "user://sakura_rally.cfg"
 
@@ -105,15 +114,23 @@ const CAMPAIGN: Array[Dictionary] = [
 	{"map": "momiji", "kind": "stage", "code": "SS2", "title": "Momiji Valley", "title_jp": "紅葉谷", "kanji": "秋"},
 ]
 
-## Fictional rivals of the campaign classification. "pace": one factor per campaign stage (in
-## CAMPAIGN order) applied to that map's gold time.
+## Fictional rivals of the campaign classification, who are also the field of a race. "pace": one
+## factor per campaign stage (in CAMPAIGN order) applied to that map's gold time: the campaign's
+## stage times and, in a race on that stage, the lap time their driver is set to. "car" and
+## "colors" (primary, secondary): what they race in.
 const RIVALS: Array[Dictionary] = [
-	{"name": "Ren Takeda", "name_jp": "武田蓮", "team": "Kitsune Works", "pace": [0.97, 0.99]},
-	{"name": "Aoi Fujimura", "name_jp": "藤村葵", "team": "Team Hotaru", "pace": [1.00, 0.97]},
-	{"name": "Kenji Hayashi", "name_jp": "林健二", "team": "Shirakaba Racing", "pace": [1.03, 1.05]},
-	{"name": "Mei Sakamoto", "name_jp": "坂本芽衣", "team": "Tsubame Motorsport", "pace": [1.08, 1.04]},
-	{"name": "Daichi Ono", "name_jp": "小野大地", "team": "Ono Garage", "pace": [1.13, 1.16]},
-	{"name": "Hana Kobayashi", "name_jp": "小林花", "team": "Team Tanpopo", "pace": [1.22, 1.25]},
+	{"name": "Ren Takeda", "name_jp": "武田蓮", "team": "Kitsune Works", "pace": [0.97, 0.99],
+			"car": "hayate", "colors": [Color("e8742c"), Color("f5f0e6")]},
+	{"name": "Aoi Fujimura", "name_jp": "藤村葵", "team": "Team Hotaru", "pace": [1.00, 0.97],
+			"car": "sakura", "colors": [Color("1f5f5b"), Color("c9e265")]},
+	{"name": "Kenji Hayashi", "name_jp": "林健二", "team": "Shirakaba Racing", "pace": [1.03, 1.05],
+			"car": "hayate", "colors": [Color("5b3f99"), Color("d9d9de")]},
+	{"name": "Mei Sakamoto", "name_jp": "坂本芽衣", "team": "Tsubame Motorsport", "pace": [1.08, 1.04],
+			"car": "sakura", "colors": [Color("1e2a5a"), Color("d8342c")]},
+	{"name": "Daichi Ono", "name_jp": "小野大地", "team": "Ono Garage", "pace": [1.13, 1.16],
+			"car": "hayate", "colors": [Color("f2c230"), Color("2b2a33")]},
+	{"name": "Hana Kobayashi", "name_jp": "小林花", "team": "Team Tanpopo", "pace": [1.22, 1.25],
+			"car": "sakura", "colors": [Color("8fd3c1"), Color("f7d64a")]},
 ]
 
 const DEFAULT_SETTINGS := {
@@ -144,6 +161,8 @@ var persistent := true
 ## Set by the Main scene / race session while a map is loaded.
 var player_car: Node = null ## RigidBody3D with scripts/vehicle/car.gd
 var session: Node = null ## scripts/game/race_session.gd
+## The race in progress (scripts/game/race_field.gd; Main, MODE_RACE only).
+var race: Node = null
 ## True once the AI driver (scripts/ai/auto_drive.gd) has had the player's car in the run in
 ## progress; AutoDrive clears it at each countdown. Such a finish sets no record and no medal.
 var ai_drove: bool = false
@@ -281,12 +300,32 @@ func notify_checkpoint(index: int, total: int, split_time: float) -> void:
 	checkpoint_passed.emit(index, total, split_time, delta)
 
 
+## Race: the player's car passed checkpoint `index` of the lap (the last is the lap line) at race
+## time `split_time`; `interval` as checkpoint_passed's delta_to_best.
+func notify_race_checkpoint(index: int, total: int, split_time: float, interval: float) -> void:
+	checkpoint_passed.emit(index, total, split_time, interval)
+
+
+## Race: a rival finished after the player (the results card fills in its row).
+func notify_race_classification(rows: Array) -> void:
+	race_classification_changed.emit(rows)
+
+
 ## result must contain "time" (float) and "splits" (Array[float]); extra keys pass through.
-## Adds "best_time", "previous_best", "is_record", "medal" ("gold"/"silver"/"bronze"/""),
-## "ai_drove" (the AI driver had the car: no record, no medal).
+## Adds "map_id" and "ai_drove" (the AI driver had the car).
+## A race (MODE_RACE; RaceField's "position", "field", "laps", "best_lap", "classification" pass
+## through) adds "race": true and sets no record and no medal: its laps are driven in traffic.
+## A time trial adds "best_time", "previous_best", "is_record", "medal"
+## ("gold"/"silver"/"bronze"/""); a run the AI driver had sets no record and no medal.
 ## A campaign stage also records the time in the campaign progress and adds "campaign": true,
 ## "leg" (index), "standing" and "field" (rally position after this stage, of how many).
 func notify_finished(result: Dictionary) -> void:
+	result["map_id"] = map_id
+	result["ai_drove"] = ai_drove
+	if mode == MODE_RACE:
+		result["race"] = true
+		race_finished.emit(result)
+		return
 	var t: float = result.get("time", 0.0)
 	var rec: Dictionary = records.get(map_id, {})
 	var previous: float = rec.get("time", INF)
@@ -297,8 +336,6 @@ func notify_finished(result: Dictionary) -> void:
 	result["best_time"] = previous if ai_drove else minf(t, previous)
 	result["is_record"] = is_record
 	result["medal"] = "" if ai_drove else medal_for(map_id, t)
-	result["map_id"] = map_id
-	result["ai_drove"] = ai_drove
 	var leg := campaign_current_leg()
 	result["campaign"] = leg.get("kind", "") == "stage" and leg["map"] == map_id
 	if result["campaign"]:
@@ -458,6 +495,18 @@ func medal_for(id: String, t: float) -> String:
 	if t <= medals["bronze"]:
 		return "bronze"
 	return ""
+
+
+## Lap time a rival is set to on a stage: its "pace" on that campaign stage times the stage's gold
+## (a race's field).
+func rival_lap_time(rival: Dictionary, stage_id: String) -> float:
+	var k := 0
+	for leg in CAMPAIGN:
+		if leg["kind"] == "stage":
+			if leg["map"] == stage_id:
+				return float((get_map(stage_id)["medals"] as Dictionary)["gold"]) * float(rival["pace"][k])
+			k += 1
+	return INF
 
 
 func car_colors() -> Dictionary:

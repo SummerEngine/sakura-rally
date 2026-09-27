@@ -1,8 +1,9 @@
 extends Control
-## Time Attack page of the title hub: Time Trial / Free Roam picker and a card per stage
+## Time Attack page of the title hub: Time Trial / Race / Free Roam picker and a card per stage
 ## (Game.MAPS). A card starts the drive with Game.request_start(map_id, mode): a time trial on
-## that stage with the branch gates closed, or free roam from its grid with every gate open
-## (the whole world). Back / Esc returns to the hub (the title screen handles Esc).
+## that stage with the branch gates closed, a race against the rivals there (gates closed too), or
+## free roam from its grid with every gate open (the whole world). Back / Esc returns to the hub
+## (the title screen handles Esc).
 
 signal back_requested
 
@@ -13,9 +14,10 @@ const MapCard := preload("res://scripts/ui/widgets/map_card.gd")
 const Segmented := preload("res://scripts/ui/widgets/segmented.gd")
 const InkButton := preload("res://scripts/ui/widgets/ink_button.gd")
 
-const MODES := ["time_trial", "free_roam"]
+const MODES := ["time_trial", "race", "free_roam"]
 const MODE_NOTES := [
 	"One lap against the clock. Checkpoint splits, medals, records.",
+	"Two laps against the rally's six rivals, from the back of the grid. Cars touch.",
 	"No clock, no checkpoints. The gates are open: drive on through the seasons.",
 ]
 const MARGIN := Vector2(96, 64)
@@ -71,7 +73,7 @@ func _ready() -> void:
 	_mode_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_col.add_child(_mode_row)
 	mode_picker = Segmented.new()
-	mode_picker.options = PackedStringArray(["Time Trial", "Free Roam"])
+	mode_picker.options = PackedStringArray(["Time Trial", "Race", "Free Roam"])
 	mode_picker.min_segment_width = 150.0
 	mode_picker.changed.connect(_on_mode_changed)
 	_mode_row.add_child(mode_picker)

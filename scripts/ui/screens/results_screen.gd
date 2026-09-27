@@ -8,7 +8,9 @@ extends Control
 ##     says the stage is complete, adds the rally standing, swaps the buttons for Continue /
 ##     Retry stage / Quit to title, and swings in a blue road sign beside the card saying what
 ##     comes next (the next stage: drive on, the road is open, and how far; after the last
-##     stage: the rally classification).
+##     stage: the rally classification). A race shows the race time, the position (the seal
+##     stamps it: 1位 ...), the best lap and the classification, whose rows fill in as the rivals
+##     still racing cross the line (update_classification).
 
 signal shake_requested(strength: float)
 
@@ -51,6 +53,8 @@ var _best_value: Label
 var _delta_value: Label
 var _speed_value: Label
 var _standing_value: Label
+var _position_value: Label
+var _best_lap_value: Label
 var _splits_head: Label
 var _splits_box := GridContainer.new()
 var _split_deltas: Array = []
@@ -200,6 +204,8 @@ func _build_card() -> void:
 	col.add_child(_divider())
 	_best_value = _stat_row(col, "Best")
 	_delta_value = _stat_row(col, "Versus best")
+	_position_value = _stat_row(col, "Finished")
+	_best_lap_value = _stat_row(col, "Best lap")
 	_speed_value = _stat_row(col, "Top speed")
 	_standing_value = _stat_row(col, "Rally standing")
 	col.add_child(_divider())
@@ -452,13 +458,51 @@ func show_result(res: Dictionary, split_deltas: Array = []) -> void:
 func _fill_card(res: Dictionary, m: Dictionary, accent: Color) -> void:
 	var game := UIApi.game()
 	var t := float(res.get("time", 0.0))
-	var prev := float(res.get("previous_best", INF))
-	var best := float(res.get("best_time", t))
+	var race := bool(res.get("race", false))
 	_map_kanji.text = str(m.get("name_jp", ""))
 	_map_kanji.label_settings.font_color = accent
 	_map_name.text = str(m.get("name", "")).to_upper()
 	_time_big.text = game.format_time(t)
-	_best_value.text = game.format_time(best)
+	var top := float(res.get("top_speed_kmh", 0.0))
+	_speed_value.text = "%d %s" % [roundi(UIApi.speed_in_units(top)), UIApi.unit_label()]
+	for v: Label in [_best_value, _delta_value]:
+		v.get_parent().visible = not race
+	for v: Label in [_position_value, _best_lap_value]:
+		v.get_parent().visible = race
+	_splits_head.text = "CLASSIFICATION" if race else "SPLITS"
+	_hanko.ink = UITheme.VERMILION
+	if race:
+		_fill_race(res)
+	else:
+		_fill_time_trial(res, m)
+	var campaign := bool(res.get("campaign", false))
+	_standing_value.get_parent().visible = campaign
+	# A campaign stage says it is complete in the season's colour, larger than the time trial's
+	# grey kicker: the lap is done and the rally goes on.
+	if campaign:
+		var leg: Dictionary = game.CAMPAIGN[int(res.get("leg", 0))]
+		_kind_label.text = "%s  ·  STAGE COMPLETE" % leg["code"]
+		_kind_label.label_settings.font_size = 18
+		_kind_label.label_settings.font_color = accent.darkened(0.15)
+		_standing_value.text = "P%d of %d" % [int(res.get("standing", 0)), int(res.get("field", 0))]
+	else:
+		_kind_label.text = "RACE  ·  %d LAPS" % (res.get("laps", []) as Array).size() if race else "TIME TRIAL  ·  RESULT"
+		_kind_label.label_settings.font_size = 13
+		_kind_label.label_settings.font_color = Color(UITheme.INK, 0.5)
+	_continue.visible = campaign
+	_retry.text = "Retry stage" if campaign else "Retry"
+	_retry.theme_type_variation = &"" if campaign else &"PrimaryButton"
+	_menu.text = "Quit to title" if campaign else "Menu"
+	_next.visible = not campaign and game.MAPS.size() > 1
+
+
+## Time trial (and campaign stage): best, versus best, splits with their deltas, the medal seal,
+## the record ribbon and the next medal to go for.
+func _fill_time_trial(res: Dictionary, m: Dictionary) -> void:
+	var game := UIApi.game()
+	var t := float(res.get("time", 0.0))
+	var prev := float(res.get("previous_best", INF))
+	_best_value.text = game.format_time(float(res.get("best_time", t)))
 	if is_inf(prev):
 		_delta_value.text = "First run"
 		_delta_value.label_settings.font = UITheme.FONT_UI_BOLD
@@ -470,10 +514,7 @@ func _fill_card(res: Dictionary, m: Dictionary, accent: Color) -> void:
 		var dlt := t - prev
 		_delta_value.text = game.format_delta(dlt)
 		_delta_value.label_settings.font_color = UITheme.MATCHA if dlt < 0.0 else UITheme.VERMILION
-	var top := float(res.get("top_speed_kmh", 0.0))
-	_speed_value.text = "%d %s" % [roundi(UIApi.speed_in_units(top)), UIApi.unit_label()]
-	for ch in _splits_box.get_children():
-		ch.queue_free()
+	_clear_grid()
 	var splits: Array = res.get("splits", [])
 	for i in splits.size():
 		_splits_box.add_child(UITheme.make_label("CP %d" % (i + 1), UITheme.tracked(UITheme.FONT_UI_BLACK, 2), 15, Color(UITheme.INK, 0.5)))
@@ -505,25 +546,53 @@ func _fill_card(res: Dictionary, m: Dictionary, accent: Color) -> void:
 	else:
 		_medal_hint.text = ""
 	_medal_hint.visible = _medal_hint.text != ""
-	var campaign := bool(res.get("campaign", false))
-	_standing_value.get_parent().visible = campaign
-	# A campaign stage says it is complete in the season's colour, larger than the time trial's
-	# grey kicker: the lap is done and the rally goes on.
-	if campaign:
-		var leg: Dictionary = game.CAMPAIGN[int(res.get("leg", 0))]
-		_kind_label.text = "%s  ·  STAGE COMPLETE" % leg["code"]
-		_kind_label.label_settings.font_size = 18
-		_kind_label.label_settings.font_color = accent.darkened(0.15)
-		_standing_value.text = "P%d of %d" % [int(res.get("standing", 0)), int(res.get("field", 0))]
-	else:
-		_kind_label.text = "TIME TRIAL  ·  RESULT"
-		_kind_label.label_settings.font_size = 13
-		_kind_label.label_settings.font_color = Color(UITheme.INK, 0.5)
-	_continue.visible = campaign
-	_retry.text = "Retry stage" if campaign else "Retry"
-	_retry.theme_type_variation = &"" if campaign else &"PrimaryButton"
-	_menu.text = "Quit to title" if campaign else "Menu"
-	_next.visible = not campaign and game.MAPS.size() > 1
+
+
+## Race: the position (and its seal: 1位 in gold ink for the winner), the best lap and the
+## classification. No record, no medal: a race is driven in traffic.
+func _fill_race(res: Dictionary) -> void:
+	var game := UIApi.game()
+	var pos := int(res.get("position", 0))
+	var field := int(res.get("field", 0))
+	_position_value.text = "P%d of %d" % [pos, field]
+	_best_lap_value.text = game.format_time(float(res.get("best_lap", INF)))
+	_hanko.visible = pos > 0
+	_hanko.text = "%d位" % pos
+	_hanko.caption = "WINNER" if pos == 1 else "OF %d" % field
+	_hanko.ink = UITheme.GOLD_DEEP if pos == 1 else UITheme.VERMILION
+	_record.visible = false
+	_medal_hint.visible = false
+	_splits_head.visible = true
+	_splits_box.visible = true
+	update_classification(res.get("classification", []))
+
+
+## Race: the classification in the grid (position, driver, time: the winner's race time, then each
+## gap to it; "—" for a car still racing). Rivals that finish after the player fill in their rows
+## while the card is up (Game.race_classification_changed).
+func update_classification(rows: Array) -> void:
+	if not bool(result.get("race", false)):
+		return
+	var game := UIApi.game()
+	_clear_grid()
+	for i in rows.size():
+		var row: Dictionary = rows[i]
+		var you := bool(row.get("player", false))
+		var ink := UITheme.VERMILION if you else UITheme.INK
+		_splits_box.add_child(UITheme.make_label("%d" % (i + 1), UITheme.FONT_TITLE, 20, ink))
+		_splits_box.add_child(UITheme.make_label(str(row.get("name", "")), UITheme.FONT_UI_BLACK if you else UITheme.FONT_UI_BOLD,
+				18, ink))
+		var t := float(row.get("time", INF))
+		var text := "—"
+		if not is_inf(t):
+			text = game.format_time(t) if i == 0 else "+%.3f" % float(row.get("gap", 0.0))
+		_splits_box.add_child(UITheme.make_label(text, UITheme.FONT_TITLE, 18, Color(ink, 0.8)))
+
+
+func _clear_grid() -> void:
+	for ch in _splits_box.get_children():
+		_splits_box.remove_child(ch)
+		ch.queue_free()
 
 
 func _enter_card(t: float) -> void:
@@ -636,7 +705,7 @@ func _on_menu() -> void:
 	UIApi.game().request_menu()
 
 
-## Next stage of the Time Attack list.
+## Next stage of the Time Attack list (a race after a race, a time trial otherwise).
 func _on_next() -> void:
 	var game := UIApi.game()
 	var maps: Array = game.MAPS
@@ -646,7 +715,7 @@ func _on_next() -> void:
 		if str((maps[i] as Dictionary)["id"]) == cur:
 			idx = i
 	var nxt: Dictionary = maps[(idx + 1) % maps.size()]
-	game.request_start(str(nxt["id"]), str(game.MODE_TIME_TRIAL))
+	game.request_start(str(nxt["id"]), str(game.MODE_RACE if bool(result.get("race", false)) else game.MODE_TIME_TRIAL))
 
 
 func _unhandled_input(event: InputEvent) -> void:

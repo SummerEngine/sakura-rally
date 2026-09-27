@@ -59,6 +59,11 @@ engine at 4600 rpm, and at GO the clutch drops into first.
 - **Time Attack**, a page of cards that show each stage from above with its route:
   - **Time Trial**: one lap through checkpoints, with splits against your best, a medal and a
     saved record. The barriers to the branch road stay closed.
+  - **Race**: two laps against the six rivals of the rally, each in their own car and colours
+    and driven by the trained AI at their campaign pace for the stage. You start last on a
+    staggered grid behind them, slowest on pole; cars bump, push and rub each other. The HUD
+    shows your place with the gaps to the cars just ahead and behind, the results your position
+    and the classification, which fills in as the others take the flag. No record, no medal.
   - **Free Roam**: no timer and every barrier open, so the whole world is yours. R puts you
     back on the nearest road.
 

@@ -2,9 +2,10 @@ class_name ChaseCamera
 extends Camera3D
 ## Rally chase camera: tight-but-smooth follow that partly looks along the velocity in slides,
 ## look-ahead, speed-based FOV, terrain-aware (sphere cast so it never clips into the world),
-## trauma shake from impacts/landings plus surface rumble. Modes: chase, chase_far, hood, bumper
-## (cycle with `camera_next`, persisted in the "camera" setting). Runs in _process on the
-## target's interpolated transform (physics interpolation is on), so it is itself not interpolated.
+## trauma shake from impacts, landings and bumps from other cars plus surface rumble. Modes:
+## chase, chase_far, hood, bumper (cycle with `camera_next`, persisted in the "camera" setting).
+## Runs in _process on the target's interpolated transform (physics interpolation is on), so it is
+## itself not interpolated.
 ##
 ## The chase rig pitches with the road: on a descent (or before a crest) it swings up behind the
 ## car and looks down along the slope (`slope_descent_gain` times the grade), so the road ahead
@@ -179,6 +180,8 @@ func _connect(car: RigidBody3D) -> void:
 	if _connected_to != null and is_instance_valid(_connected_to):
 		if _connected_to.has_signal(&"impact") and _connected_to.is_connected(&"impact", _on_impact):
 			_connected_to.disconnect(&"impact", _on_impact)
+		if _connected_to.has_signal(&"bumped") and _connected_to.is_connected(&"bumped", _on_bumped):
+			_connected_to.disconnect(&"bumped", _on_bumped)
 		if _connected_to.has_signal(&"landed") and _connected_to.is_connected(&"landed", _on_landed):
 			_connected_to.disconnect(&"landed", _on_landed)
 	_connected_to = car
@@ -186,12 +189,19 @@ func _connect(car: RigidBody3D) -> void:
 		return
 	if car.has_signal(&"impact"):
 		car.connect(&"impact", _on_impact)
+	if car.has_signal(&"bumped"):
+		car.connect(&"bumped", _on_bumped)
 	if car.has_signal(&"landed"):
 		car.connect(&"landed", _on_landed)
 
 
 func _on_impact(strength: float, _point: Vector3) -> void:
 	shake(clampf(strength * 0.55, 0.0, 0.8))
+
+
+## Another car hit ours (Car.bumped, race contacts): a lighter shake than a wall.
+func _on_bumped(strength: float, _point: Vector3, _other: Car) -> void:
+	shake(clampf(strength * 0.45, 0.0, 0.7))
 
 
 func _on_landed(strength: float) -> void:

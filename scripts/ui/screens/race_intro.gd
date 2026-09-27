@@ -141,6 +141,7 @@ func setup(map_id: String, mode: String) -> void:
 	var game := UIApi.game()
 	var tt: bool = mode == str(game.MODE_TIME_TRIAL)
 	var liaison: bool = mode == str(game.MODE_LIAISON)
+	var race: bool = mode == str(game.MODE_RACE)
 	var leg: Dictionary = game.campaign_current_leg()
 	var campaign: bool = not leg.is_empty() and leg["map"] == map_id
 	var legs: Array = game.CAMPAIGN
@@ -156,7 +157,7 @@ func setup(map_id: String, mode: String) -> void:
 	_swash.set_param("paint", _accent)
 	_swash.size.x = _name.text_width() + 110.0
 	_kicker.visible = campaign
-	_mode_chip.text = "TIME TRIAL" if tt else ("UNTIMED" if liaison else "FREE ROAM")
+	_mode_chip.text = "TIME TRIAL" if tt else ("UNTIMED" if liaison else ("RACE" if race else "FREE ROAM"))
 	if campaign:
 		if liaison:
 			var from: Dictionary = legs[maxi(i - 1, 0)]
@@ -172,13 +173,15 @@ func setup(map_id: String, mode: String) -> void:
 						nth = stages
 			_kicker.text = "%s  ·  SPECIAL STAGE %d OF %d" % [leg["code"], nth, stages]
 	var best: float = game.best_time(map_id)
-	_best_chip.get_parent().visible = tt or liaison
+	_best_chip.get_parent().visible = tt or liaison or race
 	if tt:
 		var gold: float = (m.get("medals", {}) as Dictionary).get("gold", INF)
 		if is_inf(best):
 			_best_chip.text = "GOLD  %s" % game.format_time(gold)
 		else:
 			_best_chip.text = "BEST  %s" % game.format_time(best)
+	elif race:
+		_best_chip.text = "%d LAPS  ·  %d CARS" % [int(game.RACE_LAPS), game.RIVALS.size() + 1]
 	elif liaison:
 		var left := UIApi.num(game.session, &"distance_left") / 1000.0
 		var mph := str(UIApi.setting("units")) == "mph"

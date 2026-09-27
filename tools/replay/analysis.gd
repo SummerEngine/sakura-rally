@@ -184,6 +184,8 @@ static func analyze(data: ReplayData, track: Track) -> Dictionary:
 	var pauses := 0
 	var start_t := NAN
 	var end_reason := ""
+	# A race's checkpoint delta is the interval to the car ahead, not a split against the record.
+	var versus := "to the car ahead" if str(h.get("mode", "")) == "race" else "vs record"
 	for e in data.events:
 		var t: float = e["t"]
 		match str(e.get("type", "")):
@@ -194,16 +196,20 @@ static func analyze(data: ReplayData, track: Track) -> Dictionary:
 				splits.append(e)
 				var d: Variant = e.get("delta")
 				add.call(t, "split", "split %d/%d  %s%s" % [int(e["index"]) + 1, int(e["total"]),
-						_clock(float(e["split"])), "" if d == null else "  (%+.2f vs record)" % float(d)], 0.0)
+						_clock(float(e["split"])), "" if d == null else "  (%+.2f %s)" % [float(d), versus]], 0.0)
 			"finish":
 				result = e
-				add.call(t, "finish", "FINISH %s%s%s" % [_clock(float(e.get("time", 0.0))),
+				add.call(t, "finish", "FINISH %s%s%s%s" % [_clock(float(e.get("time", 0.0))),
 						"  medal " + str(e.get("medal")) if str(e.get("medal", "")) != "" else "",
-						"  RECORD" if e.get("is_record", false) else ""], 0.0)
+						"  RECORD" if e.get("is_record", false) else "",
+						"  P%d of %d" % [int(e["position"]), int(e.get("field", 0))] if e.has("position") else ""], 0.0)
 			"arrived":
 				add.call(t, "arrived", "arrived", 0.0)
 			"impact":
 				impacts.append(e)
+			"bump":
+				if float(e.get("strength", 0.0)) >= 0.3:
+					add.call(t, "bump", "bump with %s %.2f" % [e.get("other", "a car"), float(e["strength"])], 1.0)
 			"landed":
 				if float(e.get("strength", 0.0)) >= 0.6:
 					add.call(t, "landing", "hard landing %.2f" % float(e["strength"]), 0.5)

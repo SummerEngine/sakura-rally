@@ -225,7 +225,7 @@ func _build_hub() -> void:
 	_new_journey_item = _item(HubItem.Kind.SMALL, "", "", "Start a new journey")
 	_new_journey_item.pressed.connect(_on_new_journey_pressed)
 	_hub.add_child(_gap(10))
-	_time_attack_item = _item(HubItem.Kind.NORMAL, "時", "TIME TRIAL · FREE ROAM", "Time Attack")
+	_time_attack_item = _item(HubItem.Kind.NORMAL, "時", "TIME TRIAL · RACE · FREE ROAM", "Time Attack")
 	_time_attack_item.pressed.connect(_open_time_attack)
 	_garage_item = _item(HubItem.Kind.NORMAL, "車", "", "Garage")
 	_garage_item.pressed.connect(_open_garage)
