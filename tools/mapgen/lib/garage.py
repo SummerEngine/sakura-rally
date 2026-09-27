@@ -28,6 +28,9 @@ map.json "garage":
   lot [x, z, half_across, half_along]   the lay-by rectangle in garage-local metres
   keep_out [[x, z] x4]                  world-space corners of the keep-out rectangle
   road_side          +1 when the road is on the garage's +X side (always, by construction)
+  road_x             garage-local x of the road centreline
+  lane               lateral metres of the left lane's centre (half the carriageway half width,
+                     negative: left-hand traffic), the line the menu's arriving and leaving cars drive
 """
 from __future__ import annotations
 
@@ -39,14 +42,14 @@ from .road import LOT_DROP, Road, road_index
 from .terrain import CARVE_DROP
 
 
-def _frame(g: dict, road: Road) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
-    """Display spot (x, z), forward (x, z), right (x, z) and the road height there."""
+def _frame(g: dict, road: Road) -> tuple[np.ndarray, np.ndarray, np.ndarray, float, float]:
+    """Display spot (x, z), forward (x, z), right (x, z), the road height and half width there."""
     s = float(road.control_s[g["road_at"]] + g.get("offset_m", 0.0))
     i = road_index(road, s % road.length if road.closed else s)
     fwd = road.fwd[i] / np.linalg.norm(road.fwd[i])
     right = road.right[i] / np.linalg.norm(road.right[i])
     p = road.pos[i, [0, 2]] + right * g["lateral"]
-    return p, fwd, right, float(road.pos[i, 1])
+    return p, fwd, right, float(road.pos[i, 1]), float(road.half_width[i])
 
 
 def garage_lot(g: dict) -> dict:
@@ -65,7 +68,7 @@ def garage_pad(g: dict) -> dict:
 
 
 def garage_layout(g: dict, road: Road) -> dict:
-    p, fwd, right, y_road = _frame(g, road)
+    p, fwd, right, y_road, half_width = _frame(g, road)
     lot = next((l for l in road.lots if l.name == "garage"), None)
     y = (lot.y if lot is not None else y_road) - LOT_DROP
     yaw = math.atan2(-fwd[0], -fwd[1])
@@ -87,6 +90,8 @@ def garage_layout(g: dict, road: Road) -> dict:
         "lot": [round(float(lt["lateral"] - lat0), 2), 0.0, lt["width"] / 2.0, lt["length"] / 2.0],
         "keep_out": corners,
         "road_side": 1,
+        "road_x": round(float(-lat0), 2),
+        "lane": round(-0.5 * half_width, 2),
     }
 
 

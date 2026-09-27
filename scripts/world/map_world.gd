@@ -284,7 +284,6 @@ func _make_materials() -> void:
 	road.shader = ROAD_SHADER
 	road.set_shader_parameter("ramp_edges", ramp[0])
 	road.set_shader_parameter("ramp_values", ramp[1])
-	road.set_shader_parameter("half_width_m", info.get("road_half_width", 3.5))
 	if rm.has("tarmac_color"):
 		road.set_shader_parameter("tarmac_color", Color(rm["tarmac_color"]))
 		road.set_shader_parameter("tarmac_patch", Color(rm["tarmac_color"]).darkened(0.12))
@@ -325,6 +324,18 @@ func _make_materials() -> void:
 	materials["backdrop"] = bd
 
 	materials["props_vc"] = ToonMaterials.make(Color.WHITE, {"vertex_color": true, "ramp": "cel", "grain": 0.05})
+
+
+## The road material for a ribbon `half_width` metres wide each side: the shader turns uv.x
+## (lateral / half width) back into metres for its edge lines and verges, and the loops (10 m) and
+## the branch (7 m) differ. One duplicate of materials["road"] per width.
+func _road_material(half_width: float) -> ShaderMaterial:
+	var key := "road_%.2f" % half_width
+	if not materials.has(key):
+		var m := (materials["road"] as ShaderMaterial).duplicate() as ShaderMaterial
+		m.set_shader_parameter("half_width_m", half_width)
+		materials[key] = m
+	return materials[key]
 
 
 # ------------------------------------------------------------------ routes
@@ -408,6 +419,8 @@ func _build_meshes() -> void:
 		tris += int(d["icount"]) / 3
 		var mat_key: String = d["material"]
 		var mat: Material = materials.get(mat_key, materials["props_vc"])
+		if mat_key == "road":
+			mat = _road_material(float(d["half_width"]))
 		mesh.surface_set_material(0, mat)
 		var mi := MeshInstance3D.new()
 		mi.name = d["name"]

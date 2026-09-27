@@ -19,10 +19,11 @@ road and at named places along the branch; the liaison makeup; corner and guardr
 timings. Previews go to `docs/renders/map_world.png` (roads, routes, gates, season tint) and the
 crops `map_hanami.png`, `map_branch.png`, `map_momiji.png`.
 
-Last build (M1 Max, shared with other jobs): about 9 s total (terrain 1.8 s, scatter 1.9 s,
-paint 2.6 s, dressing 0.6 s, preview 0.6 s). 462 meshes, 1.16 M triangles, 67 470 instances of 90
-props, 870 collision boxes, 5 signs, 3 parked cars. `map.bin` 45.1 MB (uncompressed blobs, see
-`lib/meshpack.py`), `map.json` 2.6 MB. Corridor: 24 rigid props in the corridor before, 0 after.
+Last build (M1 Max, shared with other jobs): about 10 s total (terrain 1.9 s, scatter 2.3 s,
+paint 3.2 s, dressing 0.8 s, preview 0.7 s). 460 meshes, 1.16 M triangles, 67 107 instances of 96
+props, 871 collision boxes, 5 signs, 3 parked cars. `map.bin` 45.0 MB (uncompressed blobs, see
+`lib/meshpack.py`), `map.json` 2.5 MB. Corridor: 27 rigid props in the corridor before, 0 after
+(0 smashables on tarmac).
 
 ## Layout
 
@@ -39,17 +40,31 @@ hills, rivers, keep-out polygons). Natsu's own spec is gone; its content lives i
 
 ## Roads, junctions, routes
 
-- Roads: `hanami` and `momiji` (closed), `branch` (open). The branch forks off the Hanami loop
-  at loop s 466 (185 m past the Hanami start line, right side) and joins the Momiji loop at loop
-  s 2612 (right side, before its start line). `lib/junction.py` finds the fork and the point
-  where the branch clears the loop's carriageway, sits the branch on the loop's surface through
-  the mouth (same height and bank, so no step and no z-fighting: the branch ribbon starts at the
-  clear point, the loop carries the mouth) and eases to the branch profile past it.
+- Roads: `hanami` and `momiji` (closed), `branch` (open). The loops have a 10 m carriageway
+  (half width 5.0), room for two cars side by side in a race; the branch stays 7 m (3.5). All
+  three have a 1.4 m verge. map.json `roads.<id>.half_width` states it, the road ribbon meshes
+  carry it for the road shader (edge lines, verges), and the tracks carry it per sample.
+  The branch forks off the Hanami loop at loop s 466 (185 m past the Hanami start line, right
+  side) and joins the Momiji loop at loop s 2612 (right side, before its start line).
+  `lib/junction.py` finds the fork and the point where the branch clears the loop's carriageway,
+  sits the branch on the loop's surface through the mouth (same height and bank, so no step and
+  no z-fighting: the branch ribbon starts at the clear point, the loop carries the mouth) and
+  eases to the branch profile past it; the mouth takes a 10 m loop and a 7 m branch as it takes
+  equal widths.
+- Widths and placement: road-relative dressing (`lateral`) is measured from the centreline, so the
+  loops' dressing, pads, the garage and its lot sit 1.5 m further out than on the old 7 m loops
+  (the whole roadside moved out with the edge). Scatter rules (`road_min`, `road_max`,
+  `road_peak`) and group / crowd clearances measure from the nearest carriageway edge
+  (`Terrain.road_edge`), so one rule fits the 10 m loops and the 7 m branch. The start arches
+  are scaled so their uprights stand about 2.5 m beyond the tarmac (Hanami 1.65, Momiji 1.7).
+  A single prop with `face: "road_side"` (bale stacks, checkpoint bales) stands square to the
+  road like a `line` row, not at a random yaw.
 - Routes: `hanami` and `momiji` stage laps (`start`, `spawn`, `checkpoints`, `finish_stop` 150 m
   past the line); `liaison` (2007 m: Hanami loop 34 m, branch 1755 m, Momiji loop 217 m) starts at
   Hanami's `finish_stop` and ends at Momiji's spawn (`arrival`).
-- Gates: `hanami_branch` at liaison s 73 (73 m ahead of the Hanami `finish_stop`, in view),
-  `momiji_branch` at liaison s 1743, each across the branch just past its junction.
+- Gates: `hanami_branch` at liaison s 75 (75 m ahead of the Hanami `finish_stop`, in view),
+  `momiji_branch` at liaison s 1740, each across the branch just past its junction (the branch
+  clears the wider loop's carriageway at branch s 46 and 1739).
 
 ## Terrain, water, seasons
 
