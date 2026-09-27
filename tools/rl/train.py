@@ -58,6 +58,8 @@ class Progress(BaseCallback):
     def _on_training_start(self) -> None:
         self.steps0 = self.num_timesteps
         self.next_save = (self.num_timesteps // self.save_every + 1) * self.save_every
+        if self.num_timesteps == 0:
+            self.save()  # the untrained network: the start of the learning curve for ghosts and videos
 
     def _on_step(self) -> bool:
         for info in self.locals["infos"]:

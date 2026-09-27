@@ -319,7 +319,8 @@ func _generation_files() -> PackedStringArray:
 
 func _generation_label(p: DrivePolicy, i: int) -> String:
 	var steps := float(p.meta.get("steps", 0))
-	return "AI gen %d · %s" % [i + 1, ("%.1fM" % (steps / 1e6)) if steps >= 1e6 else ("%dk" % int(steps / 1e3))]
+	var age := "untrained" if steps <= 0.0 else ("%.1fM" % (steps / 1e6)) if steps >= 1e6 else ("%dk" % int(steps / 1e3))
+	return "AI gen %d · %s" % [i + 1, age]
 
 
 func _clear_ghosts() -> void:
