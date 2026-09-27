@@ -60,7 +60,7 @@ A `CarAudio` Node3D child of any node implementing the car API. It reads `rpm`, 
 `input_throttle`, `boost`, `speed_kmh`, `is_shifting`, `airborne_time`, `max_rpm`,
 `controlled_by_player`, `wheels[i].{contact, surface, slip, spin_speed}` every frame (missing
 properties fall back to safe defaults) and connects `gear_changed`, `backfire`,
-`rev_limiter`, `impact`, `landed` when the parent has them.
+`rev_limiter`, `impact`, `landed`, `bumped` when the parent has them.
 
 **Why AudioStreamPlayer3D for everything**: the chase camera is the listener, so 3D players
 give correct distance, positional impacts/stones and work for replays or other cars. For the
@@ -112,6 +112,11 @@ World:
 - `landed(strength)` → suspension thump (+ light knock above 0.7).
   `impact(strength, point)` → light (< 0.4) or heavy variants at the contact point, gain
   scaled by strength.
+  `bumped(strength, point, other)` (another car, race mode) → a body knock (light variants) at
+  the contact point, gain 0.2–0.9 and pitch 1.08–0.85 with strength, the thump under it from 0.3,
+  the heavy crash only from 1.0 (a hit at about 100 km/h), so racing bumps never sound like a
+  wall. The car spaces them 0.2 s apart; of the two cars in a contact only the player's (else
+  the one with the lower instance id) plays it.
 - Wind: `smoothstep(15, 170, speed)^1.3`, +15 % while airborne, pitch rises with speed.
 - Horn: player car only, while the `horn` action is held (12 ms attack, 40 ms release) —
   a cheerful dual-tone major third (415 + 523 Hz).

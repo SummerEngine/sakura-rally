@@ -9,6 +9,9 @@ signal backfire
 signal rev_limiter
 signal impact(strength: float, point: Vector3)
 signal landed(strength: float)
+## A contact with another car (`car_contacts`): strength on the `impact` scale (the contact
+## impulse over mass * 5 m/s), where, and the other car. World contacts stay `impact`.
+signal bumped(strength: float, point: Vector3, other: Car)
 
 const WHEEL_RADIUS := 0.33
 const WHEEL_WIDTH := 0.24
@@ -17,7 +20,10 @@ const TRACK_HALF := 0.78
 const FRONT_AXLE_Z := -1.27
 const REAR_AXLE_Z := 1.28
 const WHEEL_REST_Y := 0.33
-## Physics layer of barriers and prop colliders (MapWorld.LAYER_PROPS).
+## Physics layers: the world (terrain and road, what the wheels stand on), other cars, and
+## barriers and prop colliders (MapWorld.LAYER_PROPS).
+const WORLD_LAYER := 1
+const CAR_LAYER := 2
 const PROPS_LAYER := 4
 ## Half the body's width (m), for how much of it overlaps a pole.
 const BODY_HALF_WIDTH := 0.87
@@ -66,6 +72,14 @@ var launch_hold: bool = false:
 ## Shifts by itself whatever the player's Gearbox setting. NeuralPilot sets it on the car it
 ## drives: its policies have no gear action and learned on the automatic box.
 var always_automatic: bool = false
+## Collide with other cars (their layer, `CAR_LAYER`): set by a race grid, switchable at any time.
+## Off, the default, cars pass through each other as in a time trial, the garage and the menu.
+## AutoDrive ghosts sit on no layer, so they are never hit either way. Contacts with another car
+## are handled in `_update_crash` (see docs/PHYSICS.md "Car contacts").
+var car_contacts: bool = false:
+	set(value):
+		car_contacts = value
+		collision_mask = WORLD_LAYER | PROPS_LAYER | (CAR_LAYER if value else 0)
 
 # ---------------------------------------------------------------- livery (read by the toon converter)
 var livery_primary: Color = Color("f6f1e8")
@@ -209,6 +223,21 @@ var livery_secondary: Color = Color("e8517c")
 ## the face normal of the hull, so a glancing hit deflects the car past the pole.
 @export var thin_obstacle_radius: float = 0.6
 
+@export_group("Car contacts")
+## Contacts with another car (`car_contacts`): the solver's frictionless, inelastic push moves the
+## cars apart, but in a tick with a car contact it may not turn or lift the car beyond these rates
+## (docs/PHYSICS.md "Car contacts"): the yaw rate may leave the band between the rate before the
+## contact and the rate the steering asks for by `bump_yaw_accel` rad/s^2, the roll/pitch rate may
+## not grow beyond `bump_tilt_limit` rad/s, and the speed off the road may grow by `bump_rise_accel`
+## m/s^2. A bump shoves a car sideways or along; it does not spin it, tip it or climb it.
+@export var bump_yaw_accel: float = 4.0
+@export var bump_tilt_limit: float = 0.5
+@export var bump_rise_accel: float = 4.0
+## `bumped` fires for a car contact at least this strong (same scale as `impact`), at most once
+## per `bump_cooldown` s.
+@export var bump_min_strength: float = 0.03
+@export var bump_cooldown: float = 0.2
+
 @export_group("Engine")
 ## Engine, gearbox and driveline tuning; null = the Sakura defaults of `Drivetrain`.
 @export var drivetrain: Drivetrain
@@ -241,6 +270,10 @@ var _tc_scale: float = 1.0
 var _stuck_time: float = 0.0
 var _prev_vertical_speed: float = 0.0
 var _impact_cooldown: float = 0.0
+var _bump_cooldown_left: float = 0.0
+## Yaw rate the steering asked for in the last tick (the yaw-rate control's target; the rate the
+## car had when the control was idle): one edge of the band a car contact may not push past.
+var _yaw_target: float = 0.0
 var _pending_reset: bool = false
 var _pending_transform: Transform3D
 var _gravity: float = 9.8
@@ -271,8 +304,8 @@ func _ready() -> void:
 	can_sleep = false
 	contact_monitor = true
 	max_contacts_reported = 8
-	collision_layer = 2
-	collision_mask = 1 | 4
+	collision_layer = CAR_LAYER
+	collision_mask = WORLD_LAYER | PROPS_LAYER | (CAR_LAYER if car_contacts else 0)
 	linear_damp_mode = RigidBody3D.DAMP_MODE_REPLACE
 	linear_damp = 0.0
 	angular_damp_mode = RigidBody3D.DAMP_MODE_REPLACE
@@ -787,16 +820,19 @@ func _update_assists(state: PhysicsDirectBodyState3D, xf: Transform3D, ang: Vect
 	_update_drift_intent(dt, kmh, thr, s)
 	var slip_rate := angle_difference(_prev_slip, body_slip) / dt
 	_prev_slip = body_slip
-	if grounded_wheels < 2 or v_fwd < 4.0:
-		return
 	var up := xf.basis.y
 	var yaw_rate := ang.dot(up)
+	_yaw_target = yaw_rate
+	if grounded_wheels < 2 or v_fwd < 4.0:
+		return
 
 	# Yaw rate: the steering asks for a share of the grip-limited rate. Below it (turn-in, direction
 	# changes) the torque helps; above it (or with the wheel centred) it damps. Fades out while the
 	# driver holds a drift or pulls the handbrake.
 	var r_max := minf(v_fwd * tan(deg_to_rad(steer_lock_deg)) / WHEELBASE, yaw_grip * _front_mu * _gravity / v_fwd)
 	var target := -s * r_max
+	# held drift or handbrake: the rate the car has is what the driver asks for
+	_yaw_target = lerpf(target, yaw_rate, maxf(drift_intent, handbrake))
 	var under := absf(target) > 0.01 and yaw_rate * signf(target) < absf(target)
 	var yaw_torque := (target - yaw_rate) * (yaw_turn_in_gain if under else yaw_damping_gain)
 	yaw_torque = clampf(yaw_torque, -yaw_torque_max, yaw_torque_max) * (1.0 - maxf(drift_intent, handbrake))
@@ -920,32 +956,52 @@ func _update_air(state: PhysicsDirectBodyState3D, xf: Transform3D, ang: Vector3,
 	_prev_vertical_speed = vertical_speed
 
 
+## `impact` for the hardest world contact of the tick, `bumped` for the hardest car contact.
 func _read_contacts(state: PhysicsDirectBodyState3D) -> void:
 	_impact_cooldown = maxf(_impact_cooldown - state.step, 0.0)
+	_bump_cooldown_left = maxf(_bump_cooldown_left - state.step, 0.0)
 	var count := state.get_contact_count()
 	if count == 0:
 		return
 	var total := 0.0
 	var point := Vector3.ZERO
+	var bump := 0.0
+	var bump_point := Vector3.ZERO
+	var other: Car = null
 	for c in count:
 		var imp := state.get_contact_impulse(c).length()
-		if imp > total:
+		var car := state.get_contact_collider_object(c) as Car
+		if car != null:
+			if imp > bump:
+				bump = imp
+				bump_point = state.get_contact_collider_position(c)
+				other = car
+		elif imp > total:
 			total = imp
 			point = state.get_contact_collider_position(c)
 	var strength := total / (mass * 5.0)
 	if strength > 0.06 and _impact_cooldown <= 0.0:
 		_impact_cooldown = 0.15
 		impact.emit(minf(strength, 2.0), point)
+	strength = bump / (mass * 5.0)
+	if strength >= bump_min_strength and _bump_cooldown_left <= 0.0:
+		_bump_cooldown_left = bump_cooldown
+		bumped.emit(minf(strength, 2.0), bump_point, other)
 
 
-## Wall scrape and impact guard. Runs first in the tick, on the contacts the solver reported for
-## the previous step, and replaces what those contacts did to the velocity with the arcade answer.
+## Wall scrape, impact guard and car contacts. Runs first in the tick, on the contacts the solver
+## reported for the previous step, and replaces what those contacts did to the velocity with the
+## arcade answer.
 func _update_crash(state: PhysicsDirectBodyState3D, xf: Transform3D, com: Vector3, dt: float) -> void:
 	var lin := state.linear_velocity
 	var ang := state.angular_velocity
 	var wall_n := Vector3.ZERO
 	var obstacle := false
+	var car_contact := false
 	for c in state.get_contact_count():
+		if state.get_contact_collider_object(c) is Car:
+			car_contact = true
+			continue
 		# Only static geometry is a wall or an obstacle; loose and smashable props (rigid bodies)
 		# are left to the solver.
 		var co := state.get_contact_collider_object(c) as StaticBody3D
@@ -1051,6 +1107,26 @@ func _update_crash(state: PhysicsDirectBodyState3D, xf: Transform3D, com: Vector
 		var rise := lin.dot(road_n)
 		if rise > _guard_rise:
 			lin -= road_n * (rise - _guard_rise)
+	if car_contact:
+		# Car contacts: against the rates at the end of the previous tick's crash pass (before
+		# its tyre forces and contacts), the solver's push may turn the car only a little beyond
+		# the band between that yaw rate and the one the steering asks for, may not start a roll
+		# or pitch faster than `bump_tilt_limit`, and may lift the car off the road only as fast
+		# as the suspension could (`bump_rise_accel`).
+		var up := xf.basis.y
+		var yaw := ang.dot(up)
+		var tilt := ang - up * yaw
+		var yaw_prev := _last_ang.dot(up)
+		var step := bump_yaw_accel * dt
+		yaw = clampf(yaw, minf(yaw_prev, _yaw_target) - step, maxf(yaw_prev, _yaw_target) + step)
+		var tilt_max := maxf((_last_ang - up * yaw_prev).length(), bump_tilt_limit)
+		if tilt.length() > tilt_max:
+			tilt = tilt.normalized() * tilt_max
+		ang = up * yaw + tilt
+		var rise := lin.dot(road_n)
+		var rise_max := maxf(_last_lin.dot(road_n), 0.0) + bump_rise_accel * dt
+		if rise > rise_max:
+			lin -= road_n * (rise - rise_max)
 	state.linear_velocity = lin
 	state.angular_velocity = ang
 	_last_lin = lin

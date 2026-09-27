@@ -134,13 +134,17 @@ var wheels: Array              # 4 entries, order FL, FR, RL, RR; each a WheelSt
 ```
 
 Signals: `gear_changed(new_gear: int, old_gear: int)`, `backfire`, `rev_limiter`,
-`impact(strength: float, point: Vector3)` (strength ~0..1+), `landed(strength: float)`.
+`impact(strength: float, point: Vector3)` (world contacts, strength ~0..1+), `landed(strength: float)`,
+`bumped(strength: float, point: Vector3, other: Car)` (contacts with another car, same scale).
 
 Control inputs (set by the player input reader or an autopilot):
 `var input_throttle: float`, `var input_brake: float`, `var input_steer: float`,
 `var input_handbrake: bool`, `var controlled_by_player: bool` (reads InputMap actions when true),
 `var always_automatic: bool` (the automatic box whatever the Gearbox setting; NeuralPilot sets it
-on the car it drives).
+on the car it drives), `var car_contacts: bool` (default false: cars pass through each other;
+true: the car's `collision_mask` includes layer 2 "car", so it hits other cars - also ones with it
+off -, switchable at any time; Race mode sets it on every entrant; AutoDrive ghosts keep it off and
+sit on no layer, so nothing hits them).
 Methods: `reset_to(transform: Transform3D)`, `set_livery(primary: Color, secondary: Color)`,
 `shift_up()`, `shift_down()`.
 

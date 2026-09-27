@@ -10,7 +10,8 @@ extends Node
 ##      arrival) still win. In free roam it keeps to the road the car is on.
 ##   G  ghosts: the training generations (GENERATIONS_DIR, one DrivePolicy file each, oldest
 ##      first) join as ghost cars on a staggered grid behind the player, held on the line with the
-##      player's car through the countdown: no collisions (cars never collide), their own
+##      player's car through the countdown: on no collision layer (a car with `car_contacts` on
+##      drives through them too), their own
 ##      liveries, a label over each. They leave the soft course alone (group `ghost_car`: no
 ##      smashed tape or cones, no knocked spectators, no course restore in the player's run),
 ##      park at the end of an open road, and every new run (a new car or a countdown) puts them
@@ -296,6 +297,7 @@ func _spawn_ghosts(car: Car, track: Track) -> void:
 		label.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 		ghost.add_child(label)
 		get_parent().add_child(ghost)
+		ghost.collision_layer = 0 # after _ready (which puts every car on layer 2): nothing hits a ghost
 		var c := GHOST_LIVERIES[i % GHOST_LIVERIES.size()]
 		ghost.set_livery(c, c.darkened(0.45))
 		CarLook.apply(ghost)

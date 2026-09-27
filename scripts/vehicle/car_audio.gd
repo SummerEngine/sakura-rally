@@ -44,6 +44,7 @@ const BACKFIRE_DB := -2.0
 const STONE_DB := -9.0
 const THUMP_DB := -2.0
 const IMPACT_DB := 0.0
+const BUMP_DB := -3.0
 
 const LIMITER_HZ := 17.0
 const SILENT := 0.00001
@@ -214,6 +215,8 @@ func _connect_car_signals() -> void:
 		car.connect(&"impact", _on_impact)
 	if car.has_signal(&"landed"):
 		car.connect(&"landed", _on_landed)
+	if car.has_signal(&"bumped"):
+		car.connect(&"bumped", _on_bumped)
 
 
 func _apply_player_config() -> void:
@@ -420,6 +423,26 @@ func _on_impact(strength: float, point: Vector3) -> void:
 	shot.global_position = point
 	var gain := lerpf(0.3, 1.0, clampf(s / 0.4, 0.0, 1.0)) if s < 0.4 else lerpf(0.55, 1.0, clampf((s - 0.4) / 0.8, 0.0, 1.0))
 	_fire(shot, IMPACT_DB + linear_to_db(gain), 1.0)
+
+
+## Car-to-car bump (`Car.bumped`, already rate-limited by the car's `bump_cooldown`): a body knock
+## at the contact point, louder and lower with the strength, the body thump under it from 0.3 up,
+## and the crash layer only for a real wreck (1.0 and up: about a 100 km/h hit), so bumping at
+## race speed never sounds like hitting a wall. Both cars of a contact get the signal; only one
+## plays it: the player's car, else the one with the lower instance id.
+func _on_bumped(strength: float, point: Vector3, other: Node) -> void:
+	if not _is_player and is_instance_valid(other) and (bool(other.get(&"controlled_by_player")) \
+			or other.get_instance_id() < car.get_instance_id()):
+		return
+	var s := clampf(strength, 0.0, 1.5)
+	_impact_light.global_position = point
+	var knock := smoothstep(0.03, 0.6, s)
+	_fire(_impact_light, BUMP_DB + linear_to_db(lerpf(0.2, 0.9, knock)), lerpf(1.08, 0.85, clampf(s / 0.8, 0.0, 1.0)))
+	if s >= 0.3:
+		_fire(_thump, THUMP_DB + linear_to_db(lerpf(0.3, 1.0, clampf((s - 0.3) / 0.7, 0.0, 1.0))), 1.0)
+	if s >= 1.0:
+		_impact_heavy.global_position = point
+		_fire(_impact_heavy, IMPACT_DB + linear_to_db(lerpf(0.5, 0.9, clampf((s - 1.0) / 0.5, 0.0, 1.0))), 1.0)
 
 
 func _on_landed(strength: float) -> void:

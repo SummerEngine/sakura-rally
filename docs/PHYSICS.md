@@ -6,7 +6,7 @@ A custom rally car on a plain `RigidBody3D` (Jolt, 120 Hz, physics interpolation
 
 | File | Role |
 | --- | --- |
-| `scenes/car/car.tscn` | Sakura: `Car` (RigidBody3D, layer 2, mask 1\|3), convex hull `Collision`, `Visuals` (CarVisuals) |
+| `scenes/car/car.tscn` | Sakura: `Car` (RigidBody3D, layer 2, mask 1\|3, plus 2 with `car_contacts`), convex hull `Collision`, `Visuals` (CarVisuals) |
 | `scenes/car/car_hayate.tscn` | Hayate: the same `Car` script with exported overrides, its own `Drivetrain` resource, a lower coupe hull and `hayate.glb` |
 | `scripts/vehicle/car.gd` | `Car`: suspension, tyres, assists, air control, reset, contract API |
 | `scripts/vehicle/wheel_state.gd` | `WheelState` (RefCounted), one per wheel in `Car.wheels` (FL, FR, RL, RR) |
@@ -24,6 +24,7 @@ A custom rally car on a plain `RigidBody3D` (Jolt, 120 Hz, physics interpolation
 | `tools/physics/before_after.gd` | Self-contained keyboard scenario that runs on ep1 and ep2 (numbers below) |
 | `tools/physics/capture.gd` | Windowed screenshot / frame-strip capture into `docs/renders/` |
 | `tools/physics/camera_probe.gd` | Road-ahead visibility of the level vs the slope-following chase camera on descents and flats of a map, before/after contact sheets (camera section) |
+| `tools/physics/contact_probe.gd` | Car-to-car contact scenarios on the world pack (see "Car contacts") |
 
 
 ## Model
@@ -185,8 +186,10 @@ holds on throttle and is caught by centring the wheel, hard to spin. Keyboard fi
 
 ### Signals
 `gear_changed(new, old)`, `backfire` (lift-off at high rpm, shifts, some limiter cuts; ≥ 90 ms apart),
-`rev_limiter` (each limiter cut), `impact(strength, point)` from body contacts (impulse / (mass · 5 m/s),
-0..2, ≥ 150 ms apart, threshold 0.06), `landed(strength)` after > 0.25 s airtime (landing speed / 7 m/s).
+`rev_limiter` (each limiter cut), `impact(strength, point)` from body contacts with the world (impulse / (mass · 5 m/s),
+0..2, ≥ 150 ms apart, threshold 0.06), `bumped(strength, point, other)` the same for contacts with
+another car (≥ 200 ms apart, threshold 0.03; see "Car contacts"), `landed(strength)` after > 0.25 s
+airtime (landing speed / 7 m/s).
 
 
 ### Pop-up headlights (Hayate)
@@ -235,6 +238,8 @@ overrides in `car_hayate.tscn`.
 | `wall_scrape_loss` / `wall_scrape_drag` / `wall_align_rate` | 0.22 / 2 m/s² / 4 | | Wall hit speed loss × sin(angle); drag while scraping; nose-to-wall alignment |
 | `impact_guard_time` / `impact_yaw_limit` / `impact_tilt_limit` / `impact_climb_speed` | 0.6 s / 1.1 / 1.0 rad/s / 1 m/s | | Rate and launch limits after any wall/obstacle contact |
 | `low_obstacle_height` / `thin_obstacle_radius` | 0.5 m / 0.6 m | | Ride-over obstacles; poles and trunks that deflect the car |
+| `bump_yaw_accel` / `bump_tilt_limit` / `bump_rise_accel` | 4 rad/s² / 0.5 rad/s / 4 m/s² | | How far a car contact may turn, tip or lift the car beyond its own motion (Car contacts) |
+| `bump_min_strength` / `bump_cooldown` | 0.03 / 0.2 s | | `bumped` threshold and spacing |
 | `drag_area` / `downforce_area` / `aero_front_share` | 0.8 / 0.45 / 0.45 | 0.74 / 0.3 / | Top speed; high-speed planting |
 | `engine_sound` | `turbo4` | `na4` | Read by `CarAudio` |
 
@@ -426,7 +431,7 @@ recovery. `Car._update_crash` runs first in every tick on the contacts the solve
 the previous step and replaces what they did to the velocity:
 
 - **What counts.** Only `StaticBody3D` contacts (loose and smashable props are left to the
-  solver). A contact is a *wall* when its normal is mostly horizontal (`|n.y| < 0.6`: guardrails,
+  solver; other cars are "Car contacts" below). A contact is a *wall* when its normal is mostly horizontal (`|n.y| < 0.6`: guardrails,
   bridge rails, stone walls, buildings, cliff and rock faces) and an *obstacle* when the body is on
   layer 3 (`PROPS_LAYER`, MapWorld's `Barriers` and `PropBody_x_y`). Obstacles whose top is less
   than `low_obstacle_height` (0.5 m) above the car's ground (rocks, stumps, logs) get the guard
@@ -534,6 +539,110 @@ Footage: `capture.gd only=crash` (see Visual review) on both versions. In the ov
 the old car is swung round to about 90° across its path within 0.9 s; the new one is deflected
 past the pole with the nose turned about 20° and drives on. `docs/renders/physics_wall_scrape.png`
 is the chase view 0.25 s into a 25° guardrail hit at 110 km/h: the car runs along the rail.
+
+## Car contacts
+Race mode puts several cars on the road that bump each other; everywhere else (time trial, free
+roam, garage, menu, AutoDrive ghosts) cars still pass through each other.
+
+- **Layers.** Every car is on layer 2 (`CAR_LAYER`) and masks the world and props (1|3).
+  `Car.car_contacts = true` adds layer 2 to its mask, at any time (Jolt pairs two bodies when
+  either one's mask has the other's layer, so a car with contacts on also hits one with them off).
+  AutoDrive ghosts keep it off and are moved to no layer (`collision_layer = 0`) after they enter
+  the tree, so no car hits them.
+- **What the solver does.** The hulls' physics material has friction 0 and bounce 0, so Jolt
+  answers a car contact with a perfectly inelastic push along the contact normal and no tangential
+  drag: a side swipe cannot grab a car by its flank and spin it, a rear-end shares the speed
+  (a car stopped on the road and hit at 100 km/h leaves at 30-43 km/h), and two cars that press
+  together stop closing without bouncing apart. The wheels cast against the
+  world layer only, so a car never drives up onto another. Measured with the limits below lifted
+  (`contact_probe.gd raw=1`), taps, swipes and rear-ends at race speed were already calm; the hard
+  hits were not: at 100 km/h into a stopped car the struck car yawed at 86°/s and turned 16°, and
+  a 100 km/h T-bone pitched the hitter's nose up 9-16° and lifted it 0.20-0.37 m up the other car's
+  side (its nose top meets the sloping greenhouse, so the normal points up and the push acts above
+  the centre of mass). How far it climbs varies from run to run by a factor of two: it is a
+  chaotic grazing contact.
+- **Contact limits.** In a tick whose contacts include another car, `_update_crash` compares the
+  velocities with those at the end of the previous tick's crash pass (before its tyre forces and
+  contacts): the yaw rate may leave the band between that rate and the rate the steering asks for
+  (the yaw-rate control's target, stored by `_update_assists`; the car's own rate in a held drift or
+  below 4 m/s) by `bump_yaw_accel` · dt (4 rad/s²), the roll/pitch rate may not grow beyond
+  `bump_tilt_limit` (0.5 rad/s, or what it already was), and the speed off the road (along the
+  wheels' mean contact normal) may grow by `bump_rise_accel` · dt (4 m/s²). The solver keeps
+  pushing while the hulls overlap, so a contact still moves the car as far as it should; it just
+  cannot convert that push into spin, tip or climb faster than the car's own tyres and springs
+  could. No timer, no guard afterwards: the limits live exactly as long as the contact. With them
+  the 100 km/h rear hit turns the struck car 4° at 21°/s and the T-bone pitches the hitter 2° with
+  0.03 m of lift, while the everyday cases are unchanged (the band contains whatever the driver is
+  doing, so steering through a corner side by side is not held back).
+- **Resting and tangled cars.** Jolt leaves resting hulls 1-3 cm into each other; the start-line
+  and walking-pace hold keeps both still (drift at most 0.006 m/s over 10 s, no `bumped` at all).
+  Hulls that start 0.35 m into each other are pushed apart by Jolt's penetration recovery in
+  0.03-0.07 s.
+- **Sound.** Car contacts no longer send `impact` (the wall-crash sound, the camera shake, the
+  replay's crash events); they send `bumped(strength, point, other)` on the same scale, at least
+  0.03 and 0.2 s apart. `CarAudio` plays a body knock scaled by it, a thump under it from 0.3, and
+  the crash layer only from 1.0 (docs/AUDIO.md). Strengths measured: swipe 0.2, rear-end +20 /
+  +40 km/h 0.25-0.38 / 0.4-0.5, punt 0.3-0.56, T-bone at 60 km/h 0.54-0.87, hits at 100 km/h
+  1.1-1.5; grid pushes 0.2-0.34.
+
+`tools/physics/contact_probe.gd` runs the scenarios on the world pack with contacts on for every
+car, each car driven by its own lane keeper (pure pursuit to a lateral offset, throttle/brake to a
+speed), all pairs as Sakura/Sakura, Hayate/Hayate, Sakura into Hayate and Hayate into Sakura (three-
+and six-car runs alternate the cars):
+
+```
+S=/Applications/Summer.app/Contents/MacOS/Summer
+timeout -k 10 1800 nice -n 10 $S --headless --disable-crash-handler --fixed-fps 120 --path . \
+    -s res://tools/physics/contact_probe.gd -- [map=hanami|momiji] [sets=sakura,hayate,mixed,mixed2] [only=..] [raw=1]
+```
+
+| Scenario | What happens |
+| --- | --- |
+| swipe | straight, 100 km/h side by side (±1.25 m), A's nose beside B's rear door; A is shoved 3 m/s sideways into B and steers into B's lane until 0.6 s after the touch |
+| rear20 / rear40 | straight, B at 80 km/h; A from 7.8 m behind at 100 / 120 km/h, backs off to 70 at the touch |
+| brake | straight, both at 100 km/h 7.8 m apart; B brakes to a stop at 0.5 s, A only at 1 s (both noses down) |
+| punt | braking corner (Hanami's R38 left, Momiji's R39 left), B on the line at 85 % of the entry speed, A 0.8 m to the outside 25 km/h faster, backs off at the touch |
+| tbone / tbone100 | straight, B stopped across the road; A at 60 / 100 km/h into its side, then brakes |
+| wreck | straight, B stopped on the road; A at 100 km/h, 0.5 m off-centre, into its tail, then brakes |
+| squeeze | three abreast (±2.2 m, what a 7 m road allows) into the braking corner, lanes closed to 45 % from 30 m before the turn-in to 20 m after it, open again 40 m after it |
+| rest_side / rest_nose | two cars parked touching (1 cm overlap) side by side / nose to tail, no input, 10 s |
+| tangle | two cars parked 0.35 m into each other, no input |
+| grid | the route's grid, 2 x 3, rows 8 m apart, lanes ±2.4 m (swapped every row); 1.2 s hold, then everyone floors it in their lane for 5 s |
+
+CHECK per car and run: no flip, roll < 35°, airborne < 0.25 s, lift (origin above the road) <
+0.3 m, no reset, heading turned < 45° from where it started (not for the T-bones, where B is hit
+side-on), overlap above 5 cm for < 1.5 s, and separated within 1.5 s after the pusher lets go (a
+contact that ends with every car still is a resting contact); resting pairs drift < 0.05 m/s (the
+largest 0.5 s average speed after 1 s). The grid has nobody letting go: a Sakura floored behind a
+Hayate pushes it to the end of the run, so there the contact time is reported ("pushed") and the
+overlap check is the separation check.
+
+Results on the ep3 world (7 m stage roads), hanami, 52 runs / 124 car checks, **all PASS** (momiji:
+124/124 PASS). Worst value over every run the car is in; the last column is the same probe with
+`raw=1` (worst of both cars):
+
+| Scenario | Sakura | Hayate | raw (solver only) |
+| --- | --- | --- | --- |
+| swipe | roll 2° pitch 1° air 0 yaw 57°/s turn 8° lift 0.04 m, sep 0.20 s | roll 2° pitch 1° air 0 yaw 58°/s turn 9° lift 0.04 m, sep 0.20 s | roll 2° pitch 1° yaw 58°/s turn 9° lift 0.04 m, sep 0.22 s |
+| rear20 | roll 0° pitch 1° air 0 yaw 7°/s turn 1° lift 0.03 m, sep 0.32 s | same | same |
+| rear40 | roll 0° pitch 2° air 0 yaw 8°/s turn 1° lift 0.03 m, sep 0.29 s | same | roll 1°, otherwise same |
+| brake | roll 0° pitch 2° air 0 yaw 7°/s turn 1° lift 0.03 m, sep 0.47 s | roll 0° pitch 2° air 0 yaw 7°/s turn 1° lift 0.03 m, sep 0.32 s | pitch 2° yaw 8°/s lift 0.03 m, sep 0.33 s |
+| punt | roll 3° pitch 2° air 0 yaw 46°/s turn 9° lift 0.16 m, sep 0.43 s | roll 3° pitch 2° air 0 yaw 47°/s turn 8° lift 0.16 m, sep 0.43 s | roll 3° yaw 60°/s turn 9° lift 0.15 m, sep 0.46 s |
+| tbone | roll 2° pitch 2° air 0 yaw 13°/s turn 4° lift 0.03 m, sep 0.30 s | roll 2° pitch 2° air 0 yaw 4°/s turn 1° lift 0.03 m, sep 0.30 s | roll 4° pitch 4° yaw 22°/s turn 6° lift 0.07 m, sep 0.44 s |
+| wreck | roll 1° pitch 2° air 0 yaw 21°/s turn 4° lift 0.03 m, sep 0.14 s | roll 1° pitch 2° air 0 yaw 20°/s turn 3° lift 0.03 m, sep 0.14 s | roll 4° yaw 86°/s turn 16° lift 0.05 m, sep 0.24 s |
+| tbone100 | roll 2° pitch 2° air 0 yaw 9°/s turn 1° lift 0.03 m, sep 0.31 s | roll 2° pitch 2° air 0 yaw 8°/s turn 1° lift 0.03 m, sep 0.31 s | roll 4° **pitch 13°** yaw 37°/s turn 10° **lift 0.28 m**, sep 0.80 s |
+| squeeze | roll 12° pitch 2° air 0 yaw 50°/s turn 14° lift 0.15 m, sep 0.87 s | roll 12° pitch 2° air 0 yaw 49°/s turn 17° lift 0.15 m, sep 0.87 s | roll 12° yaw 50°/s turn 18° lift 0.15 m, sep 0.89 s |
+| rest_side | drift 0.006 m/s, 0 bumps | drift 0.005 m/s, 0 bumps | drift 0.006 m/s |
+| rest_nose | drift 0.004 m/s, 0 bumps | drift 0.004 m/s, 0 bumps | drift 0.004 m/s |
+| tangle | overlap 0.35 m, over 5 cm for 0.07 s | overlap 0.31 m, 0.03 s | overlap 0.35 m, 0.07 s |
+| grid | roll 1° pitch 1° air 0 yaw 4°/s, pushed 1.7 s, overlap 0.01 m | same | same |
+
+Air time was 0.00 s in every run and nothing flipped or needed a reset. The yaw rate is the
+heading's rate against the road over 0.1 s windows, so it includes the driver's own steering (the
+swipe's 57°/s is A swerving into B and back, the punt's 46°/s B turning in). The squeeze's 12° of
+roll is the outside car pushed onto the verge of the 7 m road (1.2-1.5 m past its edge), not the
+contact. None of the pairs or the grid ever overlapped by more than 0.21 m (the 100 km/h hits, one
+tick of closing speed) or stayed over 5 cm for longer than 0.07 s.
 
 ## Telemetry (`tools/physics/run_tests.gd`)
 
