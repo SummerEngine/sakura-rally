@@ -3,7 +3,8 @@ extends Node3D
 ## What the player saw, rebuilt for renders (tools/replay/review.gd): the recorded route's map
 ## with its atmosphere, colour grade and ink lines (PostFX, as Main sets them up), the drive's
 ## quality preset, the car as a ReplayGhost and a camera on the recorded camera transform, FOV
-## and lens. The HUD is not drawn. `show_at(t)` poses everything for replay time t.
+## and lens, the road gates open or closed as they were. The HUD is not drawn. `show_at(t)`
+## poses everything for replay time t.
 
 const DRIVING_STATES: Array[String] = ["RACING", "LIAISON", "FREE_ROAM"]
 const LETTERBOX_STATES: Array[String] = ["INTRO", "FINISHED", "ARRIVED"]
@@ -14,6 +15,9 @@ var post: PostFX
 var ghost: ReplayGhost
 var camera: Camera3D
 var _last_t: float = NAN
+## Gate id -> open at the start of the recording, and the "gate" events that changed them.
+var _gates_at_start: Dictionary = {}
+var _gate_events: Array[Dictionary] = []
 
 
 ## Builds the scene for `data` (awaitable). Pass `existing_map` to reuse a map that is already
@@ -40,6 +44,8 @@ func setup(data: ReplayData, existing_map: MapWorld = null) -> void:
 	camera.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	add_child(camera)
 	camera.make_current()
+	_gates_at_start = data.header.get("gates", {})
+	_gate_events = data.events_of("gate")
 
 
 ## Poses the car, the camera and the screen passes for replay time t. A jump back or of more
@@ -67,3 +73,17 @@ func show_at(t: float) -> void:
 	post.letterbox_target = 1.0 if state in LETTERBOX_STATES else 0.0
 	if snap:
 		post.snap()
+	_pose_gates(t)
+
+
+## Each gate as it stood at replay time t (a gate that changed during the drive switches at
+## the time of its event, without the swing).
+func _pose_gates(t: float) -> void:
+	var open := _gates_at_start.duplicate()
+	for e in _gate_events:
+		if float(e["t"]) <= t:
+			open[e["id"]] = e["open"]
+	for id: String in open:
+		var gate: RoadGate = map.gates.get(id)
+		if gate != null and gate.is_open != bool(open[id]):
+			gate.set_open(bool(open[id]), false)

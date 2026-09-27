@@ -24,6 +24,7 @@ extends SceneTree
 const MapLapRunner := preload("res://tools/physics/map_lap_runner.gd")
 const KeyboardBot := preload("res://tools/physics/keyboard_bot.gd")
 const Analysis := preload("res://tools/replay/analysis.gd")
+const Pairs := preload("res://tools/replay/pairs.gd")
 
 var opts := {"map": "hanami", "car": "sakura", "dest": "/tmp/ep3/replays/lap", "at": "15,40,70", "limit": "240"}
 var game: Node
@@ -188,14 +189,14 @@ func _run() -> void:
 			var live: Image = cap["image"]
 			live.save_png(out.path_join("live_%d.png" % k))
 			img.save_png(out.path_join("replay_%d.png" % k))
-			var diff := _diff(live, img)
-			var pair := _pair(live, img)
+			var diff := Pairs.diff(live, img)
+			var pair := Pairs.pair(live, img)
 			pair.save_png(out.path_join("pair_%d.png" % k))
 			sheet_rows.append(pair)
 			print("PAIR %d t=%.3f s  mean abs diff %.1f/255  pixels off by >32: %.1f%%  -> %s" % [k, ct, diff.x, diff.y * 100.0,
 					out.path_join("pair_%d.png" % k)])
 			_check(diff.x < 20.0, "replay frame %d matches the live frame" % k)
-		_stack(sheet_rows).save_png(out.path_join("pairs.png"))
+		Pairs.stack(sheet_rows).save_png(out.path_join("pairs.png"))
 		print("SHEET ", out.path_join("pairs.png"))
 	print("RESULT %s (%d failures)" % ["PASS" if failures.is_empty() else "FAIL", failures.size()])
 	for f in failures:
@@ -221,47 +222,3 @@ func _drive(seconds: float, post: PostFX, car: Car, wanted: Array[float], captur
 		if passed >= seconds:
 			return passed
 	return passed
-
-
-## (mean absolute difference 0..255, share of pixels off by more than 32), at 320 x 180.
-static func _diff(a: Image, b: Image) -> Vector2:
-	var x := a.duplicate() as Image
-	var y := b.duplicate() as Image
-	x.convert(Image.FORMAT_RGB8)
-	y.convert(Image.FORMAT_RGB8)
-	x.resize(320, 180, Image.INTERPOLATE_BILINEAR)
-	y.resize(320, 180, Image.INTERPOLATE_BILINEAR)
-	var da := x.get_data()
-	var db := y.get_data()
-	var total := 0
-	var off := 0
-	for i in range(0, da.size(), 3):
-		var d := maxi(maxi(absi(da[i] - db[i]), absi(da[i + 1] - db[i + 1])), absi(da[i + 2] - db[i + 2]))
-		total += absi(da[i] - db[i]) + absi(da[i + 1] - db[i + 1]) + absi(da[i + 2] - db[i + 2])
-		if d > 32:
-			off += 1
-	return Vector2(total / float(da.size()), off / float(da.size() / 3))
-
-
-## Live (left) and replay (right) at half size, side by side.
-static func _pair(a: Image, b: Image) -> Image:
-	var w := a.get_width() / 2
-	var h := a.get_height() / 2
-	var out := Image.create(w * 2 + 8, h, false, Image.FORMAT_RGB8)
-	out.fill(Color.WHITE)
-	for k in 2:
-		var src := (a if k == 0 else b).duplicate() as Image
-		src.convert(Image.FORMAT_RGB8)
-		src.resize(w, h, Image.INTERPOLATE_BILINEAR)
-		out.blit_rect(src, Rect2i(0, 0, w, h), Vector2i(k * (w + 8), 0))
-	return out
-
-
-static func _stack(rows: Array[Image]) -> Image:
-	var w := rows[0].get_width()
-	var h := rows[0].get_height()
-	var out := Image.create(w, (h + 8) * rows.size(), false, Image.FORMAT_RGB8)
-	out.fill(Color.WHITE)
-	for k in rows.size():
-		out.blit_rect(rows[k], Rect2i(0, 0, w, h), Vector2i(0, k * (h + 8)))
-	return out
