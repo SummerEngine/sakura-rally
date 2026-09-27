@@ -173,8 +173,7 @@ func _build_top_centre() -> void:
 func _build_tach() -> void:
 	_holder(_br, _br_inner, Control.PRESET_BOTTOM_RIGHT)
 	_tach = Tachometer.new()
-	_tach.size = Vector2(380, 380)
-	_tach.position = -_tach.size - Vector2(EDGE.x - 10.0, EDGE.y - 18.0)
+	_tach.dock_bottom_right(EDGE)
 	_br_inner.add_child(_tach)
 
 
@@ -337,11 +336,7 @@ func _process(delta: float) -> void:
 	var car: Object = game.player_car
 	var session: Object = game.session
 	var kmh := UIApi.num(car, &"speed_kmh")
-	var gear_v: Variant = car.get("gear") if car != null and is_instance_valid(car) else 1
-	var shifting_v: Variant = car.get("is_shifting") if car != null and is_instance_valid(car) else false
-	_tach.update_values(UIApi.num(car, &"rpm", 900.0), UIApi.num(car, &"max_rpm", 7800.0),
-		int(gear_v) if gear_v != null else 1, UIApi.speed_in_units(kmh), UIApi.unit_label(),
-		bool(shifting_v) if shifting_v != null else false)
+	_tach.follow(car)
 
 	_timer_card.position.x = -_timer_card.size.x * 0.5
 	if free_roam:

@@ -88,8 +88,11 @@ func _ready() -> void:
 	game.paused_changed.connect(_on_paused_changed)
 	game.notice.connect(_on_notice)
 	game.campaign_finished.connect(finale.open)
-	# Results Continue: the card goes while the car drives on (no cover between legs).
-	game.campaign_continue_requested.connect(func() -> void: results.hide_result())
+	# Campaign Continue (the results after a stage, Start on the arrival card): the card goes while
+	# the car drives on or the stage's start card comes up (no cover between legs).
+	game.campaign_continue_requested.connect(func() -> void:
+		results.hide_result()
+		arrival.hide_card())
 	_on_state_changed(int(game.state), int(game.state))
 
 

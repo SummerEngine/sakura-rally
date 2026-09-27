@@ -2,7 +2,9 @@ extends Control
 ## Arrival beat at the end of the liaison (Game.State.ARRIVED), as the car rolls to rest on the
 ## next stage's grid: "ARRIVED" pops over an indigo brush swash with 到着 painted beneath, then
 ## the destination and the stage slide in, and a small seal with the stage code is stamped
-## beside them. The stage's start card (race_intro) follows on the spot.
+## beside them. Then it waits for the player, like the results after a stage: "Start SS2"
+## (focused; Game.request_campaign_continue, the stage's start card follows on the spot) or
+## "Quit to title" (also Esc / B; the save already stands at the stage).
 
 signal shake_requested(strength: float)
 
@@ -12,10 +14,14 @@ const UIApi := preload("res://scripts/ui/ui_api.gd")
 const KineticText := preload("res://scripts/ui/widgets/kinetic_text.gd")
 const BrushKanji := preload("res://scripts/ui/widgets/brush_kanji.gd")
 const Hanko := preload("res://scripts/ui/widgets/hanko.gd")
+const InkButton := preload("res://scripts/ui/widgets/ink_button.gd")
 const ShaderRect := preload("res://scripts/ui/widgets/shader_rect.gd")
 const BRUSH_BAND := preload("res://shaders/ui/brush_band.gdshader")
 
 const SWASH := Color("2f4f8f")
+## Seconds into the card when the buttons come up (the seal has landed; Main starts the stage
+## only once the car is at rest anyway).
+const PROMPT_AT := 1.9
 
 var shown := false
 
@@ -26,6 +32,9 @@ var _dest := Control.new()
 var _dest_name: Label
 var _dest_sub: Label
 var _seal: Hanko
+var _buttons := HBoxContainer.new()
+var _start: Button
+var _quit: Button
 var _tween: Tween
 
 
@@ -77,6 +86,20 @@ func _ready() -> void:
 	_seal.caption = "TC"
 	_seal.landed.connect(func() -> void: shake_requested.emit(0.45))
 	add_child(_seal)
+	_buttons.add_theme_constant_override("separation", 12)
+	_buttons.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_buttons)
+	_start = InkButton.new()
+	_start.theme_type_variation = &"PrimaryButton"
+	_start.custom_minimum_size = Vector2(200, 0)
+	_start.press_sound = &"start"
+	_start.pressed.connect(func() -> void: _choose(&"request_campaign_continue"))
+	_buttons.add_child(_start)
+	_quit = InkButton.new()
+	_quit.text = "Quit to title"
+	_quit.press_sound = &"back"
+	_quit.pressed.connect(func() -> void: _choose(&"request_menu"))
+	_buttons.add_child(_quit)
 	visible = false
 
 
@@ -89,6 +112,7 @@ func show_card() -> void:
 	_dest_name.text = "%s  %s" % [dest["title_jp"], str(dest["title"]).to_upper()]
 	_dest_sub.text = "%s GRID  ·  THE STAGE STARTS HERE" % dest["code"]
 	_seal.caption = str(dest["code"])
+	_start.text = "Start %s" % dest["code"]
 	shown = true
 	visible = true
 	modulate.a = 1.0
@@ -112,6 +136,9 @@ func show_card() -> void:
 	_dest.modulate.a = 0.0
 	_seal.position = c + Vector2(w * 0.5 + 34.0, 214)
 	_seal.modulate.a = 0.0
+	_buttons.visible = false
+	_buttons.reset_size()
+	_buttons.position = c + Vector2(-_buttons.size.x * 0.5, 346)
 	UIApi.stinger(&"arrived")
 	UIMotion.kill(_tween)
 	_tween = UIMotion.tween(self)
@@ -124,12 +151,33 @@ func show_card() -> void:
 	_tween.tween_property(_dest, "modulate:a", 1.0, 0.4).set_delay(1.05)
 	_tween.tween_property(_dest, "position", dp, 0.6).set_delay(1.05).set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT)
 	_tween.tween_callback(_seal.stamp).set_delay(1.35)
+	_tween.tween_callback(_prompt).set_delay(PROMPT_AT)
+
+
+func _prompt() -> void:
+	_buttons.visible = true
+	_buttons.modulate.a = 0.0
+	var bp := _buttons.position
+	_buttons.position = bp + Vector2(0, 16)
+	var t := UIMotion.tween(_buttons)
+	t.set_parallel(true)
+	t.tween_property(_buttons, "modulate:a", 1.0, 0.3)
+	t.tween_property(_buttons, "position", bp, 0.5).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_start.grab_focus()
+
+
+## The player chose: the buttons go at once (and their focus with them, so a second press cannot
+## reach them while the next screen comes up), then Game hears the request.
+func _choose(request: StringName) -> void:
+	_buttons.visible = false
+	UIApi.game().call(request)
 
 
 func hide_card(instant: bool = false) -> void:
 	if not shown:
 		return
 	shown = false
+	_buttons.visible = false
 	UIMotion.kill(_tween)
 	if instant:
 		visible = false
@@ -137,3 +185,12 @@ func hide_card(instant: bool = false) -> void:
 	_tween = UIMotion.tween(self)
 	_tween.tween_property(self, "modulate:a", 0.0, 0.3)
 	_tween.tween_callback(hide)
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if not shown or not _buttons.visible:
+		return
+	if event.is_action_pressed("ui_cancel"):
+		UIApi.ui_sound(&"back")
+		_choose(&"request_menu")
+		get_viewport().set_input_as_handled()

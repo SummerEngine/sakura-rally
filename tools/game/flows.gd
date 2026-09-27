@@ -10,15 +10,17 @@ extends SceneTree
 ## Trial start on each stage (its route, its grid, gates closed).
 ##
 ## flow=campaign: the whole campaign from the title to the finale in one continuous drive. The
-## autopilot drives both stages and the liaison; results Continue, the finale and its end card
-## are pressed through the UI's input path. Checked on the way: SS1 ends at rest on Hanami's
-## finish stop, the results say the stage is complete with the next-stage side panel, Continue
-## opens the hanami_branch gate in view and the liaison starts from the exact pose SS1 ended in,
-## the road sign HUD, the arrival at rest on Momiji's grid, SS2's start card and countdown on
-## the spot, no LOADING and no cover from SS1 to SS2, SS2 at rest on Momiji's finish stop, the
-## classification, the title's finished state; then a save resumed at each leg (SS1 grid, the
-## liaison at Hanami's finish stop with the gate open and R on the branch landing on the branch,
-## SS2 grid) and quitting mid-liaison.
+## autopilot drives both stages and the liaison; results Continue, Start on the arrival card, the
+## finale and its end card are pressed through the UI's input path. Checked on the way: SS1 ends
+## at rest on Hanami's finish stop, the results say the stage is complete with the next-stage side
+## panel, Continue opens the hanami_branch gate in view and the liaison starts from the exact pose
+## SS1 ended in, the road sign HUD with the stages' tachometer in the same place, the arrival at
+## rest on Momiji's grid, the arrival card waiting for Start (SS2 never starts on its own), SS2's
+## start card and countdown on the spot, no LOADING and no cover from SS1 to SS2, SS2 at rest on
+## Momiji's finish stop, the classification, the title's finished state; then a save resumed at
+## each leg (SS1 grid, the liaison at Hanami's finish stop with the gate open and R on the branch
+## landing on the branch, SS2 grid), quitting mid-liaison, and Esc on the arrival card (back to
+## the title with the save at SS2).
 ##
 ##   timeout 400 $S --headless --disable-crash-handler --path . -s res://tools/game/flows.gd -- map=hanami
 ##   timeout 900 $S --headless --disable-crash-handler --path . -s res://tools/game/flows.gd -- \
@@ -32,6 +34,8 @@ var reached: Dictionary = {}
 var marked: Dictionary = {}
 var notices: Array[String] = []
 var failures: Array[String] = []
+## Screen rect of the stage HUD's tachometer while SS1 runs (the liaison's must match it).
+var race_tach := Rect2()
 
 
 func _initialize() -> void:
@@ -265,7 +269,9 @@ func _run_campaign() -> void:
 	await _campaign_pause(ui, legs[1])
 	await _campaign_liaison(ui, legs[1])
 
-	# ---- SS2 start card and countdown on the spot
+	# ---- Start on the arrival card: SS2's start card and countdown on the spot
+	_mark()
+	await _event(&"ui_accept")
 	await _until_state(&"INTRO", 20.0)
 	var at_card := car.global_transform.origin
 	_check(game.player_car == car and main.map.route_id == legs[2]["map"] and game.campaign_leg == 2, "SS2: Momiji route selected on the same car")
@@ -319,6 +325,7 @@ func _run_campaign() -> void:
 	# ---- resume at each leg (an unfinished save from an earlier session)
 	for li in legs.size():
 		await _campaign_resume(ui, li)
+	await _campaign_arrival_quit(ui)
 
 
 ## A save at leg `li` resumed from the title: SS1 on the Hanami grid, the liaison at Hanami's
@@ -377,8 +384,32 @@ func _campaign_resume(ui: CanvasLayer, li: int) -> void:
 	_check(int(game.campaign_status()["leg"]) == li, "quit keeps the save at leg %d" % li)
 
 
+## The liaison resumed from the title and driven in to Momiji's grid from 120 m out: Esc on the
+## arrival card goes back to the title, and the save stands at SS2.
+func _campaign_arrival_quit(ui: CanvasLayer) -> void:
+	game._campaign = {"leg": 1, "results": {"hanami": {"time": 130.0, "medal": "silver"}}, "finished": false}
+	_mark()
+	game.request_campaign(false)
+	await _until_state(&"LIAISON", 60.0)
+	var car: Car = game.player_car
+	car.place_at_rest(main.map.track.transform_at_abs(main.map.arrival_progress - 120.0))
+	await _seconds(0.3)
+	_mark()
+	_drive()
+	await _until_state(&"ARRIVED", 60.0)
+	Engine.time_scale = 1.0
+	await _until(func() -> bool: return root.gui_get_focus_owner() == ui.arrival._start, 15.0)
+	_mark()
+	await _event(&"ui_cancel")
+	await _until_state(&"MENU", 60.0)
+	_check(reached.get(game.State.INTRO, 0) == marked.get(game.State.INTRO, 0) and not game.campaign_active
+			and int(game.campaign_status()["leg"]) == 2,
+			"Esc on the arrival card: back on the title, SS2 not started, the save at SS2 (leg %s)" % game.campaign_status()["leg"])
+
+
 func _campaign_stage(ui: CanvasLayer, leg: Dictionary) -> void:
 	await _until(func() -> bool: return game.state == game.State.RACING, 30.0)
+	race_tach = ui.hud._tach.get_global_rect()
 	await _campaign_pause(ui, leg)
 	var result := {}
 	var grab := func(r: Dictionary) -> void: result.merge(r, true)
@@ -417,7 +448,14 @@ func _campaign_liaison(ui: CanvasLayer, leg: Dictionary) -> void:
 	_drive()
 	_mark()
 	var start := Time.get_ticks_msec()
+	var gauge_checked := false
 	while game.state == game.State.LIAISON and Time.get_ticks_msec() - start < 400000:
+		if not gauge_checked and float(game.session.distance_left) < left0 * 0.5:
+			gauge_checked = true
+			var tach: Control = ui.liaison_hud._tach
+			_check(tach.is_visible_in_tree() and tach.get_global_rect().is_equal_approx(race_tach) and tach.speed > 5.0,
+					"liaison HUD: the stages' tachometer in the same place %s, live (gear %d, %.0f rpm, %.0f km/h)"
+					% [tach.get_global_rect(), tach.gear, tach.rpm, tach.speed])
 		await process_frame
 	var arrived_ms := Time.get_ticks_msec()
 	Engine.time_scale = 1.0
@@ -431,6 +469,15 @@ func _campaign_liaison(ui: CanvasLayer, leg: Dictionary) -> void:
 	var arrival: Transform3D = main.map.arrival
 	_check(car.speed_kmh < 1.0 and _near(car, arrival, 3.0),
 			"arrival stop: %.1f km/h, %s from the grid, at rest by %.1f s into the arrival beat" % [car.speed_kmh, _off(car, arrival), rest_s])
+	# The card waits for the player: SS2 never starts on its own (it used to after 2.6 s, or once the
+	# car was at rest, 10.6 s at most).
+	var arr: Control = ui.arrival
+	while game.state == game.State.ARRIVED and Time.get_ticks_msec() - arrived_ms < 11000:
+		await process_frame
+	_check(game.state == game.State.ARRIVED and root.gui_get_focus_owner() == arr._start and arr._quit.is_visible_in_tree(),
+			"arrival card waits for the player after %.0f s: '%s' focused, '%s' beside it"
+			% [(Time.get_ticks_msec() - arrived_ms) / 1000.0, arr._start.text, arr._quit.text])
+	await shot("arrival_prompt")
 
 
 func _near(car: Car, xf: Transform3D, metres: float) -> bool:

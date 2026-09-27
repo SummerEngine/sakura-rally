@@ -2,10 +2,12 @@ extends Control
 ## Analog-style tachometer drawn with _draw: frosted paper dial, 1000-rpm ticks and numerals,
 ## segmented rpm arc (ink -> sakura -> vermilion redline), sweeping needle, shift light that
 ## flashes near the limiter, big gear numeral with a pop on every shift, speed readout.
-## Feed it with `update_values()` every frame.
+## The driving HUDs (the stages' and the liaison's) each dock one with `dock_bottom_right()` and
+## call `follow(car)` every frame, so the road between the stages shows the very same gauge.
 
 const UITheme := preload("res://scripts/ui/ui_theme.gd")
 const UIMotion := preload("res://scripts/ui/ui_motion.gd")
+const UIApi := preload("res://scripts/ui/ui_api.gd")
 
 const ARC_SWEEP := deg_to_rad(250.0)
 const ARC_START := PI * 0.5 + (TAU - ARC_SWEEP) * 0.5 ## symmetric gap at the bottom
@@ -32,14 +34,24 @@ func _init() -> void:
 	custom_minimum_size = Vector2(400, 400)
 
 
-func update_values(p_rpm: float, p_max: float, p_gear: int, p_speed: float, p_units: String, p_shifting: bool) -> void:
-	rpm = p_rpm
-	max_rpm = maxf(p_max, 1000.0)
-	speed = p_speed
-	unit_label = p_units
-	shifting = p_shifting
-	if p_gear != gear:
-		gear = p_gear
+## Places the dial in a holder anchored to the screen's bottom-right corner, `edge` in from the
+## screen edges (tucked a little closer: the round face leaves its box's corner empty).
+func dock_bottom_right(edge: Vector2) -> void:
+	size = custom_minimum_size
+	position = -size - edge + Vector2(10.0, 18.0)
+
+
+## Reads the car runtime API (rpm, max_rpm, gear, is_shifting, speed_kmh; a null or freed car
+## idles in first) and the speed units setting.
+func follow(car: Object) -> void:
+	rpm = UIApi.num(car, &"rpm", 900.0)
+	max_rpm = maxf(UIApi.num(car, &"max_rpm", 7800.0), 1000.0)
+	speed = UIApi.speed_in_units(UIApi.num(car, &"speed_kmh"))
+	unit_label = UIApi.unit_label()
+	shifting = UIApi.num(car, &"is_shifting") > 0.5
+	var g := int(UIApi.num(car, &"gear", 1.0))
+	if g != gear:
+		gear = g
 		_gear_pop = 0.0
 
 

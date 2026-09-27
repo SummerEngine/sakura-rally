@@ -273,7 +273,8 @@ meets only walls it can scrape along or props it knocks over.
   "title", "title_jp", "kanji"}`: SS1 `hanami`, L1 `liaison`, SS2 `momiji`), `const RIVALS`
   (`{"name", "name_jp", "team", "pace": [factor per stage]}`, stage time = gold × factor),
   `request_campaign(fresh: bool)` (a finished campaign always restarts),
-  `request_campaign_continue()`, `campaign_status() -> {"started", "finished", "leg", "legs",
+  `request_campaign_continue()` (results Continue, the arrival card's Start),
+  `campaign_status() -> {"started", "finished", "leg", "legs",
   "next", "results"}` (`leg` = next leg to play, `legs` when only the finale is left;
   `results` = map id → `{"time", "medal"}`), `var campaign_active: bool`, `var campaign_leg`
   (leg being played, -1 outside), `campaign_classification()` (rows `{"name", "name_jp",
@@ -286,8 +287,9 @@ meets only walls it can scrape along or props it knocks over.
   (`persistent` rules); a quit resumes at the start of the saved leg.
 - `Game.State` adds, in this order after `FREE_ROAM`: `LIAISON` (driving the liaison; within
   braking distance of Momiji's grid Main takes the car over and brakes it in), `ARRIVED` (the
-  arrival beat: the car rolls to rest on the grid, arrival card), `FINALE` (classification and
-  end card). Pause works in `LIAISON` as in `RACING`.
+  car rolls to rest on the grid and the arrival card waits for Start SS2 or Quit to title; the
+  save is already at SS2), `FINALE` (classification and end card). Pause works in `LIAISON` as
+  in `RACING`.
 - Campaign flow: see "Campaign in one world" under Episode 3. Music: `liaison` on the liaison
   drive, `results` on the finale; stingers `arrived`, `campaign_complete`.
 
@@ -513,9 +515,10 @@ noisy: report them, the lead re-measures at integration.
   say the lap is complete (time, medal, standing) and a side panel says what comes next
   ("SS2 Momiji Valley: drive on, the road is open") → Continue: the `hanami_branch` gate opens
   in view and the player drives off from where he stopped (LIAISON; the HUD shows a road sign
-  to Momiji with the distance) → at Momiji's grid the car is brought to rest (ARRIVED, a short
-  beat) → SS2 start card and COUNTDOWN on the spot → SS2 → FINISHED at Momiji's `finish_stop` →
-  results → FINALE. No cover and no reload between legs.
+  to Momiji with the distance, and the stages' tachometer) → at Momiji's grid the car is brought
+  to rest (ARRIVED) and the arrival card waits: Start SS2 (`request_campaign_continue`) → SS2
+  start card and COUNTDOWN on the spot → SS2 → FINISHED at Momiji's `finish_stop` → results →
+  FINALE. No cover and no reload between legs.
 - Time Attack and free roam run in the world: time trials keep the gates closed, free roam
   opens them. Resume: SS1 → Hanami grid; L1 → Hanami `finish_stop` with the gate open; SS2 →
   Momiji grid. Records and campaign results stay keyed by stage id.

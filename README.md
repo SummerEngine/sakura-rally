@@ -51,7 +51,8 @@ engine at 4600 rpm, and at GO the clutch drops into first.
   stage is complete, and a road sign beside them points on to SS2. Continue opens the barrier
   across the branch road in front of you, and you drive on from where you stopped. The road is
   untimed, and it runs from the sakura through summer into the autumn maples. At Momiji Valley's
-  grid the car comes to rest, the SS2 start card plays on the spot, and the countdown starts.
+  grid the car comes to rest and the arrival card waits for you: Start SS2 plays the start card
+  on the spot, then the countdown.
   The finale is a rally classification against six rivals. Quit at any point and the title
   offers "Continue" at that leg: SS1's grid, the road on from Hanami's finish, or SS2's grid.
 - **Time Attack**, a page of cards that show each stage from above with its route:

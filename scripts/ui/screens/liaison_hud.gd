@@ -1,15 +1,16 @@
 extends Control
 ## Calm HUD of the campaign's liaison drive (Game.State.LIAISON): no timer, no leg code. Top-left,
 ## a blue Japanese road direction sign to the next stage's place (紅葉谷 Momiji Valley) with the
-## distance left to its grid and a strip map of the road;
-## bottom-right, a small paper speed readout; centre, the same notice pill as the race HUD.
-## Reads Game.player_car / Game.session (distance_left, progress) every frame.
+## distance left to its grid and a strip map of the road; bottom-right, the stages' tachometer
+## (the same gauge in the same place as in hud.gd: rpm, gear, speed); centre, the same notice
+## pill as the race HUD. Reads Game.player_car / Game.session (distance_left, progress) every frame.
 
 const UITheme := preload("res://scripts/ui/ui_theme.gd")
 const UIMotion := preload("res://scripts/ui/ui_motion.gd")
 const UIApi := preload("res://scripts/ui/ui_api.gd")
 const PaperCard := preload("res://scripts/ui/widgets/paper_card.gd")
 const KineticText := preload("res://scripts/ui/widgets/kinetic_text.gd")
+const Tachometer := preload("res://scripts/ui/widgets/tachometer.gd")
 
 const EDGE := Vector2(56, 44)
 const SIGN_BLUE := Color("1f5ea6")
@@ -28,10 +29,8 @@ var _strip := Control.new()
 var _progress := 0.0
 
 var _br := Control.new()
-var _speed_card: PaperCard
-var _speed: KineticText
-var _unit: Label
-var _gear: Label
+var _br_inner := Control.new()
+var _tach: Tachometer
 
 var _notice := Control.new()
 var _notice_card: PaperCard
@@ -39,15 +38,13 @@ var _notice_label: Label
 var _notice_tween: Tween
 var _enter_tween: Tween
 var _last_dist_text := ""
-var _last_speed := -1
-var _last_gear := -99
 
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_build_sign()
-	_build_speed()
+	_build_tach()
 	_build_notice()
 	visible = false
 
@@ -132,44 +129,16 @@ func _build_sign() -> void:
 	col.add_child(_strip)
 
 
-func _build_speed() -> void:
+## The stages' gauge, docked where hud.gd docks it.
+func _build_tach() -> void:
 	_br.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
 	_br.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_br)
-	_speed_card = PaperCard.new()
-	_speed_card.padding = Vector4(30, 10, 28, 12)
-	_speed_card.radius = 30.0
-	_speed_card.paper_alpha = 0.86
-	_speed_card.set_shadow(0.16, 26.0, Vector2(0, 8))
-	_br.add_child(_speed_card)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
-	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_speed_card.add_child(row)
-	# A plain Control of fixed size: KineticText resizes its minimum to the text, which would
-	# grow the card past the screen edge as the digits change.
-	var box := Control.new()
-	box.custom_minimum_size = Vector2(124, 74)
-	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.add_child(box)
-	_speed = KineticText.new()
-	_speed.font = UITheme.FONT_TITLE
-	_speed.font_size = 58
-	_speed.mono_digits = true
-	_speed.align = HORIZONTAL_ALIGNMENT_RIGHT
-	_speed.style = KineticText.Style.NONE
-	_speed.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_speed.text = "0"
-	box.add_child(_speed)
-	var right := VBoxContainer.new()
-	right.add_theme_constant_override("separation", -2)
-	right.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	right.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	row.add_child(right)
-	_unit = UITheme.make_label("km/h", UITheme.tracked(UITheme.FONT_UI_BLACK, 2), 15, Color(UITheme.INK, 0.6))
-	right.add_child(_unit)
-	_gear = UITheme.make_label("1", UITheme.FONT_TITLE, 24, UITheme.VERMILION)
-	right.add_child(_gear)
+	_br_inner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_br.add_child(_br_inner)
+	_tach = Tachometer.new()
+	_tach.dock_bottom_right(EDGE)
+	_br_inner.add_child(_tach)
 
 
 func _build_notice() -> void:
@@ -199,7 +168,6 @@ func setup() -> void:
 	_dest_jp.text = str(dest["title_jp"])
 	_dest.text = str(dest["title"])
 	_last_dist_text = ""
-	_last_speed = -1
 	_progress = 0.0
 	_notice.visible = false
 	_sign.reset_size()
@@ -214,7 +182,8 @@ func show_hud() -> void:
 	UIMotion.kill(_enter_tween)
 	_enter_tween = UIMotion.tween(self)
 	_enter_tween.set_parallel(true)
-	# The sign swings in from its top edge like a board on a post; the speed card rises.
+	# The sign swings in from its top edge like a board on a post; the gauge slides in as on the
+	# stages.
 	_sign.pivot_offset = Vector2(_sign.size.x * 0.5, 0.0)
 	_sign.rotation = -0.18
 	_sign.scale = Vector2(0.92, 0.92)
@@ -222,12 +191,10 @@ func show_hud() -> void:
 	_enter_tween.tween_property(_tl, "modulate:a", 1.0, 0.3)
 	_enter_tween.tween_property(_sign, "rotation", 0.0, 0.9).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
 	_enter_tween.tween_property(_sign, "scale", Vector2.ONE, 0.5).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	_speed_card.reset_size()
-	var base := -_speed_card.get_combined_minimum_size() - Vector2(EDGE.x, EDGE.y)
-	_speed_card.position = base + Vector2(0, 50)
-	_speed_card.modulate.a = 0.0
-	_enter_tween.tween_property(_speed_card, "position", base, 0.7).set_delay(0.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	_enter_tween.tween_property(_speed_card, "modulate:a", 1.0, 0.35).set_delay(0.12)
+	_br_inner.position = Vector2(70, 40)
+	_br_inner.modulate.a = 0.0
+	_enter_tween.tween_property(_br_inner, "position", Vector2.ZERO, 0.7).set_delay(0.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_enter_tween.tween_property(_br_inner, "modulate:a", 1.0, 0.35).set_delay(0.12)
 
 
 func hide_hud(instant: bool = false) -> void:
@@ -242,8 +209,8 @@ func hide_hud(instant: bool = false) -> void:
 	_enter_tween.set_parallel(true)
 	_enter_tween.tween_property(_tl, "modulate:a", 0.0, 0.3)
 	_enter_tween.tween_property(_sign, "rotation", -0.12, 0.35).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
-	_enter_tween.tween_property(_speed_card, "modulate:a", 0.0, 0.3)
-	_enter_tween.tween_property(_speed_card, "position:y", _speed_card.position.y + 40.0, 0.35).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	_enter_tween.tween_property(_br_inner, "position", Vector2(60, 30), 0.35).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	_enter_tween.tween_property(_br_inner, "modulate:a", 0.0, 0.3)
 	_enter_tween.chain().tween_callback(hide)
 
 
@@ -271,17 +238,8 @@ func _process(_delta: float) -> void:
 	if not visible:
 		return
 	var game := UIApi.game()
-	var car: Object = game.player_car
 	var session: Object = game.session
-	var kmh := absf(UIApi.num(car, &"speed_kmh"))
-	var speed := roundi(UIApi.speed_in_units(kmh))
-	var gear := int(UIApi.num(car, &"gear", 1.0))
-	if speed != _last_speed or gear != _last_gear:
-		_last_speed = speed
-		_last_gear = gear
-		_speed.text = str(speed)
-		_unit.text = UIApi.unit_label()
-		_gear.text = "R" if gear < 0 else ("N" if gear == 0 else str(gear))
+	_tach.follow(game.player_car)
 	var left := maxf(UIApi.num(session, &"distance_left"), 0.0)
 	var mph := str(UIApi.setting("units")) == "mph"
 	var dist := left / (1609.344 if mph else 1000.0)

@@ -25,9 +25,10 @@ signal campaign_leg_started(index: int, leg: Dictionary)
 signal arrived ## the liaison car reached Momiji's grid (re-emitted from RaceSession.arrived)
 signal campaign_finished(summary: Dictionary)
 
-## LIAISON: the untimed drive from Hanami's finish on to Momiji's grid. ARRIVED: the short beat
-## as the car comes to rest there. FINALE: the rally classification and end card after the last
-## stage.
+## LIAISON: the untimed drive from Hanami's finish on to Momiji's grid. ARRIVED: the car comes to
+## rest there and the arrival card waits for the player to start the stage
+## (request_campaign_continue) or quit. FINALE: the rally classification and end card after the
+## last stage.
 enum State { BOOT, MENU, LOADING, INTRO, COUNTDOWN, RACING, FINISHED, FREE_ROAM, LIAISON, ARRIVED, FINALE }
 
 const MODE_TIME_TRIAL := "time_trial"
@@ -333,7 +334,7 @@ func request_campaign(fresh: bool) -> void:
 	campaign_requested.emit()
 
 
-## Results "Continue" and the end of the arrival beat: Main drives straight on into the next leg
+## Results "Continue" and the arrival card's "Start SS2": Main goes straight on into the next leg
 ## from where the car stands (or into the finale once every leg is done).
 func request_campaign_continue() -> void:
 	set_paused(false)
