@@ -6,9 +6,9 @@ extends SceneTree
 ##   first, drives the player's car from a standstill at the same spot (CORNER_FROM) into the
 ##   same corners (a 55 m bend, then the tarmac hairpin) -> the shipped driver there again with
 ##   what its network sees drawn over the road (DriveSense: 9 rays to the road's edge, 14
-##   centre-line points ahead) -> a Hanami Time Attack with every generation as a ghost, the
-##   camera on the newest at the back of the grid -> free roam on Momiji, a road no generation
-##   trained on.
+##   centre-line points ahead) -> a Hanami Time Attack with every generation as a ghost: the grid
+##   from above through the countdown, then the newest from behind (it starts last) -> free roam
+##   on Momiji, a road no generation trained on.
 ## Music is muted here: cut_film.py lays the drive theme under the edit. Cues go to
 ## <footage>/cues.json: video seconds, each clip's policy (file, run, steps) and what the car did
 ## (where it first left the road and how fast, its speed at each marked corner).
@@ -29,6 +29,13 @@ const SEES_S := 15.0
 ## The race: the newest ghost reaches the bend about 17 s after GO.
 const RACE_S := 24.0
 const RACE_MARKS := {"bend": 520.0}
+## The grid through the countdown: a camera GRID_CAM_UP m above the centre line GRID_CAM_BACK m
+## behind the last car, looking at the centre line GRID_CAM_LOOK m ahead of it; high enough that
+## the labels over the cars (one size on screen at any distance) clear each other.
+const GRID_CAM_BACK := 20.0
+const GRID_CAM_UP := 16.0
+const GRID_CAM_LOOK := 7.0
+const GRID_CAM_FOV := 50.0
 ## Momiji: tarmac (712 m, r 46 m) and gravel (812 m, r 38 m) bends, then the gravel hairpin.
 const HELD_OUT := "momiji"
 const HELD_OUT_FROM := 560.0
@@ -65,15 +72,22 @@ class KeepDrawing extends Node:
 
 ## What the network sees, drawn over the road around the car its pilot drives: the rays to the edge
 ## of the drivable road and the centre-line points ahead (DriveSense), nothing else. Drawn through
-## everything, the car included.
+## everything, the car included, turned to the camera and one size on screen near and far (lying
+## flat on the road they are edge-on to a chase camera). Colours as in cut_film.py's legend.
 class SenseView extends MeshInstance3D:
-	const RAY_COLOUR := Color(0.91, 0.32, 0.49, 0.8)
-	const HIT_COLOUR := Color(1.0, 1.0, 1.0, 0.95)
-	const ROAD_COLOUR := Color(0.37, 0.83, 0.64, 0.95)
+	const RAY_COLOUR := Color(0.91, 0.32, 0.49, 0.85)
+	const HIT_COLOUR := Color(0.91, 0.32, 0.49, 1.0)
+	const ROAD_COLOUR := Color(0.25, 0.71, 0.54, 1.0)
 	const LIFT := 0.5 # m above the car's origin
-	const RAY_HALF_WIDTH := 0.06
+	## Half a ray's width and a mark's radius per metre from the camera: at 1080p and the chase
+	## camera's 70° FOV, 6 px wide rays and 17 px marks.
+	const RAY_HALF := 0.004
+	const MARK_R := 0.011
 	var pilot: NeuralPilot
 	var _mesh := ImmediateMesh.new()
+	var _eye := Vector3.ZERO
+	var _right := Vector3.RIGHT
+	var _up := Vector3.UP
 
 	func _init() -> void:
 		mesh = _mesh
@@ -81,6 +95,7 @@ class SenseView extends MeshInstance3D:
 		var m := StandardMaterial3D.new()
 		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		m.vertex_color_use_as_albedo = true
+		m.vertex_color_is_srgb = true
 		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		m.no_depth_test = true
 		m.cull_mode = BaseMaterial3D.CULL_DISABLED
@@ -88,8 +103,12 @@ class SenseView extends MeshInstance3D:
 
 	func _process(_delta: float) -> void:
 		_mesh.clear_surfaces()
-		if pilot == null or not is_instance_valid(pilot) or pilot.sense == null or pilot.sense.hint < 0:
+		var cam := get_viewport().get_camera_3d()
+		if cam == null or pilot == null or not is_instance_valid(pilot) or pilot.sense == null or pilot.sense.hint < 0:
 			return
+		_eye = cam.global_position
+		_right = cam.global_basis.x
+		_up = cam.global_basis.y
 		var sense := pilot.sense
 		var base := pilot.car.global_position + Vector3.UP * LIFT
 		var fwd := -pilot.car.global_basis.z
@@ -100,24 +119,29 @@ class SenseView extends MeshInstance3D:
 		for k in DriveSense.RAY_COUNT:
 			var a := deg_to_rad(DriveSense.RAY_ANGLES_DEG[k])
 			var hit := base + (fwd * cos(a) + right * sin(a)) * sense.rays[k]
-			_ribbon(base, hit, RAY_HALF_WIDTH, RAY_COLOUR)
-			_diamond(hit, 0.22, HIT_COLOUR)
+			_ray(base, hit, RAY_COLOUR)
+			_mark(hit, HIT_COLOUR)
 		var t := sense.track
 		var s := t.abs_s(sense.hint, pilot.car.global_position)
 		for d: float in DriveSense.AHEAD_M:
-			_diamond(t.position_at_abs(s + d, 0.0) + Vector3.UP * LIFT, 0.3 + d * 0.004, ROAD_COLOUR)
+			_mark(t.position_at_abs(s + d, 0.0) + Vector3.UP * LIFT, ROAD_COLOUR)
 		_mesh.surface_end()
 
-	func _ribbon(a: Vector3, b: Vector3, w: float, c: Color) -> void:
-		var side := (b - a).cross(Vector3.UP).normalized() * w
-		for v: Vector3 in [a + side, b + side, b - side, a + side, b - side, a - side]:
+	## A band from a to b, turned to the camera, RAY_HALF per metre from it either side.
+	func _ray(a: Vector3, b: Vector3, c: Color) -> void:
+		var dir := b - a
+		var sa := dir.cross(_eye - a).normalized() * (_eye.distance_to(a) * RAY_HALF)
+		var sb := dir.cross(_eye - b).normalized() * (_eye.distance_to(b) * RAY_HALF)
+		for v: Vector3 in [a + sa, b + sb, b - sb, a + sa, b - sb, a - sa]:
 			_mesh.surface_set_color(c)
 			_mesh.surface_add_vertex(v)
 
-	func _diamond(p: Vector3, r: float, c: Color) -> void:
-		var x := Vector3(r, 0.0, 0.0)
-		var z := Vector3(0.0, 0.0, r)
-		for v: Vector3 in [p + x, p + z, p - x, p + x, p - x, p - z]:
+	## A diamond facing the camera, MARK_R per metre from it.
+	func _mark(p: Vector3, c: Color) -> void:
+		var r := _eye.distance_to(p) * MARK_R
+		var x := _right * r
+		var y := _up * r
+		for v: Vector3 in [p + x, p + y, p - x, p + x, p - x, p - y]:
 			_mesh.surface_set_color(c)
 			_mesh.surface_add_vertex(v)
 
@@ -173,7 +197,10 @@ func _run() -> void:
 	await _watch("sees", main.car, "hanami", SEES_S, CORNER_MARKS)
 	view.queue_free()
 
-	# A Hanami Time Attack with every generation as a ghost, the newest (at the back) watched.
+	# A Hanami Time Attack with every generation as a ghost: the grid from above through the
+	# countdown, then the newest (at the back) from its chase camera, without its own label (from
+	# behind, it sits on the labels of the pack ahead). The countdown's numerals stay hidden over
+	# the grid (they fill the middle of the frame, where the labels are); GO shows.
 	ai.ghosts_on = true
 	var countdown := int(entered.get(game.State.COUNTDOWN, 0)) + 1
 	var race := int(entered.get(game.State.RACING, 0)) + 1
@@ -186,8 +213,15 @@ func _run() -> void:
 	var newest: Car = ai.ghosts[ai.ghosts.size() - 1]
 	main.chase.target = newest
 	main.chase.snap()
+	var crane := _grid_camera(main.map.routes["hanami"]["track"], newest)
+	var intro: Control = main.ui.race_intro
+	intro.visible = false
 	_cue("grid")
 	await _until_entered(game.State.RACING, 30.0, race)
+	intro.visible = true
+	main.chase.make_current()
+	crane.queue_free()
+	newest.get_node(^"Label3D").hide()
 	_cue("race")
 	await _watch("race", newest, "hanami", RACE_S, RACE_MARKS)
 
@@ -223,6 +257,24 @@ func _drive_from(policy: DrivePolicy, route: String, progress: float) -> void:
 	await physics_frame
 	ai._trouble.clear()
 	main.chase.snap()
+
+
+## The grid shot: a camera over the centre line behind `back` (the last car on the grid), made
+## current; the caller frees it.
+func _grid_camera(t: Track, back: Car) -> Camera3D:
+	var s := t.abs_s(t.nearest(back.global_position), back.global_position)
+	var at := t.position_at_abs(s, 0.0)
+	var fwd := t.position_at_abs(s + 1.0, 0.0) - at
+	fwd.y = 0.0
+	fwd = fwd.normalized()
+	var cam := Camera3D.new()
+	cam.fov = GRID_CAM_FOV
+	cam.near = 0.1
+	main.add_child(cam)
+	cam.global_position = at - fwd * GRID_CAM_BACK + Vector3.UP * GRID_CAM_UP
+	cam.look_at(t.position_at_abs(s + GRID_CAM_LOOK, 0.0), Vector3.UP)
+	cam.make_current()
+	return cam
 
 
 ## Films `car` for `seconds`, cueing `<tag>_off` where it first leaves the road (progress, km/h)

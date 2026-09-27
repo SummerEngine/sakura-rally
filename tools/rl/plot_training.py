@@ -116,15 +116,15 @@ class Chart:
 			mx = steps / 1e6
 			my = float(np.interp(mx, self.x, self.y))
 			dot = ax.scatter([mx], [my], s=260, color=MINT, edgecolors=INK, linewidths=2.5, zorder=5)
-			# the first two marks sit together in the steep start: one label above, one to the right
-			if mx < 0.05:
-				xy, ha = (14, 48), "left"
-			elif mx < 0.5:
-				xy, ha = (26, -12), "left"
+			# gen 1 and gen 2 sit together in the steep start: labels right of the curve, each tied
+			# to its dot by a short line
+			if mx < 0.5:
+				text = ax.annotate(label, (mx, my), xytext=(48, 6) if mx < 0.05 else (31, 10),
+						textcoords="offset points", ha="left", va="center", fontproperties=body, fontsize=21,
+						color=INK, zorder=6, arrowprops=dict(arrowstyle="-", color=INK, lw=1.5, shrinkA=4, shrinkB=11))
 			else:
-				xy, ha = (0, 26), "center"
-			text = ax.annotate(label, (mx, my), xytext=xy, textcoords="offset points", ha=ha, va="bottom",
-					fontproperties=body, fontsize=21, color=INK, zorder=6)
+				text = ax.annotate(label, (mx, my), xytext=(0, 26), textcoords="offset points", ha="center",
+						va="bottom", fontproperties=body, fontsize=21, color=INK, zorder=6)
 			self.marks.append((mx, dot, text))
 		self.fig = fig
 

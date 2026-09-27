@@ -124,9 +124,10 @@ not resources and need `include_filter="*.bin"` in the preset, or an exported ga
 ## The video
 
 `tools/rl/render_film.sh` films how it learned, in the real game, offscreen and muted, and cuts
-`/tmp/sakura_film/sakura_ai_learns.mp4` (about 25 min in all under `nice`; `--cut-only` recuts):
+`/tmp/sakura_film/sakura_ai_learns.mp4` (about 12 min in all under `nice`; `--cut-only` recuts):
 every generation driven from the same standstill into the same Hanami corners, the learning
 curve (`tools/rl/plot_training.py`, which also plots any run to a PNG), the shipped driver with
-its rays and road points drawn over the road, one race of every generation as ghosts, and Momiji.
+its rays and road points drawn over the road, one race of every generation as ghosts (the grid
+from above through the countdown, then the newest from behind), and Momiji.
 `tools/rl/film.gd` shoots it and logs what each car did (where it left the road, how fast), and
 `cut_film.py` captions each clip from that log only.

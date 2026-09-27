@@ -66,11 +66,14 @@ def age_label(cue: dict) -> str:
 	"""Training time behind a generation, from its run's progress.csv."""
 	steps = int(cue.get("steps", 0))
 	if steps <= 0:
-		return "0 minutes of practice"
+		return "no practice"
 	s = plot_training.train_seconds(str(cue.get("run", "")), steps)
 	if s is None:
 		return steps_label(steps)
-	return f"{s / 60:.0f} minutes of practice" if s < 5400 else f"{s / 3600:.1f} hours of practice"
+	if s >= 5400:
+		return f"{s / 3600:.1f} hours of practice"
+	m = round(s / 60)
+	return f"{m} minute{'' if m == 1 else 's'} of practice"
 
 
 # ---------------------------------------------------------------- cards and captions (PNG)
@@ -112,21 +115,31 @@ def caption(path: Path, big: str, small: str, badge: str = "", badge_colour=PINK
 
 
 def legend(path: Path) -> None:
-	"""The key to the drawing over the road in the 'what it sees' clip (top right)."""
+	"""The key to the 'what it sees' clip (top right): all the network gets, the parts film.gd's
+	SenseView draws by their colour, the rest (DriveSense motion and hands) as a ring."""
 	img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
 	d = ImageDraw.Draw(img)
 	fb, fs = font(BOLD, 34), font(BODY, 28)
+	head = "All it gets, 10 times a second"
 	rows = [((232, 81, 124), "9 rays", "how far to the edge of the road"),
-			((63, 180, 137), "14 points", "where the road goes, up to 220 m ahead")]
+			((63, 180, 137), "14 points", "where the road goes, up to 220 m ahead"),
+			(None, "9 numbers", "its speed, slide, spin, surface and controls")]
+	pad, indent, row_h = 32, 48, 66
+	w = pad * 2 + max([d.textlength(head, font=fb)]
+			+ [indent + d.textlength(a + "  ", font=fb) + d.textlength(b, font=fs) for _, a, b in rows])
 	x1, y0 = W - 70, 70
-	w = 640
-	d.rounded_rectangle((x1 - w, y0, x1, y0 + 230), 26, fill=CREAM + (240,))
-	d.text((x1 - w + 32, y0 + 22), "All it gets, 10 times a second", font=fb, fill=INK)
+	x0 = x1 - w
+	d.rounded_rectangle((x0, y0, x1, y0 + 98 + row_h * len(rows)), 26, fill=CREAM + (240,))
+	d.text((x0 + pad, y0 + 22), head, font=fb, fill=INK)
 	for i, (c, a, b) in enumerate(rows):
-		y = y0 + 88 + i * 66
-		d.ellipse((x1 - w + 34, y + 8, x1 - w + 62, y + 36), fill=c)
-		d.text((x1 - w + 80, y), a, font=fb, fill=INK)
-		d.text((x1 - w + 80 + d.textlength(a + "  ", font=fb), y + 4), b, font=fs, fill=INK + (200,))
+		y = y0 + 88 + i * row_h
+		ring = (x0 + pad + 2, y + 8, x0 + pad + 30, y + 36)
+		if c:
+			d.ellipse(ring, fill=c)
+		else:
+			d.ellipse(ring, outline=INK, width=3)
+		d.text((x0 + pad + indent, y), a, font=fb, fill=INK)
+		d.text((x0 + pad + indent + d.textlength(a + "  ", font=fb), y + 4), b, font=fs, fill=INK + (200,))
 	img.save(path)
 
 
@@ -170,7 +183,7 @@ def plan(cues: dict[str, dict]) -> list[dict]:
 			("the newest starts last", BODY, 42, INK)]})
 	race, grid = cues["race"], cues["grid"]
 	segs.append({"kind": "clip", "src": grid["t"] + 0.2, "dur": race["t"] - grid["t"] + 14.0,
-			"caption": ("The newest, from the back", "labels over each car: its generation and practice", "", PINK)})
+			"caption": ("The newest, from the back", "over each car: its generation and training steps", "", PINK)})
 	held = cues["held_out"]
 	segs.append({"kind": "card", "beats": 6, "lines": [
 			("A road it has never seen", TITLE, 76, INK),
