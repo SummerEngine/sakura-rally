@@ -3,12 +3,15 @@ extends Node
 ## The trained neural driver in the game (docs/RL.md). Lives under Main (one line in
 ## Main._ready) and reads Main's `car`, `map` and `chase`:
 ##
-##   I  auto-drive: the driver (a NeuralPilot with DRIVER) takes the player's car on a stage, the
-##      liaison or free roam and gives it back when pressed again. The game's own takeovers
-##      (the finish stop, the liaison arrival) still win.
+##   I  auto-drive: the driver (a NeuralPilot with DRIVER) takes the player's car in Time Attack,
+##      the liaison or free roam and gives it back when pressed again. A Time Attack run it drove
+##      any part of sets no record or medal (Game.ai_drove); campaign stages, which count for the
+##      rally classification, it sits out. The game's own takeovers (the finish stop, the liaison
+##      arrival) still win.
 ##   G  ghosts: the training generations (GENERATIONS_DIR, one DrivePolicy file each, oldest
-##      first) join as ghost cars side by side just behind the player: no collisions (cars never
-##      collide), their own liveries, a label over each. A new stage brings them back on its grid.
+##      first) join as ghost cars on a staggered grid behind the player, held on the line with the
+##      player's car through the countdown: no collisions (cars never collide), their own
+##      liveries, a label over each. A new stage brings them back on its grid.
 ##   V  watch: the chase camera goes to the next ghost, and back to the player's car.
 ##
 ## Letters, not F-keys: on a Mac keyboard F7-F12 are media keys that never reach the game.
@@ -24,6 +27,11 @@ const RESCUE_S := 2.5
 const OFF_ROAD_M := 3.0
 const GHOST_LIVERIES: Array[Color] = [Color("7fc8f8"), Color("f9a03f"), Color("b388eb"), Color("5fd3a2"),
 		Color("f25f5c"), Color("ffe066")]
+## Ghost grid (_spawn_ghosts): first slot GRID_BACK_M behind the car, each next one GRID_GAP_M
+## further, alternating GRID_LAT_M left and right of the centre line.
+const GRID_BACK_M := 12.0
+const GRID_GAP_M := 7.0
+const GRID_LAT_M := 1.6
 
 var auto_drive: bool = false
 var ghosts_on: bool = false
@@ -40,6 +48,7 @@ var _took_car: bool = false
 var _ghosts_for: Car
 ## Per driven car (instance id): [seconds in trouble, last road distance].
 var _trouble: Dictionary = {}
+## Game.state at the last physics tick: entering COUNTDOWN starts a new run (clears ai_drove).
 var _state: int = -1
 
 
@@ -72,6 +81,8 @@ func _input(event: InputEvent) -> void:
 				_detach(true)
 			if auto_drive and _campaign_stage():
 				Game.post_notice("The AI driver sits out campaign stages")
+			elif auto_drive and Game.mode == Game.MODE_TIME_TRIAL:
+				Game.post_notice("AI driving: this run sets no record")
 			else:
 				Game.post_notice("AI driving" if auto_drive else "You drive")
 		KEY_G:
@@ -119,7 +130,8 @@ func _physics_process(delta: float) -> void:
 		_clear_ghosts()
 	if ghosts_on and drivable and ghosts.is_empty():
 		_spawn_ghosts(car, track)
-	for ghost in ghosts:
+	for ghost in ghosts: # ghosts exist only for a live `car` (_ghosts_for)
+		ghost.launch_hold = car.launch_hold # on the line with the player through the countdown
 		var pilot := ghost.get_node(^"NeuralPilot") as NeuralPilot
 		if pilot.track != track:
 			pilot.track = track
@@ -183,7 +195,9 @@ func _rescue(car: Car, pilot: NeuralPilot, delta: float) -> bool:
 	return rescued
 
 
-## One ghost per generation file, side by side across the road 12 m behind `car`.
+## One ghost per generation file on a staggered two-column grid behind `car`, oldest nearest
+## (cars never collide, the grid only keeps them apart on screen). At the start of an open road,
+## where there is no road behind, the grid lines up ahead instead.
 func _spawn_ghosts(car: Car, track: Track) -> void:
 	_ghosts_for = car
 	var files := _generation_files()
@@ -191,7 +205,7 @@ func _spawn_ghosts(car: Car, track: Track) -> void:
 		Game.post_notice("No AI generations in this build")
 		ghosts_on = false
 		return
-	var s := track.abs_s(track.nearest(car.global_position), car.global_position) - 12.0
+	var s := track.abs_s(track.nearest(car.global_position), car.global_position)
 	var scene := load(str(Game.current_car()["scene"])) as PackedScene
 	for i in files.size():
 		var p := DrivePolicy.load_file(files[i])
@@ -219,8 +233,9 @@ func _spawn_ghosts(car: Car, track: Track) -> void:
 		var c := GHOST_LIVERIES[i % GHOST_LIVERIES.size()]
 		ghost.set_livery(c, c.darkened(0.45))
 		CarLook.apply(ghost)
-		var lat := (float(i) - (files.size() - 1) * 0.5) * 1.7
-		ghost.place_at_rest(track.transform_at_abs(s, clampf(lat, -3.0, 3.0)))
+		var back := GRID_BACK_M + i * GRID_GAP_M
+		var gs := s - back if track.closed or s - back >= track.first_s else s + back
+		ghost.place_at_rest(track.transform_at_abs(gs, -GRID_LAT_M if i % 2 == 0 else GRID_LAT_M))
 		ghosts.append(ghost)
 
 

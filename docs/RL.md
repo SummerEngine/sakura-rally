@@ -13,12 +13,15 @@ classification, so the driver sits them out; liaisons and free roam are fine.
 | Key | What it does |
 |---|---|
 | I | Auto-drive: the AI takes your car (stage, liaison, free roam); I again gives it back |
-| G | Ghosts: every training generation in `assets/ai/generations/` joins as a labelled ghost car |
+| G | Ghosts: every training generation in `assets/ai/generations/` joins as a labelled ghost car on a staggered grid behind you, held on the line with you through the countdown |
 | V | Watch: the chase camera goes to the next ghost, then back to your car |
 
-`scripts/ai/auto_drive.gd` (one line in `Main._ready`) does this. A driven car that stays off
-the road or stuck for 2.5 s is put back on it, like the reset key. Command line: `-- auto-drive`,
-`ghosts`, `policy=<file>`.
+`scripts/ai/auto_drive.gd` (one line in `Main._ready`) does this. Cars never collide with each
+other, so ghosts pass through your car (they do hit props and spectators). A driven car that
+stays off the road or stuck for 2.5 s is put back on it, like the reset key. A car standing
+still for 1 s gets full throttle (the network still steers) until 15 km/h: the likeliest action
+at a standstill after a reset can be to wait. Command line: `-- auto-drive`, `ghosts`,
+`policy=<file>`.
 
 ## What the network sees (`scripts/ai/drive_sense.gd`, 46 numbers)
 
@@ -36,17 +39,18 @@ at 10 Hz, smoothed like a gamepad. The same two files run in training and in the
 
 ```sh
 cd tools/rl
-caffeinate -i nice -n 10 uv run --python 3.12 train.py --run gen1 \
-    --routes hanami,hanami:rev,liaison,liaison:rev --procs 4 --cars 16 --steps 40e6
+caffeinate -i nice -n 10 uv run --python 3.12 train.py --run gen1 --car sakura,hayate \
+    --routes hanami,hanami:rev,liaison,liaison:rev --procs 4 --cars 16 --steps 40e6 --save-every 1e6
 ```
 
 - `train.py` (Stable-Baselines3 PPO, CPU) starts `--procs` headless Summer processes running
   `train_env.gd`; each drives `--cars` stripped cars (`rl_car.gd`: the real physics without
-  visuals or audio) on one world, over TCP. `:rev` drives a road backwards. `momiji` is held
-  out to test generalisation.
-- Reward: 0.05 per metre of road progress, minus impact strength; −3 and the episode ends when
-  the car leaves the road, crashes hard, stalls 3 s, turns back or rolls. Starts are random
-  along the road, ±2 m and ±0.2 rad.
+  visuals or audio) on one world, over TCP. `:rev` drives a road backwards; `--car` lists the
+  cars to share out. `momiji` (both ways) is held out to test generalisation.
+- Reward: 0.05 per metre of road progress, minus impact strength, minus 0.1 per unit the steering
+  target moves (against sawing at the wheel); −3 and the episode ends when the car leaves the
+  road, crashes hard, stalls 3 s, turns back or rolls. Starts are random along the road, ±2 m
+  and ±0.2 rad. gen1 trained without the steering cost; gen2 resumes gen1 at 6M with it.
 - Every `--save-every` steps: a checkpoint in `runs/<run>/ckpt/` and a game policy JSON in
   `runs/<run>/policies/` (with a test vector the game checks). `--resume` continues a run.
 - Four processes use about four cores; the trainer uses two threads.
@@ -62,9 +66,12 @@ timeout 900 nice -n 10 $S --headless --disable-crash-handler --audio-driver Dumm
 ```
 
 `eval.gd` prints `CHECK` (the GDScript network against PyTorch's logits, and the cost of one
-decision) and one `EVAL` line per policy and route: laps finished, best and median time, resets,
-average speed. `watch.gd` plays the real game hands off (title, stage, finish) with auto-drive
-and ghosts on, cutting the camera between them every `cycle` seconds.
+decision) and one `EVAL` line per policy and route: laps finished, best and median time, resets
+(off the road / stalled / rolled), average speed and `steer` (steering-target travel per second,
+lower is calmer). It drives the likeliest action; `sample=1`
+draws from the network's odds instead. `watch.gd` plays the real game hands off (title, stage,
+finish) with auto-drive and ghosts on, cutting the camera between them every `cycle` seconds, and
+prints the stage time, rescues and whether the result counted.
 
 Pictures only from `--summer-offscreen` in place of `--headless`, never a window: `stills=<dir>`
 saves a PNG before every cut and on the results card, `--write-movie <file>.avi` records the

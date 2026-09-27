@@ -8,6 +8,13 @@ extends Node
 
 ## A car that moved further than this between two decisions was reset: find it on the road anew.
 const JUMP_M := 20.0
+## A car slower than STUCK_KMH for STUCK_S (outside a launch hold) gets full throttle, steered by
+## the policy, until it passes UNSTICK_KMH. At a standstill the likeliest choice can be to wait
+## with the wheel at full lock (seen at a hairpin after a reset: a state no training episode
+## ends in), and a rescue puts the car back in the same spot.
+const STUCK_KMH := 3.0
+const STUCK_S := 1.0
+const UNSTICK_KMH := 15.0
 
 var policy: DrivePolicy
 ## The route being driven; set it again whenever the route changes.
@@ -30,6 +37,8 @@ var hands := DriveHands.new()
 var _obs := PackedFloat32Array()
 var _last_pos := Vector3.INF
 var _rng: RandomNumberGenerator
+var _stuck_s := 0.0
+var _unsticking := false
 
 
 func _ready() -> void:
@@ -56,6 +65,15 @@ func _physics_process(delta: float) -> void:
 			sense.reset()
 		_last_pos = pos
 		sense.observe(car, _obs)
+		var kmh := absf(car.speed_kmh)
+		_stuck_s = _stuck_s + delta * DriveHands.DECISION_TICKS if kmh < STUCK_KMH and not car.launch_hold else 0.0
+		if _stuck_s > STUCK_S:
+			_unsticking = true
+		elif kmh > UNSTICK_KMH or car.launch_hold:
+			_unsticking = false
 		var a := policy.act(_obs, _rng)
+		if _unsticking:
+			a[1] = 2 # throttle
+			a[2] = 0 # handbrake off
 		hands.set_action(a[0], a[1], a[2])
 	hands.apply(car, delta)

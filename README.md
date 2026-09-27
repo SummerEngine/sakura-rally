@@ -134,7 +134,7 @@ in [docs/REPLAYS.md](docs/REPLAYS.md).
 | Audio | `tools/audio/`, [docs/AUDIO.md](docs/AUDIO.md) | Synthesised engine loops (8 on load, 8 off load), turbo whistle and blow-off, dog-box gearbox whine, tyre sounds per surface, UI and stingers. Music is ElevenLabs Music via fal; ambience is fal sound-effect beds with synthesised birds and crickets, mixed by season |
 | UI | `scripts/ui/`, [docs/UI.md](docs/UI.md) | Title hub over a flyover whose car drifts the corners, Time Attack cards with top-down maps, garage with the car strip, road-sign HUD between stages, arrival card, settings, ink transitions, countdown, HUD, results, rally classification and pause, all built in code |
 | Replays | `scripts/autoload/replays.gd`, `tools/replay/`, [docs/REPLAYS.md](docs/REPLAYS.md) | Input and state recording of every drive, with a review tool |
-| AI driver | `scripts/ai/`, `tools/rl/`, [docs/RL.md](docs/RL.md) | A small network trained with PPO on headless copies of the physics, seeing only the road ahead from the car (edge rays, centreline points, speed), so it is not tied to one track. I lets it drive, G races the training generations as ghosts |
+| AI driver | `scripts/ai/`, `tools/rl/`, [docs/RL.md](docs/RL.md) | A small network trained with PPO on headless copies of the physics, seeing only the road ahead from the car (edge rays, centreline points, speed), so it is not tied to one track. I lets it drive (such a run sets no record), G races the training generations as ghosts, V follows one |
 
 Shared conventions and the runtime APIs: [docs/CONTRACTS.md](docs/CONTRACTS.md). Rebuild commands:
 

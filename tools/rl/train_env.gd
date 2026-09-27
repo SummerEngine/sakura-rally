@@ -25,9 +25,10 @@ extends SceneTree
 ## lateral offset / drivable half width.
 ##
 ## Episode (docs/RL.md): reward REWARD_PER_M per metre of progress along the route, minus
-## IMPACT_COST per unit of Car.impact strength; it ends off the road (centre OFF_MARGIN beyond the
-## verge), in a crash (IMPACT_CRASH in one decision), rolled over, STALL_S without new progress,
-## WRONG_WAY_M behind its best, at the end of an open route, or after episode_s (a cut, not an end).
+## IMPACT_COST per unit of Car.impact strength and STEER_COST per unit the steering target moves;
+## it ends off the road (centre OFF_MARGIN beyond the verge), in a crash (IMPACT_CRASH in one
+## decision), rolled over, STALL_S without new progress, WRONG_WAY_M behind its best, at the end
+## of an open route, or after episode_s (a cut, not an end).
 
 const RLCar := preload("res://tools/rl/rl_car.gd")
 
@@ -36,6 +37,10 @@ const REASONS: Array[String] = ["", "off_road", "crash", "stall", "wrong_way", "
 const REWARD_PER_M := 0.05
 const IMPACT_COST := 1.0
 const IMPACT_CRASH := 0.6
+## Per unit of steering-target travel in one decision (full lock to full lock is 2): the turn-in
+## and unwind a corner needs cost little, sawing at the wheel every decision costs a sixth of the
+## progress reward at speed, so the driver steers smoothly.
+const STEER_COST := 0.1
 ## Cost of an episode that ends badly: off the road, crashed, rolled, the wrong way, or stalled
 ## (standing still must never be the safe choice).
 const FAIL_COST := 3.0
@@ -66,6 +71,7 @@ var best_m := PackedFloat32Array()
 var since_best := PackedFloat32Array()
 var ep_time := PackedFloat32Array()
 var impact := PackedFloat32Array()
+var steer_moved := PackedFloat32Array()
 var obs := PackedFloat32Array()
 var rewards := PackedFloat32Array()
 var flags := PackedByteArray()
@@ -118,6 +124,7 @@ func _run() -> void:
 	ep_time.resize(n)
 	impact.resize(n)
 	rewards.resize(n)
+	steer_moved.resize(n)
 	flags.resize(n)
 	obs.resize(n * DriveSense.OBS_SIZE)
 	info.resize(n * INFO_SIZE)
@@ -161,7 +168,9 @@ func _run() -> void:
 			break
 		for k in n:
 			var a := k * groups
+			var before := hands[k].steer_target
 			hands[k].set_action(acts[a], acts[a + 1], acts[a + 2])
+			steer_moved[k] = absf(hands[k].steer_target - before)
 			impact[k] = 0.0
 		for t in DriveHands.DECISION_TICKS:
 			for k in n:
@@ -245,7 +254,7 @@ func _score(k: int, step: float) -> void:
 		since_best[k] = 0.0
 	else:
 		since_best[k] += step
-	var r := ds * REWARD_PER_M - impact[k] * IMPACT_COST
+	var r := ds * REWARD_PER_M - impact[k] * IMPACT_COST - steer_moved[k] * STEER_COST
 	var lat := sense.road_lateral(pos)
 	var edge := sense.road_edge()
 	var reason := 0
