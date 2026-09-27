@@ -15,8 +15,11 @@ extends Camera3D
 ## docs/PHYSICS.md, "Chase camera".
 
 const MODES: Array[String] = ["chase", "chase_far", "hood", "bumper"]
-## Distances (m) ahead of the car at which the road profile is read for the rig's slope.
+## Distances (m) ahead of the car at which the road profile is read for the rig's slope, at up
+## to SLOPE_AHEAD_SPEED; faster they stretch with the speed (up to twice), so a crest is seen
+## coming the same time ahead.
 const SLOPE_AHEAD: PackedFloat32Array = [6.0, 12.0, 18.0, 26.0, 36.0]
+const SLOPE_AHEAD_SPEED := 25.0
 ## The road's slope at the car is its chord from this far behind to this far ahead of it (m).
 const SLOPE_AT_CAR := 6.0
 ## Low-pass rate (1/s) of the car's own pitch grade (used off the road), and its decay to level
@@ -207,7 +210,7 @@ func _chase(car: RigidBody3D, xf: Transform3D, vel: Vector3, speed: float, delta
 	if flat_vel.length() > 3.0 and fwd_speed > 0.0:
 		var w := velocity_bias * smoothstep(3.0, 14.0, flat_vel.length())
 		desired = car_fwd.slerp(flat_vel.normalized(), w).normalized()
-	var slope_target := _slope_target(car, xf, delta) * slope_follow if slope_follow > 0.0 else 0.0
+	var slope_target := _slope_target(car, xf, speed, delta) * slope_follow if slope_follow > 0.0 else 0.0
 	if _needs_snap:
 		_yaw_dir = desired
 		_height = xf.origin.y
@@ -242,7 +245,7 @@ func _chase(car: RigidBody3D, xf: Transform3D, vel: Vector3, speed: float, delta
 ## its steepest drop within SLOPE_AHEAD, only partly followed uphill. Off the road (or across it)
 ## it blends to the car's own pitch, low-passed (OWN_GRADE_RATE) so a kicker or a bump barely
 ## registers, and easing back to level while the car is airborne.
-func _slope_target(car: RigidBody3D, xf: Transform3D, delta: float) -> float:
+func _slope_target(car: RigidBody3D, xf: Transform3D, speed: float, delta: float) -> float:
 	var grounded: Variant = car.get(&"grounded_wheels")
 	if grounded == null or int(grounded) >= 3 or _needs_snap:
 		var nose := -xf.basis.z
@@ -268,7 +271,9 @@ func _slope_target(car: RigidBody3D, xf: Transform3D, delta: float) -> float:
 			var at_car := (track.position_at_abs(s + dir * SLOPE_AT_CAR).y
 					- track.position_at_abs(s - dir * SLOPE_AT_CAR).y) / (2.0 * SLOPE_AT_CAR)
 			var ahead := INF
-			for d: float in SLOPE_AHEAD:
+			var stretch := clampf(speed / SLOPE_AHEAD_SPEED, 1.0, 2.0)
+			for k: float in SLOPE_AHEAD:
+				var d := k * stretch
 				ahead = minf(ahead, (track.position_at_abs(s + dir * d).y - y0) / d)
 			grade = lerpf(_own_grade, minf(at_car, ahead), w)
 	grade = signf(grade) * maxf(absf(grade) - slope_deadband, 0.0)
