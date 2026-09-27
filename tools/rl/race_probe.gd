@@ -18,8 +18,9 @@ extends SceneTree
 ## metre with neither just rescued), car-to-car contacts while racing (events, worst impulse and
 ## the speed change it means; contacts between two finished cars at the finish stop are counted
 ## apart), rescues, flips, seconds off the road, wander (the furthest the car got from the centre
-## of the road it sees); then a SUMMARY over the runs and COST: the physics tick time and the
-## script cost of one decision.
+## of the road it sees); then a SUMMARY over the runs (lap errors split into lap 1, which pays for
+## the traffic ahead of a car started from the back, and the flying laps) and COST: the physics
+## tick time and the script cost of one decision.
 ##
 ## mode=record: RECORD_CARS unlimited bots (pace INF) in lane 0 drive `laps` (default 3) laps
 ## alone; their speed along the road on the flying laps becomes v_ref in
@@ -48,7 +49,7 @@ const CONTACT_GAP_TICKS := 12
 const CAR_MASS := 1250.0
 
 var opts := {"mode": "race", "route": "hanami", "gold": "", "pace": "", "player": "1.05",
-		"paces": "0.45,0.5,0.55,0.6,0.65,0.7,0.75,0.8,0.85,0.9,0.95,1.0",
+		"paces": "0.5,0.55,0.6,0.65,0.7,0.75,0.8,0.85,0.9,0.95,1.0",
 		"car": "", "laps": "", "runs": "1", "contacts": "1", "seconds": "600", "verbose": "0"}
 var game: Node
 var map: MapWorld
@@ -311,7 +312,8 @@ func _record() -> void:
 		v_ref.append(snappedf(total / (2 * SMOOTH_BINS + 1), 0.01))
 	var p0 := track.point(0)
 	_save({"route": opts["route"], "closed": track.closed, "length": snappedf(track.length, 0.01),
-			"origin": [snappedf(p0.x, 0.01), snappedf(p0.z, 0.01)], "step": step, "car": "sakura",
+			"origin": [snappedf(p0.x, 0.01), snappedf(p0.z, 0.01)], "half_width": snappedf(track.half_width(0), 0.01),
+			"step": step, "car": "sakura",
 			"laps_recorded": kept, "v_ref": v_ref})
 	await _free(entries)
 
@@ -392,14 +394,14 @@ func _races() -> void:
 	var laps := int(opts["laps"]) if opts["laps"] != "" else 2
 	var runs := int(opts["runs"])
 	var d := _pace_data()
-	var gold := float((game.get_map(opts["route"])["medals"] as Dictionary)["gold"])
+	var medals: Dictionary = game.get_map(opts["route"]).get("medals", {})
 	var field := _field()
 	var n := field.size()
 	var route: Dictionary = map.routes[opts["route"]]
 	var spawn: Transform3D = route["spawn"]
 	var s_spawn := track.abs_s(track.nearest(spawn.origin), spawn.origin)
 	var totals := {"races": 0, "flips": 0, "rescues": 0, "overtakes": 0, "contacts": 0, "worst": 0.0, "bump": 0.0,
-			"finish_contacts": 0, "lap_err_max": 0.0, "lap_err_sum": 0.0, "laps": 0, "off": 0.0, "finished": 0, "cars": 0}
+			"finish_contacts": 0, "grid_err": [], "flying_err": [], "off": 0.0, "finished": 0, "cars": 0}
 	var cost := {"tick_usec": 0.0, "ticks": 0, "tick_max": 0.0}
 	for run in runs:
 		var rng := RandomNumberGenerator.new()
@@ -407,7 +409,7 @@ func _races() -> void:
 		var entries: Array[Dictionary] = []
 		for g in n:
 			var f: Dictionary = field[g]
-			var pace: float = f["pace"] if f.has("pace") else RaceBot.pace_for_lap(opts["route"], gold * float(f["gold"]), f["car"])
+			var pace: float = f["pace"] if f.has("pace") else RaceBot.pace_for_lap(opts["route"], float(medals["gold"]) * float(f["gold"]), f["car"])
 			var e := _spawn(f["car"], pace, (g * 5 + run) % DriveHands.DECISION_TICKS, opts["contacts"] == "1")
 			e["grid_s"] = s_spawn - GRID_GAP_M * g
 			e["grid_lat"] = (-GRID_LAT_M if g % 2 == 0 else GRID_LAT_M) + rng.randf_range(-0.1, 0.1)
@@ -415,7 +417,7 @@ func _races() -> void:
 			e["who"] = f["who"]
 			e["cal"] = _cal_row(d, f["car"], pace)
 			e.merge({"contacts": 0, "worst": 0.0, "flips": 0, "rolled": false, "off": 0.0, "overtakes": 0,
-					"rescued_at": -INF, "rescues": 0, "finish_t": -1.0, "finish_pos": 0, "wander": 0.0, "bump": 0.0})
+					"rescued_at": -INF, "rescues": 0, "finish_t": -1.0, "finish_pos": 0, "wander": 0.0, "bump": 0.0, "held": 0.0})
 			(e["car"] as Car).bumped.connect(func(strength: float, _point: Vector3, _other: Car) -> void:
 				if e["finish_t"] < 0.0:
 					e["bump"] = maxf(e["bump"], strength))
@@ -459,6 +461,8 @@ func _races() -> void:
 				if absf(lat) > track.half_width(i) + track.verge:
 					e["off"] += dt
 				e["wander"] = maxf(e["wander"], absf(lat - bot.lane))
+				if bot.held:
+					e["held"] += dt
 				if (e["laps"] as Array).size() >= laps:
 					finished += 1
 					e["finish_t"] = clock
@@ -473,12 +477,26 @@ func _races() -> void:
 		_report(run, entries, laps, totals)
 		await _free(entries)
 	var r := maxf(totals["races"], 1)
-	print("SUMMARY route=%s runs=%d laps=%d finished=%d/%d flips=%d rescues/race=%.2f overtakes/race=%.1f contacts/race=%.1f worst=%.0f Ns (%.2f m/s, bumped %.2f) finish_area_contacts/race=%.1f lap_err mean=%.2f max=%.2f s off=%.1f s/race" % [
+	print("SUMMARY route=%s runs=%d laps=%d finished=%d/%d flips=%d rescues/race=%.2f overtakes/race=%.1f contacts/race=%.1f worst=%.0f Ns (%.2f m/s, bumped %.2f) finish_area_contacts/race=%.1f lap_err lap1 %s flying %s off=%.1f s/race" % [
 			opts["route"], runs, laps, totals["finished"], totals["cars"], totals["flips"], totals["rescues"] / r,
 			totals["overtakes"] / r, totals["contacts"] / r, totals["worst"], totals["worst"] / CAR_MASS, totals["bump"],
-			totals["finish_contacts"] / r, totals["lap_err_sum"] / maxf(totals["laps"], 1), totals["lap_err_max"], totals["off"] / r])
+			totals["finish_contacts"] / r, _err_stats(totals["grid_err"]), _err_stats(totals["flying_err"]), totals["off"] / r])
 	print("COST physics tick mean=%.0f us max=%.0f us over %d ticks" % [cost["tick_usec"] / maxf(cost["ticks"], 1),
 			cost["tick_max"], cost["ticks"]])
+
+
+## Lap time errors against the calibration: median, mean, max and the share within 2 s.
+func _err_stats(errs: Array) -> String:
+	if errs.is_empty():
+		return "-"
+	var sorted := errs.duplicate()
+	sorted.sort()
+	var within := sorted.filter(func(e: float) -> bool: return e <= 2.0).size()
+	var total := 0.0
+	for e: float in sorted:
+		total += e
+	return "median=%.2f mean=%.2f max=%.2f s within_2s=%d/%d" % [sorted[sorted.size() / 2], total / sorted.size(),
+			sorted[sorted.size() - 1], within, sorted.size()]
 
 
 ## The race field in grid order (slot 0 = pole): the campaign rivals (Game.RIVALS) at their pace
@@ -622,20 +640,15 @@ func _report(run: int, entries: Array[Dictionary], laps: int, totals: Dictionary
 			want.append(float(cal["standing"]) + grid_d / maxf(float(cal["line_mps"]), 1.0))
 			for k in range(1, laps):
 				want.append(float(cal["flying"]))
-		var errs := []
 		for k in done.size():
 			if k < want.size():
-				var err := absf(float(done[k]) - float(want[k]))
-				errs.append(err)
-				totals["lap_err_max"] = maxf(totals["lap_err_max"], err)
-				totals["lap_err_sum"] += err
-				totals["laps"] += 1
-		print("BOT run=%d grid=%d %s car=%s pace=%.3f finish=%s laps=%s cal=%s overtakes=%d contacts=%d worst=%.0f Ns (%.2f m/s, bumped %.2f) rescues=%d flips=%d off=%.1f s wander=%.1f m" % [
+				(totals["grid_err" if k == 0 else "flying_err"] as Array).append(absf(float(done[k]) - float(want[k])))
+		print("BOT run=%d grid=%d %s car=%s pace=%.3f finish=%s laps=%s cal=%s overtakes=%d contacts=%d worst=%.0f Ns (%.2f m/s, bumped %.2f) rescues=%d flips=%d off=%.1f s wander=%.1f m held=%.1f s" % [
 				run + 1, e["grid"], e["who"], e["car_id"], e["pace"], str(e["finish_pos"]) if e["finish_pos"] > 0 else "-",
 				",".join(done.map(func(t: float) -> String: return "%.2f" % t)),
 				",".join(want.map(func(t: float) -> String: return "%.2f" % t)),
 				e["overtakes"], e["contacts"], e["worst"], float(e["worst"]) / CAR_MASS, e["bump"], e["rescues"], e["flips"],
-				e["off"], e["wander"]])
+				e["off"], e["wander"], e["held"]])
 		race["flips"] += e["flips"]
 		race["rescues"] += e["rescues"]
 		race["overtakes"] += e["overtakes"]

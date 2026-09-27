@@ -12,16 +12,17 @@ classification, so the driver sits them out; liaisons and free roam are fine.
 
 | Key | What it does |
 |---|---|
-| I | Auto-drive: the AI takes your car (stage, liaison, free roam); I again gives it back |
+| I | Auto-drive: the AI takes your car (stage, liaison, free roam; in a race as a RaceBot among the rivals, at the free driver's own speed); I again gives it back |
 | G | Ghosts: every training generation in `assets/ai/generations/` joins as a labelled ghost car on a staggered grid behind you, held on the line with you through the countdown |
 | V | Watch: the chase camera goes to the next ghost, then back to your car |
 
-`scripts/ai/auto_drive.gd` (one line in `Main._ready`) does this. Cars never collide with each
-other, so ghosts pass through your car; they hit the rigid world (trees, rails) but leave the
-soft course alone (group `ghost_car`: tape, cones, gates and spectators stay yours), park at the
-end of an open road and come back on the grid of every new run. A driven car that stays off the
-road or stuck for 2.5 s is put back on it: your car as the reset key would, a ghost on its own
-road. A car standing still for 1 s gets full throttle (the network still steers) until 15 km/h:
+`scripts/ai/auto_drive.gd` (one line in `Main._ready`) does this. Ghosts are on no collision
+layer, so they pass through your car and a race's rivals; they hit the rigid world (trees,
+rails) but leave the soft course alone (group `ghost_car`: tape, cones, gates and spectators
+stay yours), park at the end of an open road and come back on the grid of every new run. A
+driven car that stays off the road or stuck for 2.5 s is put back on it: your car as the reset
+key would, a ghost on its own road (a RaceBot rescues itself, see Racing). A car standing still
+for 1 s gets full throttle (the network still steers) until 15 km/h:
 the likeliest action at a standstill after a reset can be to wait. The AI drives the automatic
 gearbox whatever the Gearbox setting (`Car.always_automatic`), and in free roam it keeps to the
 road the car is on. Command line: `-- auto-drive`, `ghosts`, `policy=<file>`.
@@ -108,6 +109,78 @@ Momiji's grid (a 31 m-radius kink it enters at about 110 km/h); gen1 takes it, s
 misses it too. In the game the rescue puts the car back after 2.5 s. Training longer (gen2 to
 20M) made the reversed roads faster but left the road more often, and gen3 (3M more decisions
 from gen2 7M with the liaison weighted) fixed neither.
+
+## Racing
+
+`scripts/ai/race_bot.gd` (`RaceBot`, a `NeuralPilot`) makes the shipped driver a race opponent.
+Add it to a car with `track`, `pace`, `field` (every car of the race, its own included) and a
+`phase` of its own (0-11: bots decide in different physics ticks), and hand the car over
+(`controlled_by_player = false`); it holds while `launch_hold` is on and drives from GO. It
+reports `lane` and `rescues`, and `held` (a car ahead made it lift or brake). In a race the I
+key gives the player's car a RaceBot too, among the rivals, with no pace limit.
+
+**Virtual road.** The network trained on 7 m carriageways with 1.4 m verges and never saw
+itself off one. A RaceBot's DriveSense (`lane_half_width` 3.5 m, `lane`) shows it that road
+centred `lane` metres right of the real centre line, clamped per sample to the real
+carriageway, so the rays and road points look as in training on any width. Lane room is the
+real half width minus 3.5 m: ±1.5 m on the 10 m loops, none on the 7 m liaison, where a RaceBot
+drives exactly as NeuralPilot does. The lane moves 1.2 m/s across and only while the car stays
+within 3 m of it. The racing line swings up to about 6 m either side of the lane (the network
+cuts every corner), but two bots see the same road shifted, so their lines swing alike and bots
+in the two outer lanes keep apart. Training, auto-drive and ghosts leave `lane_half_width` at 0
+and see the real road exactly as before (checked bit for bit on 900 random poses).
+
+**Pace.** `pace` scales v_ref(s), the shipped driver's own speed along the route in lane 0
+(`assets/ai/pace/<route>.json`, recorded on the flying laps of three solo cars). The limit at s
+is pace x v_ref brought forward by braking at 4 m/s² over the next 80 m: the network brakes for
+each corner at the speeds it trained at, so a car arriving slower brakes too late for the
+slower corner speed pace asks for. Within 2 m/s of the limit the throttle fades out, from 1 m/s
+above it the brake comes in (up to 0.8 at 5 m/s over). A pace file matches only its own road
+(length, half width, first sample), so a reversed or re-widened loop runs unlimited.
+`RaceBot.pace_for_lap(route, lap_s, car)` interpolates the calibration table.
+
+**Traffic.** Every decision the other cars from 20 m behind to 60 m ahead, in road coordinates
+(distance, lateral, speed, and lane: a bot's intended lane, anyone else's position):
+
+- brake assist on the car in its path (within 2 m laterally now or at the time to collision,
+  counting its own move towards a new lane): off the throttle inside 2 m + 0.35 s of its speed
+  or 1.5 s from it, braking at 1.0 s or when matching its speed takes more than 3 m/s²;
+- a slower car ahead in its lane is passed on the side away from that car's lane (left of a car
+  on the centre line) when that side is free, sticking to the side chosen; back home to lane 0
+  once it is clear;
+- a faster car behind gets room: this car moves to the other side from the one the passer took,
+  or to the side it is on while the passer is straight behind (which is the side a passer
+  leaves it);
+- the lane never moves towards a car alongside.
+
+**Rescue.** As AutoDrive's: 2.5 s more than 3 m past the verge, rolled, or under 3 m/s of
+progress (not while a car ahead holds it up, so a bot never fights the grid). It goes back on its
+own road 4 m behind, then further back 6 m at a time or into another lane, at least 8 m from
+every car and out of the way of cars coming up behind (2 s at their speed). The car's own reset
+is off while a RaceBot drives (it would ask the player's session); removing the RaceBot restores
+it and releases the inputs.
+
+**Calibration and checks.** `tools/rl/race_probe.gd` (usage in its header) records v_ref
+(`mode=record`), calibrates pace against lap time (`mode=calibrate`, both cars, pace 0.5-1.0)
+and races the race mode's grid (`route=hanami runs=3`). On the 10 m loops the flying lap runs
+(sakura / hayate, s):
+
+| pace | hanami | momiji |
+|---|---|---|
+| 0.60 | 152.4 / 153.6 | 133.5 / 134.6 |
+| 0.70 | 131.4 / 132.3 | 115.0 / 116.0 |
+| 0.80 | 115.9 / 116.8 | 101.2 / 102.2 |
+| 0.90 | 104.6 / 105.5 | 90.9 / 91.9 |
+| 1.00 | 96.7 / 98.8 | 83.7 / 85.5 |
+
+which covers gold x 0.9-1.3 (hanami 112-162 s, momiji 99-142 s) with no rescue. Three 2-lap
+races per loop (six rivals plus a bot at gold x 1.05, contacts on): 42/42 finished, no flip,
+1 rescue in 6 races (a car stopped against the barriers after a 6.4 m/s hit), 19 overtakes a
+race, 5-6 racing contacts a race, all but three under 1.3 m/s of speed change. Flying laps are
+0.2 s from the calibration (median), 39 of 42 within 2 s (the others, up to 3.5 s, stuck behind
+a car 3 % slower); lap 1 from the back of the grid loses up to 14 s in traffic. A decision costs
+about 0.9 ms of network plus 0.08 ms of racing, about 0.6 ms a physics tick for seven bots on
+seven phases.
 
 ## Shipping
 
