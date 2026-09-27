@@ -257,21 +257,7 @@ func _score(k: int, step: float) -> void:
 	var r := ds * REWARD_PER_M - impact[k] * IMPACT_COST - steer_moved[k] * STEER_COST
 	var lat := sense.road_lateral(pos)
 	var edge := sense.road_edge()
-	var reason := 0
-	if car.global_basis.y.y < 0.2:
-		reason = 5
-	elif impact[k] >= IMPACT_CRASH:
-		reason = 2
-	elif absf(lat) > edge + OFF_MARGIN:
-		reason = 1
-	elif ep_m[k] < best_m[k] - WRONG_WAY_M:
-		reason = 4
-	elif since_best[k] > STALL_S:
-		reason = 3
-	elif not t.closed and s > t.last_s - FINISH_MARGIN:
-		reason = 6
-	elif ep_time[k] >= episode_s:
-		reason = 7
+	var reason := end_reason(car, t, s, lat, edge, impact[k], ep_m[k], best_m[k], since_best[k], ep_time[k], episode_s)
 	if reason in [1, 2, 3, 4, 5]:
 		r -= FAIL_COST
 	rewards[k] = r
@@ -286,6 +272,30 @@ func _score(k: int, step: float) -> void:
 		ep_time[k] = 0.0
 	elif reason != 0:
 		_restart(k)
+
+
+## Why an episode ends after a decision, as a REASONS index (0: it goes on): rolled over, a crash
+## (`hit`, the decision's Car.impact strength), off the road (`lat` from the centre line beyond the
+## drivable half width `edge` plus OFF_MARGIN), the wrong way or stalled (the episode's `metres`,
+## its `best` and the seconds `since` that best), the end of an open track (`s` along it), or
+## `seconds` reaching `limit`. tools/rl/swarm.gd ends its recorded runs by the same rules.
+static func end_reason(car: Car, t: Track, s: float, lat: float, edge: float, hit: float, metres: float,
+		best: float, since: float, seconds: float, limit: float) -> int:
+	if car.global_basis.y.y < 0.2:
+		return 5
+	if hit >= IMPACT_CRASH:
+		return 2
+	if absf(lat) > edge + OFF_MARGIN:
+		return 1
+	if metres < best - WRONG_WAY_M:
+		return 4
+	if since > STALL_S:
+		return 3
+	if not t.closed and s > t.last_s - FINISH_MARGIN:
+		return 6
+	if seconds >= limit:
+		return 7
+	return 0
 
 
 func _fill_info(k: int, reason: int) -> void:

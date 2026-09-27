@@ -90,8 +90,7 @@ func observe(car: Car, out: PackedFloat32Array, offset: int = 0) -> void:
 	fwd.y = 0.0
 	fwd = fwd.normalized() if fwd.length_squared() > 1e-6 else Vector3.FORWARD
 	var right := Vector3(-fwd.z, 0.0, fwd.x)
-	hint = track.nearest(pos, hint, SEARCH_WINDOW)
-	_cast_rays(pos, fwd, right)
+	look(pos, fwd, right)
 	for k in RAY_COUNT:
 		out[offset + k] = rays[k] / RAY_LENGTH
 	var o := offset + RAY_COUNT
@@ -120,6 +119,14 @@ func observe(car: Car, out: PackedFloat32Array, offset: int = 0) -> void:
 	out[o + 6] = car.input_throttle
 	out[o + 7] = car.input_brake
 	out[o + 8] = 1.0 if car.input_handbrake else 0.0
+
+
+## Finds `pos` on the road and casts the rays from there, facing `fwd` (level, unit length) with
+## `right` to its right: the part of observe() that looks at the road (tools/rl/film.gd draws it
+## over a replayed car).
+func look(pos: Vector3, fwd: Vector3, right: Vector3) -> void:
+	hint = track.nearest(pos, hint, SEARCH_WINDOW)
+	_cast_rays(pos, fwd, right)
 
 
 ## Absolute distance along the road (Track.abs_s) and signed offset from the centre line (+ right)
