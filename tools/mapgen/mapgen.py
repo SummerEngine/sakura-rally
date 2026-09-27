@@ -45,6 +45,7 @@ FAR_SKIRT = 2.0         # m, skirt on every edge of a coarse chunk (no cracks ag
 COLLIDE_EDGE = 800.0    # rim metric (lib/terrain.py): a chunk reaching inside this collides (rim top 790)
 PLAY_EDGE = 600.0       # rim metric of the play area (roadside: a miss that leaves it is bad)
 TRACK_STEP = 2          # m between route track samples
+BACKDROP_TUCK = 15.0    # m, the backdrop's inner ring lies this far under the terrain
 
 
 def lin(hex_str: str) -> np.ndarray:
@@ -437,14 +438,20 @@ def emit_water(pack: MeshPack, ter) -> dict:
         dcol = np.broadcast_to((1.0 - np.abs(lat / half)) ** 0.7, (len(rp), cols))
         C = np.stack([dcol, dcol, dcol, np.ones_like(dcol)], axis=2)
         step = 120
-        for a in range(0, len(rp) - 1, step):
+        # the source is where the channel leaves the mountainside (lib/terrain.py fades the carve
+        # out into the rim): rows still buried in the slope are not emitted
+        open_ = ter.height_at(rp[:, 0], rp[:, 2]) < rp[:, 1] + 0.5
+        k0 = max(0, int(np.argmax(open_)) - 2) if open_.any() else len(rp) - 1
+        assert all(k >= k0 for k, _d, _p in rv.falls), f"river {rv.id}: a waterfall is buried in the rim"
+        for a in range(k0, len(rp) - 1, step):
             b = min(len(rp) - 1, a + step)
             rows = np.arange(a, b + 1)
             pack.add(f"river_{rv.id}_{a}", P[rows].reshape(-1, 3), ribbon_indices(len(rows), cols, closed=False),
                      col=C[rows].reshape(-1, 4), uv=U[rows].reshape(-1, 2), material="water_river",
                      nrm=np.tile([0.0, 1.0, 0.0], (len(rows) * cols, 1)))
         rivers.append({"id": rv.id, "width": rv.width,
-                       "points": [[round(float(p[0]), 2), round(float(p[1]), 2), round(float(p[2]), 2)] for p in rp[::2]]})
+                       "points": [[round(float(p[0]), 2), round(float(p[1]), 2), round(float(p[2]), 2)] for p in rp[k0::2]]})
+        print(f"[world] river {rv.id}: source at ({rp[k0, 0]:.0f}, {rp[k0, 2]:.0f}), {k0} rows buried in the rim")
         for (k, drop, _pool) in rv.falls:
             emit_fall(pack, f"waterfall_{n_fall}", rv, k, drop, fwd, right)
             n_fall += 1
@@ -489,21 +496,26 @@ def emit_fall(pack: MeshPack, name: str, rv, k: int, drop: float, fwd: np.ndarra
              col=C.reshape(-1, 4), uv=U.reshape(-1, 2), material="water_river", nrm=nrm)
 
 
-def emit_backdrop(pack: MeshPack, world: dict) -> None:
+def emit_backdrop(pack: MeshPack, world: dict, ter) -> None:
     """Faceted distant mountains in rings around the world rectangle (rounded like the rim),
-    each region's colour and shape blended by the season weights around it."""
+    each region's colour and shape blended by the season weights around it. The inner ring lies
+    inside the rectangle, BACKDROP_TUCK m under the terrain, so the backdrop runs on beneath the
+    terrain's edge: from any height there is no gap between the two."""
     x0, z0, x1, z1 = world["bounds"]
     cx, cz, hx, hz = (x0 + x1) / 2, (z0 + z1) / 2, (x1 - x0) / 2, (z1 - z0) / 2
     seed = world["seed"] + 500
-    off = np.array([100.0, 350.0, 700.0, 1150.0, 1700.0, 2400.0, 3300.0, 4400.0])
+    off = np.array([-40.0, 350.0, 700.0, 1150.0, 1700.0, 2400.0, 3300.0, 4400.0])
     seg = 240
     ang = np.linspace(0, 2 * np.pi, seg, endpoint=False)
     A, O = np.meshgrid(ang, off)
     ca, sa = np.cos(A), np.sin(A)
     X = cx + np.sign(ca) * np.abs(ca) ** 0.5 * (hx + O)
     Z = cz + np.sign(sa) * np.abs(sa) ** 0.5 * (hz + O)
-    X += noise.fbm(X, Z, 90.0, 1, 2.0, 0.5, seed) * 60.0
-    Z += noise.fbm(X, Z, 90.0, 1, 2.0, 0.5, seed + 1) * 60.0
+    jx = noise.fbm(X, Z, 90.0, 1, 2.0, 0.5, seed) * 60.0
+    jz = noise.fbm(X, Z, 90.0, 1, 2.0, 0.5, seed + 1) * 60.0
+    jx[0] = jz[0] = 0.0  # the inner ring stays inside the rectangle
+    X += jx
+    Z += jz
     W = seasons.weights(X, Z, world["seasons"], world["seed"])
     bds = {reg["season"]: reg["spec"]["backdrop"] for reg in world["regions"]}
 
@@ -512,11 +524,11 @@ def emit_backdrop(pack: MeshPack, world: dict) -> None:
 
     rid = noise.ridged(ca * 900 + O * 0.3, sa * 900 - O * 0.2, blend("scale", 420.0), 5, seed)
     big = noise.fbm(ca * 1200, sa * 1200, 900.0, 3, 2.0, 0.5, seed + 3) * 0.5 + 0.5
-    rise = geom.smoothstep(off[0], off[2], O)
+    rise = geom.smoothstep(100.0, off[2], O)
     fall = 1.0 - geom.smoothstep(off[-3], off[-1], O)
     Hh = blend("base", 120.0) + (blend("height", 520.0) * rid * (0.45 + 0.9 * big)) * rise
     Hh = Hh * (0.35 + 0.65 * fall)
-    Hh[0] = blend("inner", 160.0)[0]
+    Hh[0] = np.minimum(blend("inner", 160.0)[0], ter.height_at(X[0], Z[0]) - BACKDROP_TUCK)
     pos = np.stack([X.ravel(), Hh.ravel(), Z.ravel()], axis=1)
     tfar = geom.smoothstep(off[1], off[-2], O)
     col = np.zeros(X.shape + (3,))
@@ -932,7 +944,7 @@ def build() -> None:
                    verts[j.loop_id][0], ter, rgba)
     emit_lots(pack, all_lots, ter, rgba)
     water_info = emit_water(pack, ter)
-    emit_backdrop(pack, world)
+    emit_backdrop(pack, world, ter)
     p, nr, c, idx = dress.flat()
     if len(idx):
         pack.add("dressing", p, idx, col=c, nrm=nr, material="props_vc", collide="none")

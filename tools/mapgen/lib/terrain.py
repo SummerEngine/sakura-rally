@@ -346,10 +346,13 @@ def build_terrain(world: dict, roads: dict[str, Road], water: Water, built: dict
         hb = np.where(sd < 0, bed, np.minimum(hb, beach) if water.lake.get("clamp_shore", False) else beach)
         H[box] = hb
 
-    # --- river channels (each river in turn; the normalised distance of the nearest one)
+    # --- river channels (each river in turn; the normalised distance of the nearest one). A
+    # channel fades out as it climbs into the rim, well before the top: a river springs from the
+    # mountainside and never notches the skyline at the world's edge.
     river_dist = np.full(X.shape, 1e9)
     river_y = np.zeros(X.shape)
     ref_half = water.river_width / 2.0
+    carve_w = 1.0 - geom.smoothstep(rim["start"] + 0.55 * (rim["end"] - rim["start"]), rim["end"] - 20.0, edge)
     for rv in water.rivers:
         rf = geom.RoadField(X, Z, (x0, z0), cell)
         rf.add_polyline(rv.pts, rv.s, radius=110.0, closed=False)
@@ -369,9 +372,10 @@ def build_terrain(world: dict, roads: dict[str, Road], water: Water, built: dict
         bank = wy + 0.25 + (hn - wy - 0.25) * geom.smoothstep(inner, inner + E, dn)
         # a tributary never refills a channel already carved: its banks only cut down there
         carved = river_dist[near] < ref_half + 3.0
-        H[near] = np.where(dn < inner, bed, np.where(carved, np.minimum(hn, bank), bank))
+        cw = carve_w[near]
+        H[near] = hn + (np.where(dn < inner, bed, np.where(carved, np.minimum(hn, bank), bank)) - hn) * cw
         dnorm = np.where(near, rf.dist - (inner - ref_half), 1e9)
-        upd = dnorm < river_dist
+        upd = (dnorm < river_dist) & (carve_w > 0.5)
         river_dist[upd] = dnorm[upd]
         river_y[upd] = rf.y[upd]
         # plunge pools below waterfalls: a round basin just downstream of the lip
