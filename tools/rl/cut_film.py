@@ -163,14 +163,14 @@ def legend(path: Path) -> None:
 
 def plan(cues: dict[str, dict]) -> list[dict]:
 	"""Segments in order: ("card"|"clip"), their length and, for clips, the footage window and overlays.
-	A clip runs from its shot's cue to the shot's end cue (film.gd holds the last frame a moment),
-	rounded to whole beats: a longer one ends early (on the held frame), a shorter one holds it."""
+	A clip runs from its shot's cue to the shot's end cue (film.gd adds a moment after each shot),
+	rounded down to whole beats, so the footage covers it and no frame is held."""
 	shots = sorted((n for n in cues if re.fullmatch(r"gen_\d+", n)), key=lambda n: int(n[4:]))
 	shots += [n for n in ("sees", "held_out") if n in cues]
 	segs: list[dict] = []
 	for name in shots:
 		a, b = cues[name]["t"], cues[name + "_end"]["t"]
-		seg = {"kind": "clip", "name": name, "src": a, "have": b - a, "beats": max(round((b - a) / BEAT), 1)}
+		seg = {"kind": "clip", "name": name, "src": a, "have": b - a, "beats": max(int((b - a) / BEAT), 1)}
 		if name == "gen_0":
 			seg["title"] = ("An AI learns to drive", "It only scores for road covered · 64 cars practise at once")
 		if name == "sees":
@@ -247,7 +247,7 @@ def cut(out: Path) -> None:
 			continue
 		cmd += ["-ss", f"{max(s['src'] - 0.25, 0):.6f}", "-t", f"{s['have'] + 0.6:.6f}", "-i", str(footage)]
 		skip = min(0.25, s["src"])
-		# the shot's own frames, then its last one held when the beat grid asks for more
+		# the shot's own frames (a clip shorter than one beat holds its last one)
 		chain = (f"[{n_in}:v]trim=start={skip:.4f},setpts=PTS-STARTPTS,trim=end_frame={round(s['have'] * FPS)},"
 				f"setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration={d:.4f},trim=end_frame={s['frames']},"
 				f"setpts=PTS-STARTPTS,{norm}")
