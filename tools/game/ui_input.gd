@@ -9,7 +9,7 @@ extends SceneTree
 ## dialog (No via Esc, then Yes). The autopilot does the laps. Prints CHECK lines and a summary;
 ## exits non-zero on failures.
 ##
-##   timeout 600 $S --disable-crash-handler --path . -s res://tools/game/ui_input.gd
+##   timeout 600 $S --headless --disable-crash-handler --path . -s res://tools/game/ui_input.gd
 
 const LAP_SPEED := 3.0
 

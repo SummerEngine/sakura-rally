@@ -17,7 +17,7 @@ extends SceneTree
 ## classification, the title's finished state; then a save resumed at each leg (SS1 grid, the
 ## liaison at Hanami's finish stop with the gate open, SS2 grid) and quitting mid-liaison.
 ##
-##   timeout 400 $S --disable-crash-handler --path . -s res://tools/game/flows.gd -- map=hanami
+##   timeout 400 $S --headless --disable-crash-handler --path . -s res://tools/game/flows.gd -- map=hanami
 ##   timeout 900 $S --headless --disable-crash-handler --path . -s res://tools/game/flows.gd -- \
 ##       flow=campaign speed=3
 

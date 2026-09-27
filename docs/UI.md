@@ -209,10 +209,12 @@ choices, the paint on the car, the respawned car's scene and the resumed autopil
 `<out>/menu_<shot>_<aspect>.png`:
 
 ```
-for a in 16x9 21x9 16x10; do
-  timeout 300 $S --disable-crash-handler --path . -s res://tools/ui/menu_tour.gd -- aspect=$a out=/tmp/menu_tour
-done
+timeout 300 $S --summer-offscreen --audio-driver Dummy --disable-crash-handler --path . \
+  -s res://tools/ui/menu_tour.gd -- aspect=16x9 out=/tmp/menu_tour
 ```
+
+Each aspect (`16x9`, `21x9`, `16x10`) is one rendered launch: check the others only when the
+layout changed, in the same batch of rendered runs.
 
 ## Campaign screens
 
@@ -255,6 +257,8 @@ S=/Applications/Summer.app/Contents/MacOS/Summer
 $S --disable-crash-handler --path . res://scenes/ui/preview/ui_preview.tscn
 ```
 
+That opens a window, so it is for a person at the keyboard; agents use the capture tour below.
+
 A painted landscape stands in for the 3D world, a mock car (autopilot or W/S) and mock
 session feed the HUD, and the driver plays the Main role (transitions, loading, intro,
 countdown, finish). Extra keys: **F2** notice, **F3** next checkpoint, **F4** finish now
@@ -265,10 +269,11 @@ is untouched.
 Automated screenshot tour (drives the UI with the same input actions a player uses):
 
 ```
-for a in 16x9 21x9 16x10; do
-  timeout 200 $S --disable-crash-handler --path . res://scenes/ui/preview/ui_preview.tscn -- --capture=$a
-done
+timeout 200 $S --summer-offscreen --audio-driver Dummy --disable-crash-handler --path . \
+  res://scenes/ui/preview/ui_preview.tscn -- --capture=16x9
 ```
+
+`--capture=21x9` and `--capture=16x10` are one rendered launch each, like the menu tour.
 
 Writes `docs/renders/ui_<screen>_<aspect>.png` and, for 16:9 and 21:9, animation contact
 sheets `docs/renders/ui_anim_<name>_<aspect>.png` (frames left-to-right, top-to-bottom).

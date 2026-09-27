@@ -1,10 +1,11 @@
 extends SceneTree
-## Windowed tour of the title hub in the real game (live 3D flyover, the real menu car): hub,
+## Offscreen tour of the title hub in the real game (live 3D flyover, the real menu car): hub,
 ## Time Attack, the garage with every livery painted onto the parked car (one frame caught
 ## mid-sweep), a car switch on the car strip (old car driving off, new one parking), and back to the flyover with the chosen car. Navigates with the
 ## player's ui_* actions; saves <out>/menu_<shot>_<aspect>.png and prints MENU_TOUR lines.
 ##
-##   timeout 300 $S --disable-crash-handler --path . -s res://tools/ui/menu_tour.gd -- aspect=16x9 out=/tmp/menu_tour
+##   timeout 300 $S --summer-offscreen --audio-driver Dummy --disable-crash-handler --path . \
+##       -s res://tools/ui/menu_tour.gd -- aspect=16x9 out=/tmp/menu_tour
 
 const ASPECTS := {"16x9": Vector2i(1600, 900), "16x10": Vector2i(1440, 900), "21x9": Vector2i(2100, 900)}
 

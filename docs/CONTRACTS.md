@@ -8,8 +8,8 @@ darkened, soft aerial haze, pastel sky with puffy cel clouds, thin dark-violet i
 ## Engine and commands
 
 - Engine binary: `/Applications/Summer.app/Contents/MacOS/Summer` (Godot 4.7.2 custom build).
-  Official Godot 4.7.2 at `/Applications/Godot.app/Contents/MacOS/Godot` is equivalent; keep
-  the project pure GDScript so both run it.
+  Official Godot 4.7.2 at `/Applications/Godot.app/Contents/MacOS/Godot` is equivalent (for
+  agents, `--headless` only; see below); keep the project pure GDScript so both run it.
 - Always pass `--disable-crash-handler`. Always wrap runs in `timeout`.
 - Import after writing raw assets: `timeout 180 $S --headless --disable-crash-handler --path . --import`
 - Run a headless script: `$S --headless --disable-crash-handler --path . -s res://path/script.gd`
@@ -18,9 +18,14 @@ darkened, soft aerial haze, pastel sky with puffy cel clouds, thin dark-violet i
 - `-s` runs and the UI preview never read or write the player's save
   (`user://sakura_rally.cfg`): `Game.persistent` is false, so they start from default
   settings with no records, and nothing they finish or change reaches the player.
-- Headless has no pixels. For screenshots use `--summer-offscreen` (the real renderer, no
-  window; add `--audio-driver Dummy`): Vel works on this Mac, so nothing opens a window.
-  Capture with `get_viewport().get_texture().get_image().save_png(...)`.
+- Vel watches fullscreen video on this Mac while agents work, and a Summer window pulls him out
+  of fullscreen. `--headless` for every run that needs no pixels. A run that needs pixels uses
+  only `--summer-offscreen --audio-driver Dummy` (the real renderer, off screen); capture with
+  `get_viewport().get_texture().get_image().save_png(...)`. Never a plain windowed run (`$S
+  --path . …` with neither flag), `open -a Summer`, or Godot.app without `--headless`: those
+  always take focus. Summer 0.5.68 bug: even `--summer-offscreen` comes to the front when a
+  fullscreen app is frontmost, so rendered runs are few and batched: every capture a task needs
+  in one process where the tool allows it, no exploratory or repeat render runs.
 - Judge runs by stderr (`SCRIPT ERROR`, `Parse Error`, `ERROR:`) and by artifacts, not exit code.
   Summer prints harmless noise: `[SE] AuthManager`, `Sparkle`, `SSL module failed`, `TLS handshake`.
 - Tools that run the game, a car or the Sound API end with `Game.request_quit(exit_code)`, not
@@ -302,8 +307,7 @@ meets only walls it can scrape along or props it knocks over.
   sign's mesh and its Label3D lines under one `Signs/Sign_<i>` node and registers it with
   `SoftCourse.add_sign()` as kind `road_sign` (`SoftCourse.ROAD_SIGN`, 4 %, `thump`). A hit
   hides the node (board and text together) and flings two debris pieces, the posts (triangles
-  reaching below 40 % of the sign's height) and the board. In an older pack (no `mesh`) the board
-  stays in `dressing` and its posts in `collision_boxes`, rigid as before.
+  reaching below 40 % of the sign's height) and the board.
 - `checkpoint_gate` instances are skipped (`SoftCourse.SKIPPED_PROPS`); `FabricGate`
   (`scripts/world/fabric_gate.gd`, banner shader `shaders/world/fabric_banner.gdshader`) stands at
   every `map.checkpoints` entry of a closed stage except one within 20 m of a start/finish arch,
@@ -319,8 +323,8 @@ meets only walls it can scrape along or props it knocks over.
   fires (the loading cover is still up) every smashable mesh and burst type is drawn for a few
   frames, tiny, in front of the active camera, so their pipelines compile behind the cover
   (`SoftCourse.is_warm()`).
-- Probe: `tools/game/softcourse_probe.gd -- map=hanami [car=hayate]` (headless). Run windowed
-  (`--audio-driver Dummy`, no `--headless`) it also logs frame times, physics steps, pipeline
+- Probe: `tools/game/softcourse_probe.gd -- map=hanami [car=hayate]` (headless). Rendered
+  (`--summer-offscreen --audio-driver Dummy`) it also logs frame times, physics steps, pipeline
   compilations and node/resource counts in the second after the 1st, 2nd and 10th smash and the
   first gate pass and hit, and fails above 25 ms or on any compilation or creation there.
 
@@ -329,8 +333,8 @@ meets only walls it can scrape along or props it knocks over.
 - Title hub: Campaign, Time Attack, Garage, Settings, Quit. The Campaign item calls
   `Game.request_campaign(...)` and labels itself from `Game.campaign_status()`.
 - `Game.set_menu_view(view)` and signal `menu_view_changed(view)`, views `"title"`,
-  `"time_attack"`, `"garage"`. In `"garage"` the menu car parks at the map spawn and the cine
-  camera orbits it; a livery or car change shows on that car at once.
+  `"time_attack"`, `"garage"`. In `"garage"` the menu car stands at the workshop (see Garage
+  under Episode 3) and the cine camera orbits it; a livery change shows on that car at once.
 - Top-down card art from `tools/build/capture_topdown.gd`: `assets/ui/maps/<id>_top.png` and
   `assets/ui/maps/<id>_route.json` = `{"image_size": [w, h], "world_rect": [x0, z0, width,
   height], "closed": bool, "points": [[u, v] …], "surface": [ … ], "start": [u, v],
@@ -403,8 +407,11 @@ copy the import cache first (`cp -R ~/Projects/sakura-rally/.godot <worktree>/`)
 ### Running things while Vel uses the Mac
 
 Nothing opens a window: pixels come from `--summer-offscreen --audio-driver Dummy`, the rest runs
-`--headless`. Wrap runs in `timeout` and `nice -n 5`. Eight agents share the machine, so frame
-rates measured during ep3 work are noisy: report them, the lead re-measures at integration.
+`--headless` (the rule under "Engine and commands"). Rendered runs are few and batched: plan the
+captures and put them in one process (the world loads once; `MapWorld.select_route()` switches
+routes), and each report says how many rendered launches the slice made. Wrap runs in `timeout`
+and `nice -n 5`. Eight agents share the machine, so frame rates measured during ep3 work are
+noisy: report them, the lead re-measures at integration.
 
 ### Scripted spawns (lead, done)
 

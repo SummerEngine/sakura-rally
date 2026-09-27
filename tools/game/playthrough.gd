@@ -5,7 +5,8 @@ extends SceneTree
 ## FPS, and saves frames at the key moments.
 ##
 ##   S=/Applications/Summer.app/Contents/MacOS/Summer
-##   timeout 600 $S --disable-crash-handler --path . -s res://tools/game/playthrough.gd -- \
+##   timeout 600 $S --summer-offscreen --audio-driver Dummy --disable-crash-handler --path . \
+##       -s res://tools/game/playthrough.gd -- \
 ##       map=hanami mode=time_trial out=/tmp/playthrough speed=2 shots=8
 ##
 ## map: hanami | momiji. mode: time_trial | free_roam (free roam drives `lap_s` seconds) |

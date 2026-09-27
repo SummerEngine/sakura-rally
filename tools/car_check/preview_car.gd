@@ -1,8 +1,9 @@
 extends SceneTree
-## Windowed preview of a car GLB as imported by Godot. Steers the front wheels to verify the
+## Offscreen preview of a car GLB as imported by Godot. Steers the front wheels to verify the
 ## wheel rest bases.
 ##
-## Run (NOT headless): $S --disable-crash-handler --path . -s res://tools/car_check/preview_car.gd
+## Run (rendered, never in a plain window): $S --summer-offscreen --audio-driver Dummy
+##     --disable-crash-handler --path . -s res://tools/car_check/preview_car.gd
 ##     [-- [res://assets/models/car/<car>.glb] [--livery=Sakura,Sora] [--popups=<degrees>]]
 ##
 ## Without --livery: stock StandardMaterial3D (no toon conversion) on a flat backdrop — catches

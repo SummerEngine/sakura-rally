@@ -7,17 +7,18 @@ extends SceneTree
 ## whole course back. The row and gate passes use only the car API, so the same run on a
 ## branch without SoftCourse gives the "before" numbers.
 ##
-## Run in a window (silent) it also renders the drive from a camera behind the car and logs
-## every frame: real frame time, physics steps, and the growth of draw-time pipeline
-## compilations, nodes and resources. It prints the worst frames within 1 s of the 1st, 2nd
-## and 10th smash, the first upright hit and the first gate pass (FRAMES lines), and fails on
-## a compilation, node or resource created at hit time or a frame over 25 ms there.
+## Rendered (`--summer-offscreen --audio-driver Dummy`) it also draws the drive from a camera
+## behind the car and logs every frame: real frame time, physics steps, and the growth of
+## draw-time pipeline compilations, nodes and resources. It prints the worst frames within 1 s
+## of the 1st, 2nd and 10th smash, the first upright hit and the first gate pass (FRAMES lines),
+## and fails on a compilation, node or resource created at hit time or a frame over 25 ms there.
 ##
 ## `map` is a route of the world (hanami, momiji, liaison); the passes run along that route.
 ##
 ##   timeout 300 $S --headless --disable-crash-handler --path . -s res://tools/game/softcourse_probe.gd \
 ##       -- map=hanami car=sakura
-##   timeout 300 $S --audio-driver Dummy --disable-crash-handler --path . -s res://tools/game/softcourse_probe.gd
+##   timeout 300 $S --summer-offscreen --audio-driver Dummy --disable-crash-handler --path . \
+##       -s res://tools/game/softcourse_probe.gd
 
 const DT := 1.0 / 120.0
 ## Hits are measured over this long after the contact (s).
