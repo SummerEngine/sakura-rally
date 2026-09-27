@@ -18,14 +18,17 @@ darkened, soft aerial haze, pastel sky with puffy cel clouds, thin dark-violet i
 - `-s` runs and the UI preview never read or write the player's save
   (`user://sakura_rally.cfg`): `Game.persistent` is false, so they start from default
   settings with no records, and nothing they finish or change reaches the player.
-- Vel watches fullscreen video on this Mac while agents work, and a Summer window pulls him out
-  of fullscreen. `--headless` for every run that needs no pixels. A run that needs pixels uses
-  only `--summer-offscreen --audio-driver Dummy` (the real renderer, off screen); capture with
+- Vel watches fullscreen video on this Mac while agents work. `--headless` for every run that
+  needs no pixels (the installed Summer is fine). A run that needs pixels uses only
+  `--summer-offscreen --audio-driver Dummy` (the real renderer, off screen) on the agents' dev
+  build, `S=~/opt/summer-dev/SummerDev.app/Contents/MacOS/Summer` (0.5.68 with SummerEngine
+  PR #397): its offscreen window is transparent and lets clicks through. The installed Summer
+  0.5.68 puts that window on screen at the top left of the active Space, over his fullscreen
+  video too, and a click on it drops him out of fullscreen. Capture with
   `get_viewport().get_texture().get_image().save_png(...)`. Never a plain windowed run (`$S
-  --path . …` with neither flag), `open -a Summer`, or Godot.app without `--headless`: those
-  always take focus. Summer 0.5.68 bug: even `--summer-offscreen` comes to the front when a
-  fullscreen app is frontmost, so rendered runs are few and batched: every capture a task needs
-  in one process where the tool allows it, no exploratory or repeat render runs.
+  --path . …` with neither flag), `open -a Summer`, or Godot.app without `--headless`. Rendered
+  runs stay few and batched: every capture a task needs in one process where the tool allows it,
+  no exploratory or repeat render runs.
 - Judge runs by stderr (`SCRIPT ERROR`, `Parse Error`, `ERROR:`) and by artifacts, not exit code.
   Summer prints harmless noise: `[SE] AuthManager`, `Sparkle`, `SSL module failed`, `TLS handshake`.
 - Tools that run the game, a car or the Sound API end with `Game.request_quit(exit_code)`, not
@@ -418,12 +421,12 @@ copy the import cache first (`cp -R ~/Projects/sakura-rally/.godot <worktree>/`)
 
 ### Running things while Vel uses the Mac
 
-Nothing opens a window: pixels come from `--summer-offscreen --audio-driver Dummy`, the rest runs
-`--headless` (the rule under "Engine and commands"). Rendered runs are few and batched: plan the
-captures and put them in one process (the world loads once; `MapWorld.select_route()` switches
-routes), and each report says how many rendered launches the slice made. Wrap runs in `timeout`
-and `nice -n 5`. Eight agents share the machine, so frame rates measured during ep3 work are
-noisy: report them, the lead re-measures at integration.
+Nothing opens a window: pixels come from `--summer-offscreen --audio-driver Dummy` on the agents'
+dev build, the rest runs `--headless` (the rule under "Engine and commands"). Rendered runs are
+few and batched: plan the captures and put them in one process (the world loads once;
+`MapWorld.select_route()` switches routes), and each report says how many rendered launches the
+slice made. Wrap runs in `timeout` and `nice -n 5`. Eight agents share the machine, so frame
+rates measured during ep3 work are noisy: report them, the lead re-measures at integration.
 
 ### Scripted spawns (lead, done)
 
