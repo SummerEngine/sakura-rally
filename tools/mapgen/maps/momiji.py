@@ -300,6 +300,11 @@ SPEC = {
         "checkpoints": 6,
         "bank_gain": 14.0,
         "bank_max": 0.05,
+        # the right-hander over the loop's seam (corner 12, beside the branch mouth) runs on 25 m
+        # past its apex; a car missing it there glances off the bank on the outside and rolls
+        # down beside the road, 4.6 m below it (flyoff_probe). The miss lines stop at the apex,
+        # so the rail is asked for: the run they give when sampled on to the exit.
+        "roadside": {"rails": [(2604, 75, -1)]},
         "crests": [
             {"at": 9, "offset": 30.0, "height": 1.3, "width": 10.0},
             {"at": 32, "offset": 20.0, "height": 1.5, "width": 9.0},
