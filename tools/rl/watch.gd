@@ -56,6 +56,8 @@ func _run() -> void:
 	await _until(func() -> bool: return game.state in [game.State.COUNTDOWN, game.State.RACING, game.State.FREE_ROAM], 90.0)
 	print("WATCH start route=%s mode=%s policy=%s ghosts=%d" % [opts["route"], opts["mode"], ai.policy.path.get_file(), ai.ghosts.size()])
 	var t0 := clock
+	var result := {}
+	game.race_finished.connect(func(r: Dictionary) -> void: result.merge(r))
 	var cycle := float(opts["cycle"])
 	var next_cut := t0 + cycle
 	var done := func() -> bool: return game.state in [game.State.FINISHED, game.State.ARRIVED]
@@ -71,7 +73,8 @@ func _run() -> void:
 		print("WATCH timeout after %.0f s: progress %.2f, elapsed %.1f, rescues %d" % [clock - t0,
 				main.session.progress, main.session.elapsed, ai.rescues])
 	else:
-		print("WATCH finish time=%.2f rescues=%d" % [main.session.elapsed, ai.rescues])
+		print("WATCH finish time=%.2f rescues=%d record=%s medal=%s ai_drove=%s" % [main.session.elapsed,
+				ai.rescues, result.get("is_record"), result.get("medal"), result.get("ai_drove")])
 		await _seconds(8.5) # the finish beat, slow-motion orbit and results card
 		_still("results")
 	game.request_quit()

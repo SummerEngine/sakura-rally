@@ -40,6 +40,7 @@ var _took_car: bool = false
 var _ghosts_for: Car
 ## Per driven car (instance id): [seconds in trouble, last road distance].
 var _trouble: Dictionary = {}
+var _state: int = -1
 
 
 func _init() -> void:
@@ -69,7 +70,10 @@ func _input(event: InputEvent) -> void:
 			auto_drive = not auto_drive
 			if not auto_drive and _pilot != null:
 				_detach(true)
-			Game.post_notice("AI driving" if auto_drive else "You drive")
+			if auto_drive and _campaign_stage():
+				Game.post_notice("The AI driver sits out campaign stages")
+			else:
+				Game.post_notice("AI driving" if auto_drive else "You drive")
 		KEY_G:
 			ghosts_on = not ghosts_on
 			if not ghosts_on:
@@ -83,12 +87,16 @@ func _input(event: InputEvent) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if Game.state != _state:
+		_state = Game.state
+		if _state == Game.State.COUNTDOWN:
+			Game.ai_drove = false # a new run
 	var main := get_parent()
 	var car: Car = main.car if main.car != null and is_instance_valid(main.car) else null
 	var track: Track = main.map.track if main.map != null else null
 	var drivable := car != null and track != null and _drivable_state() and not car.has_node(^"ArrivalStop")
 
-	if auto_drive and drivable:
+	if auto_drive and drivable and not _campaign_stage():
 		if _pilot == null or _pilot.car != car:
 			_detach(false)
 			_pilot = _make_pilot(policy, track, 0)
@@ -98,6 +106,8 @@ func _physics_process(delta: float) -> void:
 		if car.controlled_by_player:
 			car.controlled_by_player = false
 			_took_car = true
+		if Game.state in [Game.State.COUNTDOWN, Game.State.RACING]:
+			Game.ai_drove = true # this run sets no record or medal (Game.notify_finished)
 		if Input.is_action_just_pressed(&"reset_car") and not car.launch_hold:
 			car.reset_to_track()
 		if _rescue(car, _pilot, delta):
@@ -118,6 +128,11 @@ func _physics_process(delta: float) -> void:
 
 func _drivable_state() -> bool:
 	return Game.state in [Game.State.COUNTDOWN, Game.State.RACING, Game.State.FREE_ROAM, Game.State.LIAISON]
+
+
+## A timed campaign stage: its result feeds the rally classification, so the AI never drives it.
+func _campaign_stage() -> bool:
+	return Game.campaign_current_leg().get("kind", "") == "stage"
 
 
 ## `phase`: the player's pilot 0, the ghosts 1, 2, ... (NeuralPilot.phase).

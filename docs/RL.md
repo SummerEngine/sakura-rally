@@ -6,6 +6,10 @@ car, presses steer / pedal / handbrake ten times a second, and was trained by tr
 
 ## In the game
 
+A Time Attack run in which the AI had the car at any point after the countdown sets no record
+and no medal (`Game.ai_drove`, cleared at each countdown). Campaign stages feed the rally
+classification, so the driver sits them out; liaisons and free roam are fine.
+
 | Key | What it does |
 |---|---|
 | I | Auto-drive: the AI takes your car (stage, liaison, free roam); I again gives it back |
