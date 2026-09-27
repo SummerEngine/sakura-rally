@@ -23,6 +23,10 @@ extends SceneTree
 const DT := 1.0 / 120.0
 ## Hits are measured over this long after the contact (s).
 const WINDOW := 0.6
+## A row also needs the lane this far (m) past its offset clear: swinging out to it at speed the
+## car runs up to a metre wide of its lane with the nose turned out (on the liaison it reached a
+## maple 2.3 m behind the bale row).
+const ROW_SWING := 1.2
 
 var opts := {"map": "hanami", "car": "sakura", "kmh": "85"}
 ## Heavy dressing: a light row leaves these out; the heavy row is a tyre or bale wall.
@@ -352,14 +356,16 @@ func _find_row(heavy: bool) -> Dictionary:
 			if signf(g["lat"]) == signf(f["lat"]) and absf(float(g["lat"]) - float(f["lat"])) < 1.0:
 				sel.append(g["name"])
 				s1 = g["s"]
-		# the row's own lane and every lane on the way out to it (a row behind a guardrail is out
-		# of reach)
+		# the row's own lane, every lane on the way out to it (a row behind a guardrail is out of
+		# reach) and the lane just past it (ROW_SWING)
 		var lat: float = f["lat"]
 		var reach := sel.size() > best_n and float(f["s"]) > 150.0
 		var l_out := float(f["hw"]) + 0.5
 		while reach and l_out < absf(lat) + 0.5:
 			reach = _lane_clear(float(f["s"]) - 35.0, s1 + 10.0, signf(lat) * minf(l_out, absf(lat)))
 			l_out += 1.0
+		if reach:
+			reach = _lane_clear(float(f["s"]) - 35.0, s1 + 10.0, signf(lat) * (absf(lat) + ROW_SWING))
 		if reach:
 			best_n = sel.size()
 			best = {"s0": f["s"], "s1": s1, "lat": lat, "names": sel}
