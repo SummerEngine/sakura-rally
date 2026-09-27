@@ -1,5 +1,5 @@
-// Procedural "painted anime background" landscape. Used as the map-card placeholder art
-// (when no preview texture exists) and as the backdrop of the UI preview harness.
+// Procedural "painted anime background" landscape: the backdrop of the UI preview harness,
+// standing in for the 3D world.
 // Flat cel bands, hazy layered mountains, puffy clouds, blossom / maple canopies.
 shader_type canvas_item;
 
@@ -9,11 +9,6 @@ uniform float autumn = 0.0; // 0 = spring noon, 1 = autumn golden hour
 uniform float parallax = 0.0; // -1..1 horizontal parallax offset (hover / mouse)
 uniform float time_scale = 1.0;
 uniform vec2 rect_size = vec2(1920.0, 1080.0);
-uniform float radius = 0.0; // rounded-corner mask in pixels (0 = none)
-uniform vec4 corner_mask = vec4(1.0); // which corners are rounded: tl, tr, br, bl
-uniform sampler2D preview_tex : source_color, filter_linear_mipmap;
-uniform bool use_texture = false;
-uniform float zoom = 1.0;
 
 float ridge(float x, float seed, float amp, float freq) {
 	return (ui_fbm(vec2(x * freq + seed, seed)) - 0.5) * amp + sin(x * freq * 2.1 + seed) * amp * 0.25;
@@ -33,7 +28,6 @@ float cloud_puffs(vec2 p, vec2 c, float s) {
 vec3 painted(vec2 uv, float t) {
 	float aspect = rect_size.x / max(rect_size.y, 1.0);
 	vec2 p = vec2((uv.x - 0.5) * aspect, uv.y); // y down, 0 top .. 1 bottom
-	p /= zoom;
 
 	vec3 sky_top = mix(vec3(0.42, 0.66, 0.91), vec3(0.47, 0.55, 0.82), autumn);
 	vec3 sky_low = mix(vec3(0.91, 0.93, 0.94), vec3(1.0, 0.8, 0.58), autumn);
@@ -110,21 +104,5 @@ vec3 painted(vec2 uv, float t) {
 }
 
 void fragment() {
-	vec3 col;
-	if (use_texture) {
-		vec2 uv = (UV - 0.5) / zoom + 0.5 + vec2(parallax * 0.01, 0.0);
-		col = texture(preview_tex, uv).rgb;
-	} else {
-		col = painted(UV, TIME * time_scale);
-	}
-	float a = 1.0;
-	if (radius > 0.0) {
-		vec2 px = UV * rect_size;
-		vec2 h = rect_size * 0.5;
-		vec2 q = px - h;
-		float r = q.x < 0.0 ? (q.y < 0.0 ? corner_mask.x : corner_mask.w) : (q.y < 0.0 ? corner_mask.y : corner_mask.z);
-		float d = ui_sd_round_box(q, h, radius * r);
-		a = clamp(0.5 - d, 0.0, 1.0);
-	}
-	COLOR = vec4(col, a * COLOR.a);
+	COLOR = vec4(painted(UV, TIME * time_scale), COLOR.a);
 }

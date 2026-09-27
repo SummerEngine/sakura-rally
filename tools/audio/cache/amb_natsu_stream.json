@@ -1,0 +1,18 @@
+{
+  "model": "fal-ai/elevenlabs/sound-effects/v2",
+  "params": {
+    "text": "A clear shallow summer stream flowing over pebbles nearby, gentle continuous bright trickling and bubbling water, calm, no insects, no birds",
+    "loop": true,
+    "duration_seconds": 22,
+    "prompt_influence": 0.5,
+    "output_format": "mp3_44100_192"
+  },
+  "request_id": "01a0debe-85ba-7ba0-9398-489caedbfdf7",
+  "response": {},
+  "audio": {
+    "url": "https://v3b.fal.media/files/b/0aabfff6/yzcVyTzpHtVS7C2xvK2Yg_sound_effect.mp3",
+    "content_type": "audio/mpeg",
+    "file_name": "sound_effect.mp3",
+    "file_size": 529807
+  }
+}

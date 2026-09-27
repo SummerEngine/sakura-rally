@@ -23,11 +23,13 @@ const MUSIC := {
 	&"menu": "res://assets/audio/music/menu.ogg",
 	&"drive": "res://assets/audio/music/drive.ogg",
 	&"results": "res://assets/audio/music/results.ogg",
+	&"liaison": "res://assets/audio/music/liaison.ogg",
 }
 
 const AMBIENCE := {
 	"hanami": "res://assets/audio/ambience/hanami.ogg",
 	"momiji": "res://assets/audio/ambience/momiji.ogg",
+	"natsu": "res://assets/audio/ambience/natsu.ogg",
 }
 
 const UI_SOUNDS := {
@@ -44,10 +46,12 @@ const STINGERS := {
 	&"checkpoint": "res://assets/audio/stingers/checkpoint.wav",
 	&"finish": "res://assets/audio/stingers/finish.wav",
 	&"record": "res://assets/audio/stingers/record.wav",
+	&"arrived": "res://assets/audio/stingers/arrived.wav",
+	&"campaign_complete": "res://assets/audio/stingers/campaign_complete.wav",
 }
 
 ## Stingers that briefly duck music + ambience so the phrase reads clearly.
-const DUCKING_STINGERS := {&"go": 5.0, &"finish": 8.0, &"record": 10.0}
+const DUCKING_STINGERS := {&"go": 5.0, &"finish": 8.0, &"record": 10.0, &"campaign_complete": 10.0}
 
 ## Named positional one-shots for play_3d (a random variant is picked per call).
 ## A full "res://..." path is accepted as well.
@@ -125,6 +129,18 @@ func _ready() -> void:
 		game.settings_changed.connect(_apply_volumes)
 		game.paused_changed.connect(_on_paused_changed)
 	_apply_volumes()
+	_warm_cache()
+
+
+## Reads every short one-shot into the cache at boot. Loading on first play puts a disk read
+## on the frame of the event itself (the first smash, checkpoint or menu click).
+func _warm_cache() -> void:
+	for table: Dictionary in [UI_SOUNDS, STINGERS]:
+		for path: String in table.values():
+			_load(path)
+	for variants: Array in SFX_3D.values():
+		for path: String in variants:
+			_load(path)
 
 
 # ---------------------------------------------------------------- buses
@@ -255,7 +271,8 @@ func play_ui(sound_name: StringName) -> void:
 	p.play()
 
 
-## Stingers: &"countdown", &"go", &"checkpoint", &"finish", &"record".
+## Stingers: &"countdown", &"go", &"checkpoint", &"finish", &"record", &"arrived",
+## &"campaign_complete".
 func play_stinger(sound_name: StringName) -> void:
 	var stream := _stream_from(STINGERS, sound_name, "stinger")
 	if stream == null:
@@ -282,7 +299,7 @@ func _set_duck(value_db: float) -> void:
 
 # ---------------------------------------------------------------- music
 
-## Music: &"menu", &"drive", &"results". Crossfades from whatever is playing.
+## Music: &"menu", &"drive", &"results", &"liaison". Crossfades from whatever is playing.
 func play_music(track: StringName, fade: float = 1.5) -> void:
 	if track == _music_track and _music_active != null and _music_active.playing:
 		return
@@ -307,7 +324,7 @@ func stop_music(fade: float = 1.5) -> void:
 
 # ---------------------------------------------------------------- ambience
 
-## Ambience bed for a map id ("hanami", "momiji"). Unknown ids fade the bed out.
+## Ambience bed for a map id ("hanami", "momiji", "natsu"). Unknown ids fade the bed out.
 func play_ambience(map_id: String, fade: float = 2.0) -> void:
 	if map_id == _amb_id and _amb_active != null and _amb_active.playing:
 		return

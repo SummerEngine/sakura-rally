@@ -1,6 +1,10 @@
 extends Control
-## Title / main menu over the live 3D flyover: brush-painted 桜 logo, kinetic wordmark,
-## hanko stamp, map cards, mode + livery pickers, settings / quit, drifting petals.
+## Title hub over the live 3D flyover: brush-painted 桜 logo, kinetic wordmark, hanko stamp,
+## drifting petals and the hub menu (Campaign, Time Attack, Garage, Settings, Quit).
+## Time Attack and Garage are pages of the hub (time_attack_panel.gd, garage_panel.gd). The page
+## showing is mirrored to Game.set_menu_view, so Main parks the car for the garage; the switch
+## to and from the garage hides the camera cut under a quick ink wipe. Esc / B steps back from
+## a page to the hub.
 
 signal settings_requested
 signal shake_requested(strength: float)
@@ -11,18 +15,25 @@ const UIApi := preload("res://scripts/ui/ui_api.gd")
 const BrushKanji := preload("res://scripts/ui/widgets/brush_kanji.gd")
 const KineticText := preload("res://scripts/ui/widgets/kinetic_text.gd")
 const Hanko := preload("res://scripts/ui/widgets/hanko.gd")
-const MapCard := preload("res://scripts/ui/widgets/map_card.gd")
-const Segmented := preload("res://scripts/ui/widgets/segmented.gd")
-const Swatches := preload("res://scripts/ui/widgets/livery_swatches.gd")
-const InkButton := preload("res://scripts/ui/widgets/ink_button.gd")
+const HubItem := preload("res://scripts/ui/widgets/hub_item.gd")
+const JourneyStrip := preload("res://scripts/ui/widgets/journey_strip.gd")
+const ConfirmDialog := preload("res://scripts/ui/widgets/confirm_dialog.gd")
 const PetalField := preload("res://scripts/ui/widgets/petal_field.gd")
 const KeyHints := preload("res://scripts/ui/widgets/key_hints.gd")
+const ShaderRect := preload("res://scripts/ui/widgets/shader_rect.gd")
+const TimeAttackPanel := preload("res://scripts/ui/screens/time_attack_panel.gd")
+const GaragePanel := preload("res://scripts/ui/screens/garage_panel.gd")
+const INK_WIPE := preload("res://shaders/ui/ink_wipe.gdshader")
 
 const MARGIN := Vector2(96, 64)
 const LOGO_POS := MARGIN - Vector2(26, 28)
-const MODES := ["time_trial", "free_roam"]
+## Garage switch: the ink wipe's cover and lift times (the loading wipe takes ~1 s each way).
+const WIPE_COVER := 0.55
+const WIPE_LIFT := 0.65
 
 var active := false
+## "title" (the hub), "time_attack" or "garage"; mirrored to Game.menu_view.
+var view := "title"
 
 var _scrim := TextureRect.new()
 var _petals: PetalField
@@ -31,16 +42,19 @@ var _kanji: BrushKanji
 var _wordmark: KineticText
 var _subline := HBoxContainer.new()
 var _hanko: Hanko
-var _menu := VBoxContainer.new()
-var _mode_row: Control
-var _livery_row: Control
-var _mode: Segmented
-var _swatches: Swatches
-var _cards_row := HBoxContainer.new()
-var _cards: Array[MapCard] = []
-var _buttons_row := HBoxContainer.new()
-var _settings_btn: Button
-var _quit_btn: Button
+var _hub := VBoxContainer.new()
+var _campaign_item: HubItem
+var _journey: JourneyStrip
+var _new_journey_item: HubItem
+var _time_attack_item: HubItem
+var _garage_item: HubItem
+var _small_row := HBoxContainer.new()
+var _settings_item: HubItem
+var _quit_item: HubItem
+var _time_attack: TimeAttackPanel
+var _garage: GaragePanel
+var _wipe: ShaderRect
+var _confirm: ConfirmDialog
 var _hint: Control
 var _time := 0.0
 ## Full-rect layers that carry only the parallax offset, so the anchored layout inside
@@ -48,9 +62,12 @@ var _time := 0.0
 var _logo_layer := Control.new()
 var _menu_layer := Control.new()
 var _parallax := Vector2.ZERO
-var _last_card := 0
 var _intro_tween: Tween
-var _petals_warm := false
+var _wipe_tween: Tween
+## Hub item to focus when coming back from a page.
+var _last_hub: Control
+## A garage switch is under way (ink wipe running); input waits for it.
+var _switching := false
 
 
 func _ready() -> void:
@@ -59,8 +76,18 @@ func _ready() -> void:
 	_build_scrim()
 	_petals = PetalField.new()
 	add_child(_petals)
+	for layer: Control in [_logo_layer, _menu_layer]:
+		layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(layer)
 	_build_logo()
-	_build_menu()
+	_build_hub()
+	_time_attack = TimeAttackPanel.new()
+	_time_attack.back_requested.connect(_back_to_hub)
+	_menu_layer.add_child(_time_attack)
+	_garage = GaragePanel.new()
+	_garage.back_requested.connect(_back_to_hub)
+	_menu_layer.add_child(_garage)
 	_hint = KeyHints.new()
 	_hint.entries = [
 		[["W", "A", "S", "D"], ["RT", "LT", "L"], "Drive"],
@@ -78,6 +105,15 @@ func _ready() -> void:
 	_hint.offset_top = -MARGIN.y * 0.9
 	_hint.offset_bottom = -MARGIN.y * 0.9
 	add_child(_hint)
+	_wipe = ShaderRect.new(INK_WIPE)
+	_wipe.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_wipe.set_param(&"ink", UITheme.INK)
+	_wipe.set_param(&"accent", UITheme.SAKURA)
+	_wipe.visible = false
+	add_child(_wipe)
+	_confirm = ConfirmDialog.new()
+	add_child(_confirm)
+	UIApi.game().settings_changed.connect(_refresh_garage_item)
 	visible = false
 
 
@@ -101,10 +137,6 @@ func _build_scrim() -> void:
 
 
 func _build_logo() -> void:
-	for layer: Control in [_logo_layer, _menu_layer]:
-		layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		add_child(layer)
 	_logo.position = LOGO_POS
 	_logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_logo_layer.add_child(_logo)
@@ -167,93 +199,119 @@ func _build_logo() -> void:
 	_subline.add_child(tag)
 
 
-func _row(label_text: String, control: Control) -> HBoxContainer:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 20)
-	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var l := UITheme.make_label(label_text, UITheme.tracked(UITheme.FONT_UI_BLACK, 3), 14, Color(UITheme.INK, 0.66))
-	l.custom_minimum_size = Vector2(92, 0)
-	l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	row.add_child(l)
-	row.add_child(control)
-	return row
+func _build_hub() -> void:
+	_hub.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
+	_hub.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	# Items carry their own padding (room for the focus swash); align their text to the margin.
+	_hub.offset_left = MARGIN.x - 22.0
+	_hub.offset_right = MARGIN.x - 22.0
+	_hub.offset_top = -MARGIN.y + 8.0
+	_hub.offset_bottom = -MARGIN.y + 8.0
+	_hub.add_theme_constant_override("separation", 2)
+	_hub.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_menu_layer.add_child(_hub)
+
+	_journey = JourneyStrip.new()
+	var detail := MarginContainer.new()
+	detail.add_theme_constant_override("margin_top", 8)
+	detail.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	detail.add_child(_journey)
+	_campaign_item = _item(HubItem.Kind.PRIMARY, "旅", "CAMPAIGN", "New journey", detail)
+	_campaign_item.press_sound = &"start"
+	_campaign_item.pressed.connect(_on_campaign_pressed)
+	_new_journey_item = _item(HubItem.Kind.SMALL, "", "", "Start a new journey")
+	_new_journey_item.pressed.connect(_on_new_journey_pressed)
+	_hub.add_child(_gap(10))
+	_time_attack_item = _item(HubItem.Kind.NORMAL, "時", "TIME TRIAL · FREE ROAM", "Time Attack")
+	_time_attack_item.pressed.connect(_open_time_attack)
+	_garage_item = _item(HubItem.Kind.NORMAL, "車", "", "Garage")
+	_garage_item.pressed.connect(_open_garage)
+	_hub.add_child(_gap(10))
+
+	_small_row.add_theme_constant_override("separation", 4)
+	_small_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hub.add_child(_small_row)
+	_settings_item = _item(HubItem.Kind.SMALL, "", "", "Settings", null, _small_row)
+	_settings_item.pressed.connect(func() -> void: settings_requested.emit())
+	_quit_item = _item(HubItem.Kind.SMALL, "", "", "Quit", null, _small_row)
+	_quit_item.press_sound = &"back"
+	_quit_item.pressed.connect(func() -> void: UIApi.game().request_quit())
 
 
-func _build_menu() -> void:
-	_menu.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
-	_menu.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	_menu.offset_left = MARGIN.x
-	_menu.offset_right = MARGIN.x
-	_menu.offset_top = -MARGIN.y
-	_menu.offset_bottom = -MARGIN.y
-	_menu.add_theme_constant_override("separation", 14)
-	_menu.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_menu_layer.add_child(_menu)
+func _item(kind: int, kanji: String, overline: String, title: String, detail: Control = null, parent: Control = null) -> HubItem:
+	var item := HubItem.new()
+	item.setup(kind, kanji, overline, title, detail)
+	item.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	(parent if parent != null else _hub).add_child(item)
+	return item
 
-	_mode = Segmented.new()
-	_mode.options = PackedStringArray(["Time Trial", "Free Roam"])
-	_mode.min_segment_width = 150.0
-	_mode.selected = _initial_mode()
-	_mode_row = _row("MODE", _mode)
-	_menu.add_child(_mode_row)
 
-	_swatches = Swatches.new()
-	_swatches.setup(UIApi.game().CAR_COLORS, int(UIApi.setting("car_color")))
-	_swatches.changed.connect(func(i: int) -> void: UIApi.game().set_setting("car_color", i))
-	_livery_row = _row("LIVERY", _swatches)
-	_menu.add_child(_livery_row)
-
+func _gap(h: float) -> Control:
 	var gap := Control.new()
-	gap.custom_minimum_size = Vector2(0, 14)
+	gap.custom_minimum_size = Vector2(0, h)
 	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_menu.add_child(gap)
-
-	_cards_row.add_theme_constant_override("separation", 26)
-	_cards_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_menu.add_child(_cards_row)
-	for m: Dictionary in UIApi.game().MAPS:
-		var card := MapCard.new()
-		card.setup(m)
-		card.pressed.connect(_on_card_pressed.bind(card))
-		card.focus_entered.connect(func() -> void: _last_card = _cards.find(card))
-		_cards_row.add_child(card)
-		_cards.append(card)
-
-	_buttons_row.add_theme_constant_override("separation", 8)
-	_buttons_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_menu.add_child(_buttons_row)
-	_settings_btn = _quiet_button("Settings")
-	_settings_btn.pressed.connect(func() -> void: settings_requested.emit())
-	_buttons_row.add_child(_settings_btn)
-	_quit_btn = _quiet_button("Quit")
-	_quit_btn.press_sound = &"back"
-	_quit_btn.pressed.connect(func() -> void: UIApi.game().request_quit())
-	_buttons_row.add_child(_quit_btn)
-
-	# Row-to-row navigation (left / right inside pickers changes their value).
-	_mode.focus_neighbor_bottom = _swatches.get_path()
-	_swatches.focus_neighbor_top = _mode.get_path()
-	_swatches.focus_neighbor_bottom = _cards[0].get_path()
-	for i in _cards.size():
-		_cards[i].focus_neighbor_top = _swatches.get_path()
-		_cards[i].focus_neighbor_bottom = _settings_btn.get_path()
-	_settings_btn.focus_neighbor_top = _cards[0].get_path()
-	_quit_btn.focus_neighbor_top = _cards[mini(1, _cards.size() - 1)].get_path()
+	return gap
 
 
-## Time Trial until the player has driven once; afterwards the last mode played.
-func _initial_mode() -> int:
-	if str(UIApi.game().map_id) == "":
-		return 0
-	return maxi(MODES.find(str(UIApi.game().mode)), 0)
+## Campaign label and journey strip from Game.campaign_status(), garage label from the car
+## settings, and the focus chain over whichever items show.
+func _refresh_hub() -> void:
+	var game := UIApi.game()
+	var st: Dictionary = game.campaign_status()
+	var legs := int(st["legs"])
+	var leg := int(st["leg"])
+	if bool(st["finished"]):
+		_campaign_item.set_overline("CAMPAIGN · JOURNEY COMPLETE")
+		_campaign_item.set_title("Replay journey")
+	elif bool(st["started"]):
+		var next: Dictionary = st["next"]
+		_campaign_item.set_overline("CAMPAIGN · LEG %d OF %d" % [mini(leg + 1, legs), legs])
+		_campaign_item.set_title("Continue · %s" % str(next.get("title", "")))
+	else:
+		_campaign_item.set_overline("CAMPAIGN · %d LEGS" % legs)
+		_campaign_item.set_title("New journey")
+	_journey.setup(game.CAMPAIGN, legs if bool(st["finished"]) else leg)
+	_new_journey_item.visible = _in_progress()
+	_refresh_garage_item()
+	_link_hub_focus()
 
 
-func _quiet_button(text: String) -> Button:
-	var b := InkButton.new()
-	b.text = text
-	b.theme_type_variation = &"QuietButton"
-	b.add_theme_font_size_override("font_size", 20)
-	return b
+func _in_progress() -> bool:
+	var st: Dictionary = UIApi.game().campaign_status()
+	return bool(st["started"]) and not bool(st["finished"])
+
+
+func _refresh_garage_item() -> void:
+	var game := UIApi.game()
+	var car: Dictionary = game.current_car()
+	var livery: Dictionary = game.car_colors()
+	_garage_item.set_overline("%s · %s LIVERY" % [str(car.get("name", "")).to_upper(), str(livery.get("name", "")).to_upper()])
+
+
+func _link_hub_focus() -> void:
+	var column: Array[Control] = [_campaign_item]
+	if _new_journey_item.visible:
+		column.append(_new_journey_item)
+	column.append_array([_time_attack_item, _garage_item, _settings_item])
+	for i in column.size():
+		var c := column[i]
+		c.focus_neighbor_top = column[i - 1].get_path() if i > 0 else c.get_path()
+		c.focus_neighbor_bottom = column[i + 1].get_path() if i < column.size() - 1 else c.get_path()
+		c.focus_neighbor_left = c.get_path()
+		c.focus_neighbor_right = c.get_path()
+	_settings_item.focus_neighbor_right = _quit_item.get_path()
+	_quit_item.focus_neighbor_left = _settings_item.get_path()
+	_quit_item.focus_neighbor_right = _quit_item.get_path()
+	_quit_item.focus_neighbor_top = _garage_item.get_path()
+	_quit_item.focus_neighbor_bottom = _quit_item.get_path()
+
+
+func _hub_rows() -> Array[Control]:
+	var rows: Array[Control] = [_campaign_item]
+	if _new_journey_item.visible:
+		rows.append(_new_journey_item)
+	rows.append_array([_time_attack_item, _garage_item, _small_row])
+	return rows
 
 
 # ---------------------------------------------------------------- show / hide
@@ -262,18 +320,25 @@ func enter() -> void:
 	active = true
 	visible = true
 	modulate.a = 1.0
-	for c in _cards:
-		c.refresh()
-	_mode.selected = _initial_mode()
-	await get_tree().process_frame
-	if not active:
-		return
+	_switching = false
+	_end_wipe()
+	var game := UIApi.game()
+	# Back from a Time Attack drive: land on its page again (the garage never starts a drive).
+	view = "time_attack" if str(game.menu_view) == "time_attack" else "title"
+	game.set_menu_view(view)
+	_refresh_hub()
+	_hub.visible = view == "title"
+	_garage.visible = false
+	_time_attack.visible = false
+	_hint.modulate.a = 0.0
+	# Entrance tweens read the laid-out positions.
+	UIMotion.layout_now(self)
 	_play_intro()
-	var idx := 0
-	for i in _cards.size():
-		if str(_cards[i].map.get("id", "")) == str(UIApi.game().map_id):
-			idx = i
-	_cards[idx].grab_focus()
+	if view == "time_attack":
+		_time_attack.enter(0.9)
+	else:
+		_last_hub = _campaign_item
+		_campaign_item.grab_focus()
 
 
 func leave(instant: bool = false) -> void:
@@ -289,17 +354,14 @@ func leave(instant: bool = false) -> void:
 	tw.tween_callback(hide)
 	UIMotion.slide_out(_logo, Vector2(0, -36))
 	_wordmark.play_out()
-	var chosen := _cards[_last_card] if _last_card < _cards.size() else null
-	for i in _cards.size():
-		if _cards[i] != chosen:
-			UIMotion.slide_out(_cards[i], Vector2(0, 60), 0.02 * i)
-	for r: Control in [_mode_row, _livery_row, _buttons_row]:
-		UIMotion.slide_out(r, Vector2(-40, 0))
-	if chosen != null:
-		chosen.pivot_offset = chosen.size * 0.5
-		var ct := UIMotion.tween(chosen)
-		ct.tween_property(chosen, "scale", Vector2(1.05, 1.05), 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-		ct.tween_property(chosen, "modulate:a", 0.0, 0.3)
+	UIMotion.slide_out(_hint, Vector2(0, 20))
+	match view:
+		"time_attack":
+			_time_attack.leave_for_race()
+		"garage":
+			_garage.leave()
+		_:
+			_slide_hub_out(Vector2(-40, 0))
 
 
 func _play_intro() -> void:
@@ -315,37 +377,184 @@ func _play_intro() -> void:
 	_hanko.stamp(1.75)
 	_subline.modulate.a = 0.0
 	UIMotion.rise_in(_subline, 1.1, 16.0, 0.6)
-	var rows: Array[Control] = [_mode_row, _livery_row]
-	var delay := 0.95
-	for r in rows:
-		UIMotion.rise_in(r, delay, 28.0)
-		delay += 0.08
-	for c in _cards:
-		c.scale = Vector2.ONE
-		UIMotion.rise_in(c, delay, 60.0, 0.7)
-		delay += 0.12
-	UIMotion.rise_in(_buttons_row, delay + 0.05, 24.0)
-	_hint.modulate.a = 0.0
-	UIMotion.tween(_hint).tween_property(_hint, "modulate:a", 1.0, 0.8).set_delay(delay + 0.3)
-	_petals.intensity = 1.0
-	if not _petals_warm:
-		_petals_warm = true
-		_petals.prewarm()
+	if view == "title":
+		_rise_hub(0.95)
+	_hint.position.y = _hint_rest_y()
+	UIMotion.tween(_hint).tween_property(_hint, "modulate:a", 1.0, 0.6).set_delay(1.6)
 
 
-# ---------------------------------------------------------------- events
+func _rise_hub(delay: float) -> void:
+	var d := delay
+	for r in _hub_rows():
+		UIMotion.rise_in(r, d, 34.0 if r == _campaign_item else 26.0, 0.6)
+		d += 0.08
 
-func _on_card_pressed(card: MapCard) -> void:
-	if not active:
-		return
-	UIApi.ui_sound(&"start")
-	_last_card = _cards.find(card)
-	var mode: String = MODES[_mode.selected]
-	UIApi.game().request_start(str(card.map.get("id", "")), mode)
+
+func _slide_hub_out(offset: Vector2) -> void:
+	var i := 0
+	for r in _hub_rows():
+		UIMotion.slide_out(r, offset, 0.03 * i, 0.24)
+		i += 1
+
+
+func _hint_rest_y() -> float:
+	return size.y - MARGIN.y * 0.9 - _hint.size.y
 
 
 func focus_settings_button() -> void:
-	_settings_btn.grab_focus()
+	_settings_item.grab_focus()
+
+
+# ---------------------------------------------------------------- pages
+
+func _open_time_attack() -> void:
+	if _switching or view != "title":
+		return
+	_last_hub = _time_attack_item
+	view = "time_attack"
+	UIApi.game().set_menu_view(view)
+	_slide_hub_out(Vector2(-60, 0))
+	_hide_hub_later()
+	_time_attack.enter(0.14)
+
+
+func _open_garage() -> void:
+	if _switching or view != "title":
+		return
+	_switching = true
+	_last_hub = _garage_item
+	view = "garage"
+	get_viewport().gui_release_focus()
+	_slide_hub_out(Vector2(-60, 0))
+	_hide_hub_later()
+	UIMotion.slide_out(_logo, Vector2(0, -36))
+	_wordmark.play_out()
+	UIMotion.kill(_intro_tween)
+	UIMotion.tween(_hint).tween_property(_hint, "modulate:a", 0.0, 0.2)
+	await _cover()
+	if not active or view != "garage":
+		return
+	# The camera cut and the car parking happen under the ink.
+	UIApi.game().set_menu_view("garage")
+	await get_tree().process_frame
+	if not active or view != "garage":
+		return
+	_lift()
+	_garage.enter(0.2)
+	_switching = false
+
+
+func _back_to_hub() -> void:
+	if _switching:
+		return
+	match view:
+		"time_attack":
+			view = "title"
+			UIApi.game().set_menu_view(view)
+			_time_attack.leave()
+			_show_hub(0.12)
+		"garage":
+			_switching = true
+			get_viewport().gui_release_focus()
+			_garage.leave()
+			await _cover()
+			if not active or view != "garage":
+				return
+			view = "title"
+			UIApi.game().set_menu_view(view)
+			await get_tree().process_frame
+			if not active or view != "title":
+				return
+			_lift()
+			_logo.position = LOGO_POS + Vector2(0, -30)
+			_logo.modulate.a = 0.0
+			var lt := UIMotion.tween(_logo)
+			lt.set_parallel(true)
+			lt.tween_property(_logo, "modulate:a", 1.0, 0.4).set_delay(0.15)
+			lt.tween_property(_logo, "position", LOGO_POS, 0.6).set_delay(0.15).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+			_wordmark.play(0.2)
+			UIMotion.tween(_hint).tween_property(_hint, "modulate:a", 1.0, 0.4).set_delay(0.5)
+			_show_hub(0.3)
+			_switching = false
+
+
+func _show_hub(delay: float) -> void:
+	_refresh_hub()
+	_hub.visible = true
+	UIMotion.layout_now(_hub)
+	UIMotion.layout_now(_small_row)
+	_rise_hub(delay)
+	var target: Control = _last_hub if _last_hub != null and _last_hub.visible else _campaign_item
+	target.grab_focus()
+
+
+## Hides the hub column once its exit slide is over (the pages take its input from here).
+func _hide_hub_later() -> void:
+	var tw := UIMotion.tween(_hub)
+	tw.tween_interval(0.4)
+	tw.tween_callback(func() -> void:
+		if view != "title":
+			_hub.visible = false)
+
+
+func _cover() -> Signal:
+	UIMotion.kill(_wipe_tween)
+	_wipe.visible = true
+	_wipe.mouse_filter = Control.MOUSE_FILTER_STOP
+	_wipe.set_param(&"seed", randf() * 10.0)
+	_wipe_tween = UIMotion.tween(_wipe)
+	_wipe_tween.tween_method(_wipe.param_setter(&"progress"), 0.0, 1.0, WIPE_COVER)
+	return _wipe_tween.finished
+
+
+func _lift() -> void:
+	UIMotion.kill(_wipe_tween)
+	_wipe_tween = UIMotion.tween(_wipe)
+	_wipe_tween.tween_method(_wipe.param_setter(&"progress"), 1.0, 2.0, WIPE_LIFT)
+	_wipe_tween.tween_callback(_end_wipe)
+
+
+func _end_wipe() -> void:
+	UIMotion.kill(_wipe_tween)
+	_wipe.visible = false
+	_wipe.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_wipe.set_param(&"progress", 0.0)
+
+
+# ---------------------------------------------------------------- campaign
+
+func _on_campaign_pressed() -> void:
+	if _switching or view != "title":
+		return
+	_last_hub = _campaign_item
+	# Continue an unfinished journey; otherwise (first time, or all legs driven) start afresh.
+	UIApi.game().request_campaign(not _in_progress())
+
+
+func _on_new_journey_pressed() -> void:
+	if _switching or view != "title" or _confirm.is_open:
+		return
+	var st: Dictionary = UIApi.game().campaign_status()
+	var next: Dictionary = st["next"]
+	var first: Dictionary = UIApi.game().CAMPAIGN[0]
+	var yes := await _confirm.ask(
+		"Start a new journey?",
+		"You are on leg %d of %d, %s. Starting over clears this journey and sets off again from %s."
+				% [int(st["leg"]) + 1, int(st["legs"]), str(next.get("title", "")), str(first.get("title", ""))],
+		"Keep going", "Start over")
+	if yes and active and view == "title":
+		UIApi.game().request_campaign(true)
+
+
+# ---------------------------------------------------------------- input / frame
+
+func _unhandled_input(event: InputEvent) -> void:
+	if not active or view == "title" or _switching or _confirm.is_open:
+		return
+	if event.is_action_pressed("ui_cancel"):
+		UIApi.ui_sound(&"back")
+		_back_to_hub()
+		get_viewport().set_input_as_handled()
 
 
 func _process(delta: float) -> void:

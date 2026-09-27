@@ -21,7 +21,7 @@ func _run() -> void:
 			AudioServer.get_bus_volume_db(i), ", ".join(effects)])
 	for n in [&"hover", &"click", &"back", &"start", &"toggle", &"nope"]:
 		sound.play_ui(n)
-	for n in [&"countdown", &"go", &"checkpoint", &"finish", &"record", &"nope"]:
+	for n in [&"countdown", &"go", &"checkpoint", &"finish", &"record", &"arrived", &"campaign_complete", &"nope"]:
 		sound.play_stinger(n)
 	sound.play_music(&"menu", 0.3)
 	await create_timer(0.4).timeout
@@ -29,10 +29,12 @@ func _run() -> void:
 	sound.play_music(&"drive", 0.5) # same track again: no restart
 	await create_timer(0.2).timeout
 	sound.play_music(&"results", 0.0)
+	sound.play_music(&"liaison", 0.3)
 	sound.play_music(&"missing_track")
 	sound.play_ambience("hanami", 0.2)
 	await create_timer(0.3).timeout
 	sound.play_ambience("momiji", 0.4)
+	sound.play_ambience("natsu", 0.4)
 	sound.play_ambience("no_such_map")
 	sound.play_ambience("hanami")
 	for n in [&"impact_light", &"impact_heavy", &"thump", &"stone", &"backfire", &"blowoff", &"shift", &"bogus"]:

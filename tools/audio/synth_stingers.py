@@ -3,7 +3,7 @@
 Key: D yo pentatonic (D E G A B), which avoids F/F# so it sits over both the D-major menu /
 results tracks and the D-centred drive track. Stereo 16-bit WAV with a small hall.
 
-Run: tools/audio/.venv/bin/python tools/audio/synth_stingers.py
+Run: tools/audio/.venv/bin/python tools/audio/synth_stingers.py [name ...]   (default: all)
 """
 
 from __future__ import annotations
@@ -137,8 +137,44 @@ def record() -> np.ndarray:
     return master(buf, 4.4, 0.25, -14.0, 1.2)
 
 
+def arrived() -> np.ndarray:
+    """Liaison arrival: a soft, unhurried chime. Koto harmonics B4 - D5 - A5 rolled gently
+    (dark, muted plucks), a quiet rin D6 blooming on the last note, long hall tail."""
+    buf = st(2.6)
+    for k, (nm, p) in enumerate((("B4", -0.35), ("D5", 0.0), ("A5", 0.35))):
+        put(buf, sl.koto(H(nm), 2.2, bright=0.45, decay_s=1.7, seed=180 + k), 0.13 * k, -2.0 - 1.5 * k, p)
+    put(buf, sl.rin(H("D6"), 2.2, decay=1.5, bright=0.45, seed=185), 0.27, -9.0, 0.15)
+    put(buf, sl.rin(H("A5"), 2.0, decay=1.3, bright=0.35, seed=186), 0.29, -15.0, -0.2)
+    return master(buf, 1.9, 0.3, -18.0, 0.8)
+
+
+def campaign_complete() -> np.ndarray:
+    """Campaign finale: taiko don ... don-don DON, a slow koto arpeggio climbing two octaves,
+    a shakuhachi phrase D5 - E5 - A5 (long, vibrato) and a full D chord with rin bells on the
+    last hit. Longer and broader than `record`, but still under five seconds."""
+    buf = st(5.6)
+    hits = [(0.0, 72, 0.8, -3), (0.9, 100, 0.45, -9), (1.05, 100, 0.5, -8), (1.35, 68, 1.0, -1),
+            (2.75, 64, 1.0, 0)]
+    for t, f0, force, g in hits:
+        put(buf, sl.taiko(f0, 2.4, force=force, seed=190 + int(t * 100)), t, g, 0.0)
+    arp = ["D4", "G4", "A4", "B4", "D5", "E5", "G5", "A5", "B5", "D6"]
+    for k, nm in enumerate(arp):
+        put(buf, sl.koto(H(nm), 2.2, bright=0.75, decay_s=1.8, seed=200 + k),
+            0.05 + 0.13 * k, -7.0, -0.6 + 0.13 * k)
+    phrase = [("D5", 1.35, 0.45, -1.0), ("E5", 1.8, 0.4, -0.6), ("A5", 2.2, 1.9, -1.2)]
+    for nm, t, d, scoop in phrase:
+        put(buf, sl.shakuhachi(H(nm), d + 0.3, seed=210 + int(t * 10), scoop=scoop,
+                               vib_depth=0.22 if d > 1 else 0.05, release_s=0.2 if d < 1 else 0.7),
+            t, -6.0, 0.1)
+    strum(buf, ["D3", "A3", "D4", "A4", "D5", "E5", "A5", "D6"], 2.75, 0.02, -3.0,
+          [-0.7, -0.5, -0.3, -0.1, 0.1, 0.3, 0.5, 0.7], bright=0.75, decay=2.8, seed=220, dur=2.8)
+    put(buf, sl.rin(H("D6"), 2.6, decay=2.0, bright=0.6, seed=230), 2.77, -10.0, 0.35)
+    put(buf, sl.rin(H("A5"), 2.6, decay=2.0, bright=0.5, seed=231), 2.79, -12.0, -0.35)
+    return master(buf, 4.8, 0.26, -14.0, 1.4)
+
+
 CLIPS = {"countdown": countdown, "go": go, "checkpoint": checkpoint, "finish": finish,
-         "record": record}
+         "record": record, "arrived": arrived, "campaign_complete": campaign_complete}
 DESCR = {
     "countdown": "taiko(150 Hz, force 0.3, light rim) + koto A4; D yo pentatonic",
     "go": "o-daiko taiko(66 Hz, force 1) + shime layer 132 Hz + koto strum D4 A4 D5 E5 A5 "
@@ -147,13 +183,17 @@ DESCR = {
     "finish": "taiko don-doko-DON + koto arpeggio D4 E4 G4 A4 B4 D5 + D chord strum + rin D5",
     "record": "taiko doko-doko pickup + 3 big hits, 2-octave koto arpeggio D4..D6, "
               "shakuhachi A4-B4-D5 phrase, final koto D chord strum, rin D6/A5",
+    "arrived": "soft koto B4 D5 A5 roll (bright 0.45) + rin D6 / A5 on the last note, hall 0.3",
+    "campaign_complete": "taiko don .. don-don DON + DON, koto arpeggio D4..D6, shakuhachi "
+                         "D5-E5-A5 phrase, koto D chord D3..D6, rin D6/A5",
 }
 
 
-def main() -> None:
-    rep = {}
-    for name, fn in CLIPS.items():
-        y = fn()
+def main(names: list[str]) -> None:
+    rp = RENDERS / "stingers_report.json"
+    rep = json.loads(rp.read_text()) if rp.exists() else {}
+    for name in names or list(CLIPS):
+        y = CLIPS[name]()
         path = OUT / f"{name}.wav"
         path.parent.mkdir(parents=True, exist_ok=True)
         sf.write(str(path), np.clip(y, -1, 1).astype(np.float32), SR, subtype="PCM_16")
@@ -171,8 +211,8 @@ def main() -> None:
             "png": str(png.relative_to(ASSETS.parents[1])),
         }
         print(name, json.dumps(rep[name]))
-    (RENDERS / "stingers_report.json").write_text(json.dumps(rep, indent=2) + "\n")
+    rp.write_text(json.dumps(rep, indent=2) + "\n")
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])

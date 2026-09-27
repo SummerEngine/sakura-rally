@@ -285,9 +285,6 @@ FEATURES = [
     {"kind": "line", "props": ["telephone_pole"], "from_cp": 36, "from_offset": 0.0, "to_cp": 0,
      "to_offset": 0.0, "spacing": 40.0, "lateral": -8.0, "sides": [1], "face": "along"},
     {"kind": "single", "prop": "jizo", "road_at": 40, "offset_m": 0.0, "lateral": 7.5, "face": "road"},
-    # ---------------------------------------------------------------- checkpoint gates (sixths of the lap)
-    *[{"kind": "single", "prop": "checkpoint_gate", "lap_frac": k / 6.0, "face": "along", "scale": 1.25,
-       "sink": 0.05} for k in range(1, 6)],
 ]
 
 _NO_FOREST = FIELDS + [GORGE]
@@ -312,7 +309,6 @@ SPEC = {
         "checkpoints": 6,
         "bank_gain": 14.0,
         "bank_max": 0.05,
-        "bridge_clearance": 1.6,
         "crests": [
             {"at": 9, "offset": 30.0, "height": 1.3, "width": 10.0},
             {"at": 32, "offset": 20.0, "height": 1.5, "width": 9.0},

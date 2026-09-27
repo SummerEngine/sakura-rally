@@ -51,9 +51,20 @@ enum Style { NONE, DROP, RISE, POP, SLAM, SWEEP }
 @export var stepped_fps := 0.0 ## 0 = smooth; 12 = animate "on twos"
 @export var distance := 42.0 ## travel for DROP / RISE / SWEEP
 
-var t_in := 1e3 ## seconds since play() (large = settled)
-var t_out := 0.0 ## seconds since play_out() (only meaningful while `leaving`)
+## Animation clocks, advanced by tweens: the same clock as every other UI tween, so a long
+## frame (a first-launch pipeline compile) moves the text exactly as far as the logo and stamp
+## beside it.
+var t_in := 1e3: ## seconds since play() (large = settled)
+	set(v):
+		t_in = v
+		queue_redraw()
+var t_out := 0.0: ## seconds since play_out() (only meaningful while `leaving`)
+	set(v):
+		t_out = v
+		queue_redraw()
 var leaving := false
+var _in_tween: Tween
+var _out_tween: Tween
 var _advances: PackedFloat32Array = []
 var _widths: PackedFloat32Array = []
 var _total := 0.0
@@ -66,27 +77,46 @@ func _init() -> void:
 
 func _ready() -> void:
 	_relayout()
-	set_process(false)
+
+
+func _notification(what: int) -> void:
+	# Redraw requests made while hidden are dropped; draw the current state when shown again.
+	if what == NOTIFICATION_VISIBILITY_CHANGED and is_visible_in_tree():
+		queue_redraw()
 
 
 func play(delay: float = 0.0) -> void:
-	t_in = -delay
+	UIMotion.kill(_out_tween)
+	UIMotion.kill(_in_tween)
 	leaving = false
-	set_process(true)
-	queue_redraw()
+	t_in = -delay
+	var end := total_in_time() + 0.05
+	if not is_inside_tree():
+		await tree_entered
+		if leaving or t_in != -delay: # superseded while waiting
+			return
+	_in_tween = UIMotion.tween(self)
+	_in_tween.tween_property(self, "t_in", end, end + delay)
 
 
 func play_out(delay: float = 0.0) -> void:
-	t_out = -delay
+	UIMotion.kill(_out_tween)
 	leaving = true
-	set_process(true)
+	t_out = -delay
+	var end := total_in_time() + 0.3
+	if not is_inside_tree():
+		await tree_entered
+		if not leaving or t_out != -delay:
+			return
+	_out_tween = UIMotion.tween(self)
+	_out_tween.tween_property(self, "t_out", end, end + delay)
 
 
 func settle() -> void:
-	t_in = 1e3
+	UIMotion.kill(_out_tween)
+	UIMotion.kill(_in_tween)
 	leaving = false
-	set_process(false)
-	queue_redraw()
+	t_in = 1e3
 
 
 func total_in_time() -> float:
@@ -95,18 +125,6 @@ func total_in_time() -> float:
 
 func text_width() -> float:
 	return _total
-
-
-func _process(delta: float) -> void:
-	var d := UIMotion.real_delta(delta)
-	t_in += d
-	if leaving:
-		t_out += d
-		if t_out > total_in_time() + 0.3:
-			set_process(false)
-	elif t_in > total_in_time() + 0.05:
-		set_process(false)
-	queue_redraw()
 
 
 func _relayout() -> void:

@@ -2,11 +2,11 @@
 
 Beds (wind, stream) are resynthesised from the fal source by shuffling long grains with
 equal-power crossfades on a circular timeline (non-repeating, seamless by construction).
-Events (birds, crows, leaves) are placed at seeded random, non-repeating times; every event
+Events (birds, crows, leaves, cicadas, wind chimes) are placed at seeded random, non-repeating times; every event
 and its reverb tail is added modulo the loop length, so anything crossing the seam wraps.
 The fal ElevenLabs SFX outputs carry a faint 200 Hz harmonic hum: all sources are notched.
 
-Run: tools/audio/.venv/bin/python tools/audio/gen_ambience.py [hanami|momiji]
+Run: tools/audio/.venv/bin/python tools/audio/gen_ambience.py [hanami|momiji|natsu]
 """
 
 from __future__ import annotations
@@ -358,6 +358,90 @@ def momiji() -> dict:
     return finish("momiji", mix, marks, meta)
 
 
+def natsu() -> dict:
+    n = int(LOOP_S * SR)
+    ir_grove = sl.room_ir(dur=2.2, rt60=1.7, damp_hz=5000, seed=61, predelay_s=0.03)
+    HUM_LOG.clear()
+    breeze = tame_transients(load("amb_natsu_breeze"), 9.0)
+    stream = tame_transients(load("amb_natsu_stream"), 12.0)
+    chorus = tame_transients(load("amb_natsu_minmin"), 6.0)
+    buzz = load("amb_natsu_higurashi")
+
+    bed_breeze = shuffle_texture(breeze, n, 7.0, 2.5, seed=401)
+    bed_breeze = np.stack([filt_circular(sos_lp(10000, 2), bed_breeze[:, c]) for c in range(2)], 1)
+    ref = np.sqrt(np.mean(bed_breeze ** 2))
+    air, gust = air_bed(n, 402, lp_hz=800, gust_s=10.0, depth=0.65)
+    bed_stream = shuffle_texture(stream, n, 6.0, 2.0, seed=403)
+    bed_stream = np.stack([filt_circular(sos_bp(250, 9000, 2), bed_stream[:, c]) for c in range(2)], 1)
+    # the stream runs beside the road on the left, a little spread
+    bed_stream = 0.45 * bed_stream + 0.55 * sl.pan(bed_stream.mean(1), -0.4)
+    # minminzemi chorus in the trees: the fal chorus ebbs to -15 dB at 8.1 s with a hard
+    # step; skip the step, keep the ebb so the chorus swells and recedes around the loop
+    ch = shuffle_texture(chorus, n, 6.5, 2.2, seed=404, exclude=[(7.7, 8.6)])
+    ch = np.stack([filt_circular(sos_bp(2500, 12000, 2), ch[:, c]) for c in range(2)], 1)
+    mix = (bed_breeze + undb(-18) * ref * air / np.sqrt(np.mean(air ** 2))
+           + undb(-6) * ref * bed_stream / np.sqrt(np.mean(bed_stream ** 2))
+           + undb(-8) * ref * ch / np.sqrt(np.mean(ch ** 2)))
+    bed_rms = float(np.sqrt(np.mean(mix ** 2)))
+    marks: list = []
+    events: list = []
+
+    def ev(clip, t, level_db, label, pan, lp, wet):
+        c = distant(clip, pan, lp, wet, ir_grove)
+        add_circ(mix, c * active_scale(clip, bed_rms), t, level_db)
+        marks.append((t % LOOP_S, label))
+        events.append({"t": round(t % LOOP_S, 2), "what": label, "level_db_vs_bed": level_db,
+                       "pan": pan, "lp_hz": lp})
+
+    r = rng(405)
+    # minminzemi: individual singers in different trees, each a full 'miiin-min-min-miiii'
+    mm_t = place_events(7, LOOP_S, 10.0, seed=406)
+    for i, t in enumerate(mm_t):
+        call = sl.minminzemi(pitch=float(r.uniform(0.95, 1.05)), n_min=int(r.integers(10, 19)),
+                             rate=float(r.uniform(4.0, 4.8)), seed=500 + i)
+        ev(call, t, float(r.uniform(-4.0, 0.0)), "minmin", float(r.uniform(-0.85, 0.85)),
+           float(r.uniform(7000, 10000)), 0.35)
+    # higurashi: two distant 'kana-kana' trains from the shaded side of the valley
+    hg_t = place_events(2, LOOP_S, 35.0, seed=407)
+    for i, t in enumerate(hg_t):
+        call = sl.higurashi(pitch=float(r.uniform(0.96, 1.04)), notes=int(r.integers(34, 46)),
+                            seed=510 + i)
+        ev(call, t, float(r.uniform(-4.0, -2.0)), "higurashi", float(r.uniform(-0.7, 0.7)), 7500, 0.5)
+    # a nearby cicada's buzzing swell (the fal 'higurashi' clip is a steady cicada buzz)
+    swell = cut(buzz, 0.0, 6.9, 0.3)
+    for t in place_events(2, LOOP_S, 30.0, seed=408):
+        ev(swell, t, float(r.uniform(-7.0, -4.0)), "cicada swell", float(r.uniform(-0.6, 0.6)), 11000, 0.25)
+    # furin: a glass chime on a distant veranda, rung by the stronger gusts of the air layer
+    step = SR // 10
+    g = gust[::step]
+    peaks = [i for i in range(len(g)) if g[i] >= g[i - 1] and g[i] >= g[(i + 1) % len(g)] and g[i] > 0.55]
+    fu_t: list[float] = []
+    for i in sorted(peaks, key=lambda i: -g[i]):
+        t = i * step / SR
+        if all(min(abs(t - u), LOOP_S - abs(t - u)) >= 9.0 for u in fu_t):
+            fu_t.append(t)
+        if len(fu_t) == 5:
+            break
+    for i, t in enumerate(sorted(fu_t)):
+        ch_ = sl.furin(f0=float(r.uniform(2450, 2750)), hits=int(r.integers(2, 5)), seed=520 + i)
+        ev(ch_, t - 0.3, float(r.uniform(-9.0, -5.0)), "furin", 0.45, 8500, 0.3)
+    meta = {"layers": {
+        "breeze_bed": "fal amb_natsu_breeze, dehummed, grain shuffle 7 s/2.5 s, LP 10 kHz",
+        "air": "procedural circular pink noise LP 800 Hz, gust LFO, -18 dB",
+        "stream": "fal amb_natsu_stream, dehummed, grain shuffle 6 s/2 s, BP 250-9000, "
+                  "panned left, -6 dB vs breeze",
+        "minmin_chorus": "fal amb_natsu_minmin, dehummed, grain shuffle 6.5 s/2.2 s skipping "
+                         "the 7.7-8.6 s level step, BP 2.5-12 kHz, -8 dB vs breeze",
+        "minminzemi": "synth_lib.minminzemi x7 (4.1-4.95 kHz 'miiin-min-min-miiii', "
+                      "grove reverb, fixed pans)",
+        "higurashi": "synth_lib.higurashi x2 ('kana-kana' note trains near 4.5 kHz, distant)",
+        "cicada_swell": "fal amb_natsu_higurashi 0-6.9 s (a steady cicada buzz), 2 events",
+        "furin": "synth_lib.furin, up to 5 (glass chime clusters, ~2.6 kHz), timed to air-layer "
+                 "gust peaks, distant, right"},
+        "events": sorted(events, key=lambda e: e["t"])}
+    return finish("natsu", mix, marks, meta)
+
+
 def sl_trim(x: np.ndarray) -> np.ndarray:
     m = np.abs(x).max(1)
     idx = np.nonzero(m > undb(-45) * m.max())[0]
@@ -366,11 +450,12 @@ def sl_trim(x: np.ndarray) -> np.ndarray:
 
 
 def main() -> None:
-    names = sys.argv[1:] or ["hanami", "momiji"]
+    scenes = {"hanami": hanami, "momiji": momiji, "natsu": natsu}
+    names = sys.argv[1:] or list(scenes)
     rp = RENDERS / "ambience_report.json"
     rep = json.loads(rp.read_text()) if rp.exists() else {}
     for nm in names:
-        rep[nm] = {"hanami": hanami, "momiji": momiji}[nm]()
+        rep[nm] = scenes[nm]()
         print(json.dumps({nm: {k: v for k, v in rep[nm].items() if k != "events"}}, indent=1))
     rp.write_text(json.dumps(rep, indent=2) + "\n")
 

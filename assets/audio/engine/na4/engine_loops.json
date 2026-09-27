@@ -1,0 +1,87 @@
+{
+  "idle": {
+    "file": "engine_idle.wav",
+    "rpm": 1000.0,
+    "samples": 95256
+  },
+  "off": {
+    "1750": {
+      "file": "engine_off_1750.wav",
+      "rpm": 1750.0,
+      "samples": 96768
+    },
+    "2500": {
+      "file": "engine_off_2500.wav",
+      "rpm": 2499.995,
+      "samples": 97373
+    },
+    "3500": {
+      "file": "engine_off_3500.wav",
+      "rpm": 3500.0,
+      "samples": 96768
+    },
+    "4500": {
+      "file": "engine_off_4500.wav",
+      "rpm": 4500.0,
+      "samples": 96432
+    },
+    "5500": {
+      "file": "engine_off_5500.wav",
+      "rpm": 5500.021,
+      "samples": 97180
+    },
+    "6500": {
+      "file": "engine_off_6500.wav",
+      "rpm": 6500.021,
+      "samples": 96884
+    },
+    "7500": {
+      "file": "engine_off_7500.wav",
+      "rpm": 7499.985,
+      "samples": 97373
+    }
+  },
+  "on": {
+    "1000": {
+      "file": "engine_on_1000.wav",
+      "rpm": 1000.0,
+      "samples": 95256
+    },
+    "1750": {
+      "file": "engine_on_1750.wav",
+      "rpm": 1750.0,
+      "samples": 96768
+    },
+    "2500": {
+      "file": "engine_on_2500.wav",
+      "rpm": 2499.995,
+      "samples": 97373
+    },
+    "3500": {
+      "file": "engine_on_3500.wav",
+      "rpm": 3500.0,
+      "samples": 96768
+    },
+    "4500": {
+      "file": "engine_on_4500.wav",
+      "rpm": 4500.0,
+      "samples": 96432
+    },
+    "5500": {
+      "file": "engine_on_5500.wav",
+      "rpm": 5500.021,
+      "samples": 97180
+    },
+    "6500": {
+      "file": "engine_on_6500.wav",
+      "rpm": 6500.021,
+      "samples": 96884
+    },
+    "7500": {
+      "file": "engine_on_7500.wav",
+      "rpm": 7499.985,
+      "samples": 97373
+    }
+  },
+  "sample_rate": 44100
+}

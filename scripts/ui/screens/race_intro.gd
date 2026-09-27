@@ -1,7 +1,8 @@
 extends Control
 ## Race intro title card (tanzaku strip with the map's brush kanji, name over a painted swash,
-## tagline, mode / best chips) and the kinetic countdown 3-2-1-GO with 三/二/一 painted behind
-## the numerals, an ink splash and a soft flash on GO.
+## tagline, mode / best chips; in the campaign a leg kicker such as "SS1 · SPECIAL STAGE 1 OF
+## 2" above the name) and the kinetic countdown 3-2-1-GO with 三/二/一 painted behind the
+## numerals, an ink splash and a soft flash on GO.
 
 const UITheme := preload("res://scripts/ui/ui_theme.gd")
 const UIMotion := preload("res://scripts/ui/ui_motion.gd")
@@ -23,6 +24,7 @@ var _strip: PaperCard
 var _strip_kanji: BrushKanji
 var _swash: ShaderRect
 var _name: KineticText
+var _kicker: Label
 var _tagline: Label
 var _chips := HBoxContainer.new()
 var _mode_chip: Label
@@ -87,6 +89,11 @@ func _build_card() -> void:
 	_swash.size = Vector2(760, 120)
 	right.add_child(_swash)
 
+	_kicker = UITheme.make_label("", UITheme.tracked(UITheme.FONT_UI_BLACK, 4), 18, UITheme.INK)
+	_kicker.label_settings.outline_size = 12
+	_kicker.label_settings.outline_color = Color(1, 1, 1, 0.6)
+	_kicker.position = Vector2(4, -30)
+	right.add_child(_kicker)
 	_name = KineticText.new()
 	_name.font = UITheme.FONT_TITLE
 	_name.font_size = 74
@@ -131,7 +138,8 @@ func _chip(parent: Control, bg: Color, fg: Color) -> Label:
 
 
 func setup(map_id: String, mode: String) -> void:
-	var m: Dictionary = UIApi.game().get_map(map_id)
+	var game := UIApi.game()
+	var m: Dictionary = game.get_map(map_id)
 	_accent = UITheme.season_accent(str(m.get("season", "spring")))
 	_strip_kanji.text = str(m.get("name_jp", ""))
 	_strip_kanji.color = _accent.darkened(0.05)
@@ -139,16 +147,41 @@ func setup(map_id: String, mode: String) -> void:
 	_tagline.text = str(m.get("tagline", ""))
 	_swash.set_param("paint", _accent)
 	_swash.size.x = _name.text_width() + 110.0
-	var tt: bool = mode == str(UIApi.game().MODE_TIME_TRIAL)
-	_mode_chip.text = "TIME TRIAL" if tt else "FREE ROAM"
-	var best: float = UIApi.game().best_time(map_id)
-	_best_chip.get_parent().visible = tt
+	var tt: bool = mode == str(game.MODE_TIME_TRIAL)
+	var liaison: bool = mode == str(game.MODE_LIAISON)
+	var leg: Dictionary = game.campaign_current_leg()
+	var campaign: bool = not leg.is_empty() and leg["map"] == map_id
+	_kicker.visible = campaign
+	_mode_chip.text = "TIME TRIAL" if tt else ("UNTIMED" if liaison else "FREE ROAM")
+	if campaign:
+		var legs: Array = game.CAMPAIGN
+		var i: int = game.campaign_leg
+		if liaison:
+			var from: Dictionary = legs[maxi(i - 1, 0)]
+			var dest: Dictionary = legs[mini(i + 1, legs.size() - 1)]
+			_kicker.text = "%s  ·  LIAISON  →  %s" % [leg["code"], str(dest["title"]).to_upper()]
+			_tagline.text = "%s → %s. No clock: take in the summer." % [from["title"], dest["title"]]
+		else:
+			var stages := 0
+			var nth := 0
+			for k in legs.size():
+				if legs[k]["kind"] == "stage":
+					stages += 1
+					if k <= i:
+						nth = stages
+			_kicker.text = "%s  ·  SPECIAL STAGE %d OF %d" % [leg["code"], nth, stages]
+	var best: float = game.best_time(map_id)
+	_best_chip.get_parent().visible = tt or liaison
 	if tt:
 		var gold: float = (m.get("medals", {}) as Dictionary).get("gold", INF)
 		if is_inf(best):
-			_best_chip.text = "GOLD  %s" % UIApi.game().format_time(gold)
+			_best_chip.text = "GOLD  %s" % game.format_time(gold)
 		else:
-			_best_chip.text = "BEST  %s" % UIApi.game().format_time(best)
+			_best_chip.text = "BEST  %s" % game.format_time(best)
+	elif liaison:
+		var left := UIApi.num(game.session, &"distance_left") / 1000.0
+		var mph := str(UIApi.setting("units")) == "mph"
+		_best_chip.text = "%.1f %s TO GO" % [left / 1.609344 if mph else left, "MI" if mph else "KM"]
 	var vp := get_viewport_rect().size
 	_card.offset_top = vp.y * 0.30
 	_card.offset_bottom = _card.offset_top
@@ -169,8 +202,13 @@ func show_card() -> void:
 	_name.play(0.35)
 	_tagline.modulate.a = 0.0
 	_chips.modulate.a = 0.0
+	_kicker.modulate.a = 0.0
 	_card_tween = UIMotion.tween(self)
 	_card_tween.set_parallel(true)
+	# Kicker: typed on in 12 fps steps as the swash lands.
+	_kicker.visible_ratio = 0.0
+	_card_tween.tween_property(_kicker, "modulate:a", 1.0, 0.2).set_delay(0.45)
+	_card_tween.tween_method(func(v: float) -> void: _kicker.visible_ratio = UIMotion.stepped(v, 12.0 / 0.5), 0.0, 1.0, 0.5).set_delay(0.45)
 	_card_tween.tween_property(_strip, "modulate:a", 1.0, 0.25)
 	_card_tween.tween_property(_strip, "position", Vector2.ZERO, 0.6).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	_card_tween.tween_property(_strip, "reveal", 1.0, 0.5)
@@ -193,6 +231,7 @@ func hide_card() -> void:
 	_card_tween.set_parallel(true)
 	_card_tween.tween_method(_swash.param_setter(&"fade_out"), 0.0, 1.0, 0.5)
 	_card_tween.tween_property(_tagline, "modulate:a", 0.0, 0.25)
+	_card_tween.tween_property(_kicker, "modulate:a", 0.0, 0.2)
 	_card_tween.tween_property(_chips, "modulate:a", 0.0, 0.2)
 	_card_tween.tween_property(_strip, "reveal", 0.0, 0.45).set_delay(0.1)
 	_card_tween.tween_property(_strip_kanji, "modulate:a", 0.0, 0.3)

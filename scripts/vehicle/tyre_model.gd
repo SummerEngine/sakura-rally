@@ -18,11 +18,12 @@ class Surface:
 	var rolling: float ## rolling resistance coefficient (fraction of load)
 	var drag: float ## extra speed-proportional drag per wheel on soft ground (N per N load per m/s)
 	var roughness: float ## 0..1, drives surface noise on the suspension and camera shake
+	var loose: bool ## gravel, dirt, grass, sand: lift-off turn-in may start a slide
 	var lat_b: float
 	var long_b: float
 
 	func _init(p_id: StringName, p_mu: float, p_lat_peak: float, p_lat_c: float, p_long_peak: float,
-			p_long_c: float, p_rolling: float, p_drag: float, p_rough: float) -> void:
+			p_long_c: float, p_rolling: float, p_drag: float, p_rough: float, p_loose: bool) -> void:
 		id = p_id
 		mu = p_mu
 		lat_peak = p_lat_peak
@@ -32,13 +33,15 @@ class Surface:
 		rolling = p_rolling
 		drag = p_drag
 		roughness = p_rough
+		loose = p_loose
 		lat_b = tan(PI / (2.0 * lat_c))
 		long_b = tan(PI / (2.0 * long_c))
 
 
-## Reference load for mu (N); above it grip per newton falls off (load sensitivity).
+## Reference load for mu (N); above it grip per newton falls off (load sensitivity). Kept
+## light: weight transfer costs little grip, so the car corners flat and predictably.
 const REFERENCE_LOAD := 3100.0
-const LOAD_SENSITIVITY := 0.11
+const LOAD_SENSITIVITY := 0.05
 
 static var _table: Dictionary = {}
 
@@ -53,12 +56,12 @@ static func get_surface(id: StringName) -> Surface:
 
 
 static func _build() -> void:
-	#                     id        mu    latPk lat_c longPk long_c roll  drag   rough
-	_add(Surface.new(&"tarmac", 1.15, 0.125, 1.45, 0.10, 1.50, 0.012, 0.0, 0.03))
-	_add(Surface.new(&"gravel", 0.85, 0.20, 1.20, 0.17, 1.25, 0.020, 0.0020, 0.55))
-	_add(Surface.new(&"dirt", 0.80, 0.19, 1.25, 0.16, 1.30, 0.024, 0.0025, 0.40))
-	_add(Surface.new(&"grass", 0.60, 0.17, 1.30, 0.15, 1.35, 0.040, 0.0060, 0.50))
-	_add(Surface.new(&"sand", 0.55, 0.22, 1.20, 0.20, 1.25, 0.070, 0.0110, 0.30))
+	#                     id        mu    latPk lat_c longPk long_c roll  drag   rough loose
+	_add(Surface.new(&"tarmac", 1.44, 0.125, 1.45, 0.10, 1.50, 0.012, 0.0, 0.03, false))
+	_add(Surface.new(&"gravel", 1.12, 0.20, 1.20, 0.17, 1.25, 0.020, 0.0020, 0.55, true))
+	_add(Surface.new(&"dirt", 1.08, 0.19, 1.25, 0.16, 1.30, 0.024, 0.0025, 0.40, true))
+	_add(Surface.new(&"grass", 0.78, 0.17, 1.30, 0.15, 1.35, 0.040, 0.0060, 0.50, true))
+	_add(Surface.new(&"sand", 0.76, 0.22, 1.20, 0.20, 1.25, 0.070, 0.0110, 0.30, true))
 
 
 static func _add(s: Surface) -> void:

@@ -17,35 +17,55 @@ signal race_finished(result: Dictionary)
 signal paused_changed(paused: bool)
 signal settings_changed
 signal notice(text: String) ## short transient message for the HUD ("Car reset", "Wrong way")
+signal menu_view_changed(view: String) ## "title" | "time_attack" | "garage" (Main parks the car in the garage)
+## Campaign (docs/CONTRACTS.md, "Session and campaign"). Main listens to the *_requested ones.
+signal campaign_requested
+signal campaign_continue_requested
+signal campaign_leg_started(index: int, leg: Dictionary)
+signal arrived ## the liaison car reached the arrival zone (re-emitted from RaceSession.arrived)
+signal campaign_finished(summary: Dictionary)
 
-enum State { BOOT, MENU, LOADING, INTRO, COUNTDOWN, RACING, FINISHED, FREE_ROAM }
+## JOURNEY: the campaign's painted journey map, which is also its loading screen.
+## LIAISON: driving an untimed liaison road. ARRIVED: the arrival beat at its end.
+## FINALE: the rally classification and end card after the last stage.
+enum State { BOOT, MENU, LOADING, INTRO, COUNTDOWN, RACING, FINISHED, FREE_ROAM, JOURNEY, LIAISON, ARRIVED, FINALE }
 
 const MODE_TIME_TRIAL := "time_trial"
 const MODE_FREE_ROAM := "free_roam"
+## Untimed point-to-point drive between two campaign stages (open road, ends at an arrival zone).
+const MODE_LIAISON := "liaison"
 
 const SAVE_PATH := "user://sakura_rally.cfg"
 
 ## Map catalogue. Medal times are in seconds for one lap in time trial, set against the
-## autopilot's clean reference lap (hanami 123.4 s, momiji 108.2 s): gold ~1.1x, silver
-## ~1.22x, bronze ~1.42x.
+## autopilot's clean reference lap in the default car, the Sakura (ep2 handling: hanami 113.3 s,
+## momiji 99.5 s; tools/physics/run_tests.gd only=maps): gold 1.1x, silver 1.22x, bronze 1.42x,
+## rounded to 0.5 s.
 const MAPS: Array[Dictionary] = [
 	{
 		"id": "hanami",
 		"name": "Hanami Pass",
 		"name_jp": "花見峠",
 		"tagline": "Spring noon. Gravel and tarmac under the blossom.",
-		"preview": "res://assets/textures/previews/hanami.png",
 		"season": "spring",
-		"medals": {"gold": 135.0, "silver": 150.0, "bronze": 175.0},
+		"medals": {"gold": 124.5, "silver": 138.0, "bronze": 161.0},
 	},
 	{
 		"id": "momiji",
 		"name": "Momiji Valley",
 		"name_jp": "紅葉谷",
 		"tagline": "Autumn, golden hour. Loose dirt through the maples.",
-		"preview": "res://assets/textures/previews/momiji.png",
 		"season": "autumn",
-		"medals": {"gold": 118.0, "silver": 132.0, "bronze": 154.0},
+		"medals": {"gold": 109.5, "silver": 121.5, "bronze": 141.5},
+	},
+	{
+		"id": "natsu",
+		"name": "Natsu Road",
+		"name_jp": "夏道",
+		"tagline": "Summer afternoon. The quiet road between the stages.",
+		"season": "summer",
+		## Liaison maps have an open road and no medals: stage pickers skip them (stage_maps()).
+		"liaison": true,
 	},
 ]
 
@@ -58,6 +78,49 @@ const CAR_COLORS: Array[Dictionary] = [
 	{"name": "Sumi", "primary": Color("2c2a33"), "secondary": Color("f29a38")},
 ]
 
+## Garage catalogue. "scene" is a car scene whose root runs scripts/vehicle/car.gd; "stats" are
+## 0..1 bars for the garage, set from the tuned cars' telemetry (docs/PHYSICS.md).
+const CARS: Array[Dictionary] = [
+	{
+		"id": "sakura",
+		"name": "Sakura",
+		"name_jp": "桜",
+		"tagline": "Turbo four, all-wheel drive. Grips, forgives, flies.",
+		"spec": "2.0 turbo · AWD · 0-100 3.5 s · 189 km/h",
+		"scene": "res://scenes/car/car.tscn",
+		"stats": {"speed": 0.79, "acceleration": 0.83, "grip": 0.88, "drift": 0.81},
+	},
+	{
+		"id": "hayate",
+		"name": "Hayate",
+		"name_jp": "疾風",
+		"tagline": "Rev-happy coupe, rear-wheel drive. Slides when you ask it to.",
+		"spec": "1.6 twin-cam · RWD · 0-100 5.0 s · 188 km/h",
+		"scene": "res://scenes/car/car_hayate.tscn",
+		"stats": {"speed": 0.78, "acceleration": 0.59, "grip": 0.9, "drift": 0.88},
+	},
+]
+
+## The campaign: a rally through the seasons. Stages are timed ("SS"), liaisons are the untimed
+## drives between them ("L"). "kanji" is the season on the journey map's stamps. After the last
+## leg comes the finale (classification against RIVALS).
+const CAMPAIGN: Array[Dictionary] = [
+	{"map": "hanami", "kind": "stage", "code": "SS1", "title": "Hanami Pass", "title_jp": "花見峠", "kanji": "春"},
+	{"map": "natsu", "kind": "liaison", "code": "L1", "title": "Natsu Road", "title_jp": "夏道", "kanji": "夏"},
+	{"map": "momiji", "kind": "stage", "code": "SS2", "title": "Momiji Valley", "title_jp": "紅葉谷", "kanji": "秋"},
+]
+
+## Fictional rivals of the campaign classification. "pace": one factor per campaign stage (in
+## CAMPAIGN order) applied to that map's gold time.
+const RIVALS: Array[Dictionary] = [
+	{"name": "Ren Takeda", "name_jp": "武田蓮", "team": "Kitsune Works", "pace": [0.97, 0.99]},
+	{"name": "Aoi Fujimura", "name_jp": "藤村葵", "team": "Team Hotaru", "pace": [1.00, 0.97]},
+	{"name": "Kenji Hayashi", "name_jp": "林健二", "team": "Shirakaba Racing", "pace": [1.03, 1.05]},
+	{"name": "Mei Sakamoto", "name_jp": "坂本芽衣", "team": "Tsubame Motorsport", "pace": [1.08, 1.04]},
+	{"name": "Daichi Ono", "name_jp": "小野大地", "team": "Ono Garage", "pace": [1.13, 1.16]},
+	{"name": "Hana Kobayashi", "name_jp": "小林花", "team": "Team Tanpopo", "pace": [1.22, 1.25]},
+]
+
 const DEFAULT_SETTINGS := {
 	"master_volume": 0.9,
 	"music_volume": 0.6,
@@ -67,6 +130,7 @@ const DEFAULT_SETTINGS := {
 	"camera": "chase", ## "chase" | "chase_far" | "hood" | "bumper"
 	"units": "kmh", ## "kmh" | "mph"
 	"car_color": 0,
+	"car_id": "sakura",
 	"fullscreen": false,
 }
 
@@ -74,6 +138,7 @@ var state: int = State.BOOT
 var mode: String = MODE_FREE_ROAM
 var map_id: String = ""
 var paused: bool = false
+var menu_view: String = "title"
 var settings: Dictionary = DEFAULT_SETTINGS.duplicate(true)
 ## map_id -> {"time": float, "splits": Array[float]}
 var records: Dictionary = {}
@@ -85,6 +150,14 @@ var persistent := true
 var player_car: Node = null ## RigidBody3D with scripts/vehicle/car.gd
 var session: Node = null ## scripts/game/race_session.gd
 var _quitting := false
+
+## Campaign: true from request_campaign() until the player is back on the title (or starts a
+## Time Attack run). campaign_leg: the leg being played or loaded, -1 outside a leg.
+var campaign_active := false
+var campaign_leg := -1
+## Saved progress: "leg" = next leg to play (CAMPAIGN.size() once every leg is done),
+## "results" = map_id -> {"time", "medal"} of the stages, "finished" = the finale was reached.
+var _campaign: Dictionary = {"leg": 0, "results": {}, "finished": false}
 
 
 func _enter_tree() -> void:
@@ -123,6 +196,15 @@ func request_menu() -> void:
 	menu_requested.emit()
 
 
+## Which part of the title hub is showing. "garage" parks the menu car on the start grid under a
+## showroom orbit; the other views keep the flyover.
+func set_menu_view(view: String) -> void:
+	if view == menu_view:
+		return
+	menu_view = view
+	menu_view_changed.emit(view)
+
+
 ## Every quit comes through here: the title's Quit button, closing the window, Cmd+Q, and the
 ## tools that run the game. A player still playing when the tree is torn down leaks its
 ## stream: the AudioServer releases a stopped playback only after its audio thread has mixed
@@ -145,7 +227,8 @@ func request_quit(exit_code: int = 0) -> void:
 func set_paused(value: bool) -> void:
 	if value == paused:
 		return
-	if value and not (state == State.RACING or state == State.FREE_ROAM or state == State.COUNTDOWN):
+	if value and not (state == State.RACING or state == State.FREE_ROAM or state == State.COUNTDOWN \
+			or state == State.LIAISON):
 		return
 	paused = value
 	get_tree().paused = value
@@ -202,6 +285,8 @@ func notify_checkpoint(index: int, total: int, split_time: float) -> void:
 
 ## result must contain "time" (float) and "splits" (Array[float]); extra keys pass through.
 ## Adds "best_time", "previous_best", "is_record", "medal" ("gold"/"silver"/"bronze"/"").
+## A campaign stage also records the time in the campaign progress and adds "campaign": true,
+## "leg" (index), "standing" and "field" (rally position after this stage, of how many).
 func notify_finished(result: Dictionary) -> void:
 	var t: float = result.get("time", 0.0)
 	var rec: Dictionary = records.get(map_id, {})
@@ -209,17 +294,141 @@ func notify_finished(result: Dictionary) -> void:
 	var is_record := t < previous
 	if is_record:
 		records[map_id] = {"time": t, "splits": result.get("splits", [])}
-		_save()
 	result["previous_best"] = previous
 	result["best_time"] = minf(t, previous)
 	result["is_record"] = is_record
 	result["medal"] = medal_for(map_id, t)
 	result["map_id"] = map_id
+	var leg := campaign_current_leg()
+	result["campaign"] = leg.get("kind", "") == "stage" and leg["map"] == map_id
+	if result["campaign"]:
+		(_campaign["results"] as Dictionary)[map_id] = {"time": t, "medal": result["medal"]}
+		_campaign["leg"] = maxi(int(_campaign["leg"]), campaign_leg + 1)
+		result["leg"] = campaign_leg
+		var table := campaign_classification()
+		result["field"] = table.size()
+		for i in table.size():
+			if table[i]["player"]:
+				result["standing"] = i + 1
+	_save()
 	race_finished.emit(result)
+
+
+## Called by the race session when the liaison car enters the arrival zone.
+func notify_arrived() -> void:
+	if campaign_current_leg().get("kind", "") == "liaison":
+		_campaign["leg"] = maxi(int(_campaign["leg"]), campaign_leg + 1)
+		_save()
+	arrived.emit()
 
 
 func post_notice(text: String) -> void:
 	notice.emit(text)
+
+
+# ---------------------------------------------------------------- campaign
+
+## Title: start the journey (fresh) or resume it at the start of the saved leg. A finished
+## campaign always starts afresh.
+func request_campaign(fresh: bool) -> void:
+	if fresh or bool(_campaign["finished"]):
+		_campaign = {"leg": 0, "results": {}, "finished": false}
+		_save()
+	campaign_active = true
+	campaign_requested.emit()
+
+
+## Results "Continue", the end of the arrival beat: on to the journey map for the next leg (or
+## the finale once every leg is done).
+func request_campaign_continue() -> void:
+	set_paused(false)
+	campaign_active = true
+	campaign_continue_requested.emit()
+
+
+func campaign_status() -> Dictionary:
+	var leg := int(_campaign["leg"])
+	var results: Dictionary = _campaign["results"]
+	return {
+		"started": leg > 0 or not results.is_empty(),
+		"finished": bool(_campaign["finished"]),
+		"leg": leg,
+		"legs": CAMPAIGN.size(),
+		"next": CAMPAIGN[leg] if leg < CAMPAIGN.size() else {},
+		"results": results.duplicate(true),
+	}
+
+
+## The leg being played or loaded ({} outside the campaign).
+func campaign_current_leg() -> Dictionary:
+	if not campaign_active or campaign_leg < 0 or campaign_leg >= CAMPAIGN.size():
+		return {}
+	return CAMPAIGN[campaign_leg]
+
+
+## Main: the journey map is up and leg `index` is loading behind it.
+func notify_campaign_leg(index: int) -> void:
+	campaign_leg = index
+	campaign_leg_started.emit(index, CAMPAIGN[index])
+
+
+## Main: the finale is showing. Marks the campaign finished and emits the summary:
+## {"classification": campaign_classification(), "results", "position", "field"}.
+func notify_campaign_finished() -> void:
+	campaign_leg = -1
+	_campaign["finished"] = true
+	_save()
+	var table := campaign_classification()
+	var pos := 0
+	for i in table.size():
+		if table[i]["player"]:
+			pos = i + 1
+	campaign_finished.emit({"classification": table, "results": (_campaign["results"] as Dictionary).duplicate(true),
+			"position": pos, "field": table.size()})
+
+
+## Main: back on the title or into a Time Attack run.
+func end_campaign_session() -> void:
+	campaign_active = false
+	campaign_leg = -1
+
+
+## Rally classification over the stages the player has finished, fastest total first. Rows:
+## {"name", "name_jp", "team", "player": bool, "times": Array[float] (per finished stage, in
+## CAMPAIGN order), "total": float, "gap": float (to the leader)}.
+func campaign_classification() -> Array[Dictionary]:
+	var results: Dictionary = _campaign["results"]
+	var stage_maps_done: Array[String] = []
+	var stage_index: Array[int] = []
+	var k := 0
+	for leg in CAMPAIGN:
+		if leg["kind"] == "stage":
+			if results.has(leg["map"]):
+				stage_maps_done.append(leg["map"])
+				stage_index.append(k)
+			k += 1
+	var rows: Array[Dictionary] = []
+	var car := current_car()
+	var player_times: Array[float] = []
+	for id in stage_maps_done:
+		player_times.append(float((results[id] as Dictionary)["time"]))
+	rows.append({"name": "You", "name_jp": str(car["name_jp"]), "team": "%s · %s" % [car["name"], car_colors()["name"]],
+			"player": true, "times": player_times})
+	for r in RIVALS:
+		var times: Array[float] = []
+		for j in stage_maps_done.size():
+			var gold := float((get_map(stage_maps_done[j])["medals"] as Dictionary)["gold"])
+			times.append(snappedf(gold * float(r["pace"][stage_index[j]]), 0.001))
+		rows.append({"name": r["name"], "name_jp": r["name_jp"], "team": r["team"], "player": false, "times": times})
+	for row in rows:
+		var total := 0.0
+		for t in row["times"]:
+			total += t
+		row["total"] = total
+	rows.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["total"] < b["total"])
+	for row in rows:
+		row["gap"] = float(row["total"]) - float(rows[0]["total"])
+	return rows
 
 
 # ---------------------------------------------------------------- queries
@@ -238,7 +447,7 @@ func best_time(id: String) -> float:
 
 func medal_for(id: String, t: float) -> String:
 	var m := get_map(id)
-	if m.is_empty():
+	if m.is_empty() or not m.has("medals"):
 		return ""
 	var medals: Dictionary = m["medals"]
 	if t <= medals["gold"]:
@@ -252,6 +461,26 @@ func medal_for(id: String, t: float) -> String:
 
 func car_colors() -> Dictionary:
 	return CAR_COLORS[clampi(int(settings["car_color"]), 0, CAR_COLORS.size() - 1)]
+
+
+func get_car(id: String) -> Dictionary:
+	for c in CARS:
+		if c["id"] == id:
+			return c
+	return CARS[0]
+
+
+func current_car() -> Dictionary:
+	return get_car(str(get_setting("car_id")))
+
+
+## Maps with a timed stage (Time Trial pickers, "next map"); liaison roads are excluded.
+func stage_maps() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for m in MAPS:
+		if not m.get("liaison", false):
+			out.append(m)
+	return out
 
 
 static func format_time(t: float) -> String:
@@ -323,6 +552,12 @@ func _load() -> void:
 		settings[key] = cfg.get_value("settings", key, DEFAULT_SETTINGS[key])
 	for id in cfg.get_section_keys("records") if cfg.has_section("records") else PackedStringArray():
 		records[id] = cfg.get_value("records", id)
+	var results: Variant = cfg.get_value("campaign", "results", {})
+	_campaign = {
+		"leg": clampi(int(cfg.get_value("campaign", "leg", 0)), 0, CAMPAIGN.size()),
+		"results": results if results is Dictionary else {},
+		"finished": bool(cfg.get_value("campaign", "finished", false)),
+	}
 
 
 func _save() -> void:
@@ -333,6 +568,8 @@ func _save() -> void:
 		cfg.set_value("settings", key, settings[key])
 	for id in records.keys():
 		cfg.set_value("records", id, records[id])
+	for key in _campaign.keys():
+		cfg.set_value("campaign", key, _campaign[key])
 	cfg.save(SAVE_PATH)
 
 

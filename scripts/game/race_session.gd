@@ -1,15 +1,18 @@
 class_name RaceSession
 extends Node
 ## Follows the player car along the loaded map's road: lap progress, checkpoint
-## splits, the lap timer, wrong-way and off-route notices, and the reset point.
+## splits, the lap timer, wrong-way and off-route notices, the reset point, and on a
+## liaison road the distance left and the arrival zone.
 ##
 ## Joins the "track" group for Car.reset_to_track(). In a time trial the car resets to
 ## the last point of the route it legitimately reached (no shortcuts by falling down a
-## switchback). Free roam goes anywhere: back on the road somewhere else, or after R,
-## the route carries on from the nearest stretch of road.
+## switchback). Free roam and liaisons go anywhere: back on the road somewhere else, or
+## after R, the route carries on from the nearest stretch of road.
 ## Reports to the Game autoload through notify_*; Main owns the game state.
 
 signal finished(result: Dictionary)
+## Liaison: the car entered the arrival zone (once per session).
+signal arrived
 ## The car needs a reset it cannot ask for itself (water, out of bounds).
 signal reset_needed(reason: String)
 
@@ -29,11 +32,13 @@ var mode: String = "free_roam"
 var elapsed: float = 0.0
 var checkpoint_index: int = 0 ## next checkpoint to pass
 var checkpoint_total: int = 0
-var progress: float = 0.0 ## 0..1 of the lap
+var progress: float = 0.0 ## 0..1 of the lap (of the road, start to arrival, on a liaison)
 var best_time: float = INF
 var top_speed_kmh: float = 0.0
 var lap: int = 0 ## completed laps in free roam
 var running: bool = false ## timer and checkpoints live
+var distance_left: float = 0.0 ## liaison: road metres to the arrival
+var has_arrived: bool = false
 
 var _idx: int = 0 ## nearest route sample the car legitimately reached
 var _last_p: float = 0.0 ## lap progress (m) at _idx
@@ -83,6 +88,7 @@ func setup(new_map: MapWorld, new_car: Car, new_mode: String) -> void:
 ## Re-anchor on the car's current position (after placing it at the spawn).
 func reset_progress() -> void:
 	running = false
+	has_arrived = false
 	elapsed = 0.0
 	checkpoint_index = 0
 	lap = 0
@@ -92,9 +98,10 @@ func reset_progress() -> void:
 	_idx = track.nearest(car.global_position)
 	_last_p = track.progress_of(_idx, car.global_position)
 	# Standing start a few metres behind the line counts as negative distance.
-	_dist = _last_p - track.length if _last_p > track.length * 0.5 else _last_p
+	_dist = _last_p - track.length if track.closed and _last_p > track.length * 0.5 else _last_p
 	_next_line = _line_after(_dist)
-	progress = 0.0
+	progress = _last_p / track.length if not track.closed else 0.0
+	distance_left = track.length - _last_p
 	_wrong_way_time = 0.0
 	_off_route_time = 0.0
 	_water_time = 0.0
@@ -155,18 +162,24 @@ func _physics_process(delta: float) -> void:
 		_off_route_time = 0.0
 		_off_route_shown = false
 		var p := track.progress_of(i, pos)
-		var step := wrapf(p - _last_p, -track.length * 0.5, track.length * 0.5)
+		var step := wrapf(p - _last_p, -track.length * 0.5, track.length * 0.5) if track.closed else p - _last_p
 		var before := _dist
 		_dist += step
 		_idx = i
 		_last_p = p
 		_check_crossings(before, _dist, delta)
-		progress = clampf(fposmod(_dist, track.length) / track.length, 0.0, 1.0)
+		if track.closed:
+			progress = clampf(fposmod(_dist, track.length) / track.length, 0.0, 1.0)
+		else:
+			progress = clampf(p / track.length, 0.0, 1.0)
+			distance_left = track.length - p
 	else:
 		_off_route_time += delta
 		if _off_route_time > 3.0 and not _off_route_shown and kmh < 25.0:
 			_off_route_shown = true
 			_notice("Off the route — press R to reset")
+	if mode == "liaison" and not has_arrived:
+		_check_arrival(pos, on_route)
 	# Direction only matters against the clock, and only judged on the road.
 	if on_route and mode == "time_trial":
 		_update_wrong_way(i, delta, kmh)
@@ -194,7 +207,7 @@ func _check_crossings(before: float, after: float, delta: float) -> void:
 				_finish(t)
 			elif _game():
 				_game().notify_checkpoint(checkpoint_index - 1, checkpoint_total, t)
-	else:
+	elif mode == "free_roam" and track.closed:
 		# free roam: quietly time laps across the start line
 		if before < _next_line and after >= _next_line:
 			var t := elapsed - delta * (after - _next_line) / maxf(after - before, 1e-5)
@@ -219,6 +232,21 @@ func _finish(t: float) -> void:
 		_game().notify_finished(result)
 		best_time = _game().best_time(map.map_id)
 	finished.emit(result)
+
+
+## Liaison: the arrival zone is the circle around the map's arrival point, or the last
+## `arrival_radius` metres of the road for a car that reached them on the route.
+func _check_arrival(pos: Vector3, on_route: bool) -> void:
+	var r := map.arrival_radius
+	if r <= 0.0:
+		return
+	var d := Vector2(pos.x - map.arrival.origin.x, pos.z - map.arrival.origin.z).length()
+	if d > r and not (on_route and _last_p >= track.length - r):
+		return
+	has_arrived = true
+	if _game():
+		_game().notify_arrived()
+	arrived.emit()
 
 
 func _update_wrong_way(i: int, delta: float, kmh: float) -> void:

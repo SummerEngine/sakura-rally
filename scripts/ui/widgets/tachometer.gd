@@ -55,9 +55,14 @@ func _process(delta: float) -> void:
 	var d := minf(UIMotion.real_delta(delta), 0.05)
 	_time += d
 	var target := clampf(rpm / _scale_max(), 0.0, 1.0)
-	# Needle: stiff spring with a hint of overshoot, like a real gauge.
-	_needle_vel += ((target - _needle) * 900.0 - _needle_vel * 42.0) * d
-	_needle += _needle_vel * d
+	# Needle: stiff spring with a hint of overshoot, like a real gauge. At this stiffness an
+	# Euler step longer than ~1/30 s diverges (below 28 fps the needle went to NaN for good),
+	# so the frame is integrated in steps of at most 1/120 s.
+	var steps := ceili(d * 120.0)
+	var h := d / maxi(steps, 1)
+	for i in steps:
+		_needle_vel += ((target - _needle) * 900.0 - _needle_vel * 42.0) * h
+		_needle += _needle_vel * h
 	_gear_pop = minf(_gear_pop + d * 3.2, 1.0)
 	if _gear_pop > 0.18:
 		_gear_shown = gear
