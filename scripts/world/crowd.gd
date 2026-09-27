@@ -35,6 +35,8 @@ const PALETTE := [
 ]
 ## Speed share a knock costs the car (before SoftCourse's LOSS_BUDGET).
 const LOSS := 0.015
+## Below this horizontal speed (m/s, ~7 km/h) a car's touch knocks nobody over.
+const KNOCK_MIN_SPEED := 2.0
 const CELL := 8.0
 ## Largest person radius (m): hash queries widen by this much.
 const REACH := 0.5
@@ -234,6 +236,11 @@ func is_down(id: int) -> bool:
 func scan_car(ci: int, car: Car, c: Vector3, ax: Vector2, az: Vector2, half: Vector3, cy0: float, cy1: float) -> void:
 	if ci == 0:
 		_focus_car = car
+	# a car creeping or standing among the crowd (one walking back to a car parked on its spot)
+	# knocks nobody over
+	var v := car.linear_velocity
+	if v.x * v.x + v.z * v.z < KNOCK_MIN_SPEED * KNOCK_MIN_SPEED:
+		return
 	var reach := maxf(half.x, half.z) * 1.42 + REACH
 	for gx in range(floori((c.x - reach) / CELL), floori((c.x + reach) / CELL) + 1):
 		for gz in range(floori((c.z - reach) / CELL), floori((c.z + reach) / CELL) + 1):
