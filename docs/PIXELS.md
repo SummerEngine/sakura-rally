@@ -501,7 +501,8 @@ checkpoint was run through the same eval with the choice held back (`train_pixel
 --delays 0,6,8`: the car drives on with the last choice for 0, 6 or 8 physics ticks, i.e. 0, 50
 and 67 ms). Medians: Hanami 93.9 / 96.5 / 96.3 s, Hanami reversed 92.4 / 93.0 / 92.8 s, Momiji
 98.3 / 98.7 / 100.8 s, Momiji reversed 99.0 / 97.4 / 97.8 s; resets per car 0-3.5, the same order
-at every delay. Up to 67 ms costs 0-2.5 s a lap and no finishes.
+at every delay. Up to 67 ms moves the medians by -1.6 to +2.6 s (two cars a route: less than the
+spread between two runs of the same checkpoint, up to 7 s on Momiji reversed) and costs no finishes.
 
 ## 8. In the game (M6, 2026-09-28)
 

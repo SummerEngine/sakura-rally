@@ -5,10 +5,10 @@ extends NeuralPilot
 ## PixelPolicy on the GPU, where NeuralPilot's policy reads the road's geometry. NeuralPilot's
 ## loop, stuck fallback included, except that the answer comes back later: at a decision tick the
 ## eyes take a picture (drawn with the frame), once the frame is drawn the network runs on it, and
-## the first physics tick that has the logits sets the hands, about 3 frames on (6 physics ticks at
-## 60 fps; in the training eval a 6-8 tick delay cost 0.4-2.5 s a lap). The hands keep the last
-## choice meanwhile, and one picture is in flight at a time, so at a low frame rate it decides
-## less often. It takes the likeliest choice, as the eval does.
+## the first physics tick that has the logits sets the hands: 5 physics ticks (42 ms) after the
+## decision at 60 fps, measured (a 6-8 tick delay moved the training eval's medians by -1.6 to
+## +2.6 s). The hands keep the last choice meanwhile, and one picture is in flight at a time, so at
+## a low frame rate it decides less often. It takes the likeliest choice, as the eval does.
 
 var pixels: PixelPolicy
 var eyes: DriveEyes
