@@ -110,13 +110,40 @@ With Godot on macOS, settings and records live in
 
 ## Trailer
 
-The trailer is rendered offline from the game itself: `tools/video/demo.gd` drives a scripted run
-under Movie Maker, and `tools/video/cut_demo.py` cuts the footage on the beat of the drive theme.
-`tools/video/render_demo.sh` does both, offscreen and muted (about 11 min for the footage under
-`nice`, 4 min for the cut; ~11 GB of footage in `/tmp`), and writes
-`/tmp/sakura_demo/sakura_rally_demo.mp4`. The run goes title → garage at the workshop (a livery
-change) → Time Attack → a showoff lap of Hanami under directed cuts (a fabric gate, the hay bales
-on the tarmac hairpin) → results → Next map → Momiji → pause → back to the title.
+The episode 3 trailer is rendered offline from the game itself, in the one world in free roam:
+`tools/video/demo.gd` puts the car on its road under the showoff autopilot and films it with
+directed cameras, Movie Maker records a square 1920x1920 take, and `tools/video/cut_demo.py` cuts
+two edits from that one take on the beat of the drive theme: 16:9 is its middle band at full width,
+9:16 its middle column at full height, so the Shorts edit is native pixels, not a letterboxed copy.
+`tools/video/render_demo.sh` does both, offscreen, muted, under `nice` and under the shared render
+lock (`/tmp/sakura-render.lock`), on the agents' dev build when the machine has one
+([docs/CONTRACTS.md](docs/CONTRACTS.md)); `--stills` renders the 2560x1440 stills. The edit, 39 s:
+a low drone over Hanami's cherry valley → the car at speed through the blossoms → past the hairpin
+signs → slow motion wide through the hay bales under the crowd → the crowd at the next hairpin →
+slow motion along a gravel guardrail → over the stone bridge and down the festival street on the
+road between the stages → Momiji in autumn: the river bridge, a crane up from a hairpin → the
+garage workshop brushing on a new livery → a wide aerial over the valley under the title card.
+
+Outputs (in `export/`, which is gitignored): `trailer_ep3_16x9.mp4` (1920x1080, for X),
+`trailer_ep3_9x16.mp4` (1080x1920, for Shorts), a contact sheet of each, and
+`trailer_ep3_stills/` (8 PNGs at 2560x1440, no UI: opener, crash, crowd, rail, village,
+momiji_bridge, momiji_crane, garage).
+
+Verified on the final render (2026-09-27, main's world with the 10 m stage loops, dev build 0.5.68
+with SummerEngine PR #397): both edits 39.23 s, H.264 High 60 fps, limited-range BT.709, AAC 48 kHz
+at -14.1 LUFS and -0.9 dBFS peak; phase correlation between consecutive frames inside every shot:
+largest move 30 px, 95th percentile 6 px (16:9) and 18 px (9:16), no frame over 40 px and no
+repeated frame; 48 frames of each edit (four per shot) and every still looked at. The take ran with
+the window uncovered (`KEEP_DRAWING 0`), so the covered-window path was checked separately: with the
+render loop switched off 17 of every 40 frames to imitate a covered window, a 27 s take had no held
+or doubled frame (before the fix: one of each at every switch). The take is 102 s of footage and
+renders in 6-8 min; the cut takes 4 min and the stills 2 min.
+
+The terrain seam in the old `docs/renders/hanami_aerial.jpg` (the far mountain ring seen through a
+dip in the rim, as an upside-down peak) is framed out: no shot of the trailer shows it. The ring
+takes no scene fog while the terrain in front of it does, which is why it shows through; making
+the ring's haze follow the depth fog left a pale wedge in its place and changed the horizon of
+every other shot, so that change was not kept.
 
 ## Replays
 
