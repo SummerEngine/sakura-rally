@@ -122,15 +122,30 @@ not resources and need `include_filter="*.bin"` in the preset, or an exported ga
 
 ## The video
 
-`tools/rl/render_film.sh` films how it learned and cuts `/tmp/sakura_film/sakura_ai_learns.mp4`
-(about 1.5 min). First `tools/rl/swarm.gd` records the practice, headless: per generation 64 cars
-leave Hanami's start line together and drive as in training (options sampled from the policy,
-a run ending by the training rules: off the road, a crash, stalled, the wrong way), every run a
-replay file in the player's format (`scripts/game/replay_writer.gd`, so `tools/replay/review.gd`
-reads it). Then `tools/rl/film.gd` plays the replays back under Movie Maker, offscreen and muted:
-every generation from the untrained network to gen1 6M, sped up, each car turning grey where its
-run ended and a card counting the cars still driving; the shipped driver with its rays and road
-points drawn over the road; its cars on Momiji. `tools/rl/cut_film.py` cuts it on the drive
-theme's beat and labels each generation with its training time from the run's `progress.csv`
-(`tools/rl/plot_training.py` plots a run's learning curve to a PNG). `--no-record` renders from
-the last recordings, `--cut-only` recuts.
+`tools/rl/render_film.sh` films how it learned as a social post of about 26 s, twice: 1920x1080
+for X and 1080x1920 for Shorts (`EXPORT=~/Projects/sakura-rally/export tools/rl/render_film.sh
+--no-record` writes `rl_post_16x9.mp4`, `rl_post_9x16.mp4` and a contact sheet of each there).
+First `tools/rl/swarm.gd` records the practice, headless: per generation 64 cars leave Hanami's
+start line together and drive as in training (options sampled from the policy, a run ending by
+the training rules: off the road, a crash, stalled, the wrong way), every run a replay file in
+the player's format (`scripts/game/replay_writer.gd`, so `tools/replay/review.gd` reads it).
+Then `tools/rl/film.gd` plays the replays back under Movie Maker, offscreen and muted, once per
+aspect with its own lenses (the motion is the same), under the render lock: the untrained
+network's 64 cars launching from the grid seen low from the roadside ahead and scattering into
+the cherry trees; one right-hander 540-590 m in, from the same camera on its inside, for
+3 minutes of practice (the pack flies off the outside), 31 minutes (4 of 64 finish the stage) and
+80 minutes (57 finish; a train through the corner); a chase at the shoulder of the shipped
+driver's fastest run with the rays and road points its network sees drawn over the road; its
+whole pack on Momiji, a road it never practised on, from a drone at 2.5x speed through the S-bend
+and the hairpin under the maples. A car turns grey where its run ended. Every camera is worked
+out from the replays before its shot plays; `film.gd` prints each shot's camera motion, nearest
+car size and cars in frame, and runs headless for a flow check (see its header). A render whose
+window macOS reports covered still records every frame: film.gd draws the frames the engine
+skips, in the same iteration. `tools/rl/cut_film.py` lays the shots on the drive theme's beat
+with a card per shot (training time from the run's `progress.csv`, how many of 64 finish), ends
+on the Sakura Rally card, measures the motion inside every shot by phase correlation on the
+footage and saves the frames it tiled into the contact sheet (`tools/rl/plot_training.py` plots a
+run's learning curve to a PNG). `--no-record` renders from the last recordings, `--cut-only`
+recuts. The two renders take about 3 min each, the cut about 3 min. The post of 2026-09-27 was
+recorded and rendered on the 7 m stage loops, before race mode widened them to 10 m; a fresh
+recording drives the wider loops, and the finish counts on the cards come from it.

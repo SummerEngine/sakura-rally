@@ -1,87 +1,83 @@
 extends SceneTree
-## "How the AI learned to drive": the footage, rendered offline by Movie Maker from the AI's
-## recorded practice (tools/rl/swarm.gd). Run tools/rl/render_film.sh, not this script directly
-## (cue times count Movie Maker frames at 60 fps). Nothing here drives: every car is a
-## ReplayGhost posed from its replay file, so a whole generation is on the road at once and the
-## clock runs at any speed.
-##   Every generation in GENERATIONS, oldest first: its cars leave the Hanami start line
-##   together, the clock eases up to several times real speed, and a drone behind and above
-##   follows the pack on a smooth path worked out in advance (DronePath). A car turns grey where
-##   its run ended the way a training episode ends (off the road, crashed, stalled, the wrong
-##   way); the card counts the cars still driving, and the strip along the bottom shows where
-##   every car is on the stage.
-##   -> The shipped driver's fastest run at real speed from above and behind, with what its
-##   network sees drawn over the road.
-##   -> The shipped driver's cars on Momiji, a road no generation trained on.
-## Reads <swarm>/<route>/<generation>/ (swarm.gd) and <swarm>/practice.json (cut_film.py
-## practice: each generation's training time as a caption). Cues go to <footage>/cues.json:
-## each shot's start and end (video seconds) and what it shows.
+## "How the AI learned to drive", the social post: about 30 s rendered offline by Movie Maker
+## from the AI's recorded practice (tools/rl/swarm.gd), once per aspect (1920x1080 for X,
+## 1080x1920 for Shorts; the motion is the same, each aspect has its own lenses). Run
+## tools/rl/render_film.sh, not this script directly (cue times count Movie Maker frames at
+## 60 fps). Nothing here drives: every car is a ReplayGhost posed from its replay file, so a whole
+## generation is on the road at once, and since the replays know what comes next every camera and
+## every shot's time window is worked out before the shot plays. A car turns grey where its run
+## ended the way a training episode ends (off the road, crashed, stalled, the wrong way).
+##   hook      the untrained network's 64 cars leave Hanami's start line, seen low from the
+##             roadside ahead, and scatter off the road into the cherry trees.
+##   corner_N  the right-hander 540-590 m into Hanami, where the early generations fly off the
+##             outside, from the same low camera on its inside for each generation in CORNER_GENS,
+##             at real speed around the moment most of the pack reaches it.
+##   sees      the shipped driver's fastest run through that corner, chased at its shoulder, with
+##             what its network sees drawn over the road (SenseView).
+##   momiji    the shipped driver's cars on Momiji, a road no generation practised on, seen from
+##             a drone over the whole pack at 2.5x speed, through the S-bend and the hairpin under
+##             the maples, and `end_beats` more of it for cut_film.py's closing card (end_frames
+##             in its cue).
+## Each shot lasts a whole number of the drive theme's beats (cut_film.py cuts on them and lays
+## the cards over; nothing here draws text). Reads <swarm>/<route>/<generation>/ (swarm.gd);
+## writes <footage>/cues.json: each shot's start (video seconds), frames, beats and facts (cars,
+## finishers), and, after it, how far the ground moved on screen per frame (pan_max, px of the
+## output frame) and how big the nearest driving car was (hero_px).
 ##
-## Check the flow without pixels (headless):
-##   timeout -k 10 900 $S --headless --disable-crash-handler --audio-driver Dummy --fixed-fps 60 \
-##       --path . -s res://tools/rl/film.gd -- swarm=/tmp/sakura_swarm footage=/tmp/sakura_film_check
+## Check the flow and the camera numbers without pixels (headless, either aspect):
+##   timeout -k 10 600 $S --headless --disable-crash-handler --audio-driver Dummy --fixed-fps 60 \
+##       --path . -s res://tools/rl/film.gd -- swarm=/tmp/sakura_film/swarm footage=/tmp/x aspect=tall
+## Stills to judge the framing (pixels: offscreen, dev build, under the render lock): stills=N
+## saves N frames of every shot to <footage>/stills/<aspect>_<shot>_<i>.png instead of playing
+## the shots; sizes=960x540,540x960 renders them at each window size in turn.
 ##
 ## KeepDrawing (as in tools/video/demo.gd) draws the frames macOS skips for a covered window.
 
-const UITheme := preload("res://scripts/ui/ui_theme.gd")
-
 const FPS := 60.0
-## The generations shown, oldest first, as swarm.gd names their folders: the gen1 recipe's
-## practice, from the untrained network (the demo run repeats it from scratch with a save every
-## 100k steps) to 6M, the last gen1 checkpoint.
-const GENERATIONS: Array[String] = ["demo_0", "demo_100032", "demo_300032", "gen1_1000000",
-		"gen1_2000000", "gen1_3000000", "gen1_6000000"]
-## The shipped driver (assets/ai/driver.json: gen1 6M fine-tuned to steer calmly), shown seeing
-## the road and on Momiji.
-const SHIPPED := "gen2_7000000"
 const ROUTE := "hanami"
 const HELD_OUT := "momiji"
-## A generation's shot: its cars wait HOLD_S on the line (FIRST_HOLD_S in the first shot, under
-## the title), then the clock eases from real speed (over RAMP_S of screen time) to the speed
-## that shows the whole practice (until the last car stops, at most LAP_S) in about SHOT_S,
-## never faster than MAX_SPEED. The last frame holds END_HOLD_S.
-const HOLD_S := 0.5
-const FIRST_HOLD_S := 2.5
-const RAMP_S := 0.8
-const SHOT_S := 5.0
-const MAX_SPEED := 10.0
-const LAP_S := 125.0
-const END_HOLD_S := 0.6
-## What it sees: the shipped driver's fastest run from SEES_FROM m of Hanami, SEES_S at real speed.
-const SEES_FROM := 440.0
-const SEES_S := 7.0
-## Momiji: the shipped driver's cars, the first HELD_OUT_S of their practice.
-const HELD_OUT_S := 75.0
+## The shipped driver (assets/ai/driver.json: gen1 6M fine-tuned to steer calmly).
+const SHIPPED := "gen2_7000000"
+## The corner, oldest generation first: 3 minutes of practice (its cars reach the corner and fly
+## off the outside), 31 minutes (most get round), 80 minutes (all of them, in a train).
+const CORNER_GENS: Array[String] = ["demo_300032", "gen1_2000000", "gen1_6000000"]
+## Footage rendered past each shot's edit length, so the cut never runs short.
+const TAIL_S := 0.25
 ## Liveries of the cars still driving (by car), and of a car whose run ended.
 const LIVERIES: Array[Color] = [Color("7fc8f8"), Color("f9a03f"), Color("b388eb"), Color("5fd3a2"),
 		Color("f25f5c"), Color("ffe066"), Color("e8517c"), Color("fbf5ec")]
 const ENDED := Color(0.56, 0.56, 0.6)
+const UITheme := preload("res://scripts/ui/ui_theme.gd")
 
 ## swarm=<dir>: the recordings. footage=<dir>: where cues.json goes (not `out=`, which Summer
 ## reads as a probe's results folder under --summer-offscreen and closes the window mid-take).
-## gens=a,b,...: other generations than GENERATIONS.
-var opts := {"swarm": "/tmp/sakura_swarm", "footage": "/tmp/sakura_film", "gens": ""}
+## aspect=wide|tall: the lenses (default: from the window). stills=N, sizes=WxH,...: see above.
+## shots=a,b: only those shots.
+var opts := {"swarm": "/tmp/sakura_film/swarm", "footage": "/tmp/sakura_film", "aspect": "", "stills": "0",
+		"sizes": "", "shots": ""}
 var view: ReplayView
-var hud: Hud
-var practice: Dictionary = {}
 var cues: Array[Dictionary] = []
+var beat: float = 60.0 / 104.0
 var _frame0 := 0
+var _route := ""
+## <swarm>/practice.json (cut_film.py practice): each generation's training time and caption.
+var practice := {}
 
 
-## Runs last in every iteration; after one that drew nothing (the window covered), renders the
-## frame into the viewport texture, which Movie Maker reads (tools/video/demo.gd).
+## Runs last in every _process: when the engine will not draw this iteration (macOS reports the
+## window covered, as it does under a fullscreen video), renders the frame into the viewport
+## texture that Movie Maker reads, in this iteration (tools/video/demo.gd). Noticing the skipped
+## draw one iteration late held one frame and doubled the next at every covered/visible switch.
+## The frame drawn here is the engine's own: the shots pose the cars and the camera at
+## process_frame, before the tree pushes transforms to the renderer.
 class KeepDrawing extends Node:
-	var _drawn := -1
-
 	func _init() -> void:
 		process_mode = Node.PROCESS_MODE_ALWAYS
 		process_priority = 1 << 30
 
 	func _process(delta: float) -> void:
-		var drawn := Engine.get_frames_drawn()
-		if drawn == _drawn:
+		if not DisplayServer.window_can_draw() or not RenderingServer.render_loop_enabled:
 			RenderingServer.force_draw(false, delta)
-		_drawn = drawn
 
 
 ## One generation's recorded practice: runs.json, every run's replay, when each run ended and
@@ -96,15 +92,22 @@ class Swarm:
 	var finished := PackedByteArray()
 	var progress: Array[PackedFloat32Array] = []
 
-	## Playback seconds until the last car stopped.
-	func until() -> float:
-		var t := 0.0
-		for r: ReplayData in runs:
-			t = maxf(t, r.duration())
-		return t
-
 	func progress_at(k: int, t: float) -> float:
 		return progress[k][runs[k].index_at(t)]
+
+	func finishers() -> int:
+		var n := 0
+		for f in finished:
+			n += f
+		return n
+
+	## The first time run k is `s` m from the start line, INF if it never gets there.
+	func time_at(k: int, s: float) -> float:
+		var p := progress[k]
+		for i in p.size():
+			if p[i] >= s:
+				return runs[k].time(i)
+		return INF
 
 	## The run of the car that finished first, else of the one that got furthest.
 	func best() -> int:
@@ -118,356 +121,50 @@ class Swarm:
 		return pick
 
 
-## The card top left (the shot, the cars still driving), the clock's speed top right, and a strip
-## along the bottom: the stage, each car where it is on it.
-class Hud extends CanvasLayer:
-	var card := PanelContainer.new()
-	var title := Label.new()
-	var sub := Label.new()
-	var count := Label.new()
-	var pill := PanelContainer.new()
-	var speed := Label.new()
-	var strip := Strip.new()
-
-	func _init() -> void:
-		layer = 10
-		var box := VBoxContainer.new()
-		box.add_theme_constant_override("separation", 2)
-		card.add_theme_stylebox_override("panel", _paper(Color(UITheme.PAPER, 0.94)))
-		card.add_child(box)
-		title.label_settings = _text(UITheme.FONT_TITLE, 46, UITheme.INK)
-		sub.label_settings = _text(UITheme.FONT_UI_BOLD, 26, UITheme.INK_SOFT)
-		count.label_settings = _text(UITheme.FONT_UI_BLACK, 28, UITheme.SAKURA)
-		for l: Label in [title, sub, count]:
-			box.add_child(l)
-		pill.add_theme_stylebox_override("panel", _paper(UITheme.SAKURA))
-		speed.label_settings = _text(UITheme.FONT_TITLE, 34, UITheme.WHITE)
-		pill.add_child(speed)
-		for c: Control in [card, pill, strip]:
-			c.visible = false
-			add_child(c)
-
-	func _paper(fill: Color) -> StyleBoxFlat:
-		var s := StyleBoxFlat.new()
-		s.bg_color = fill
-		s.set_corner_radius_all(22)
-		s.content_margin_left = 30
-		s.content_margin_right = 30
-		s.content_margin_top = 16
-		s.content_margin_bottom = 18
-		s.shadow_color = Color(UITheme.INK, 0.16)
-		s.shadow_size = 10
-		s.shadow_offset = Vector2(0, 5)
-		return s
-
-	func _text(font: Font, size: int, colour: Color) -> LabelSettings:
-		var ls := LabelSettings.new()
-		ls.font = font
-		ls.font_size = size
-		ls.font_color = colour
-		return ls
-
-	func show_shot(heading: String, caption: String, stage_m: float) -> void:
-		var vp := get_viewport().get_visible_rect().size
-		var s := vp.y / 1080.0
-		title.text = heading
-		sub.text = caption
-		card.scale = Vector2(s, s)
-		card.position = Vector2(56, 48) * s
-		pill.scale = Vector2(s, s)
-		strip.length = stage_m
-		strip.position = Vector2(vp.x * 0.14, vp.y - 96.0 * s)
-		strip.size = Vector2(vp.x * 0.72, 56.0 * s)
-		card.visible = true
-		strip.visible = true
-
-	func hide_all() -> void:
-		for c: Control in [card, pill, strip]:
-			c.visible = false
-
-	## The cars now: `driving` and `done` (finished) counts, the clock's speed, and every car's
-	## distance and colour for the strip.
-	func tick(driving: int, done: int, cars: int, clock: float, where: PackedFloat32Array, colours: PackedColorArray) -> void:
-		count.text = "%d of %d still driving" % [driving, cars] if done == 0 \
-				else "%d of %d finished · %d driving" % [done, cars, driving]
-		pill.visible = clock > 1.25
-		if pill.visible:
-			speed.text = "×%d" % roundi(clock)
-			var vp := get_viewport().get_visible_rect().size
-			pill.position = Vector2(vp.x - (pill.size.x + 56.0) * pill.scale.x, 48.0 * pill.scale.y)
-		strip.where = where
-		strip.colours = colours
-		strip.queue_redraw()
-
-
-## The stage as a bar from start to finish, a dot for each car where it is.
-class Strip extends Control:
-	var length: float = 1.0
-	var where := PackedFloat32Array()
-	var colours := PackedColorArray()
-
-	func _draw() -> void:
-		var h := size.y
-		var y := h * 0.5
-		var r := h * 0.16
-		var bar := StyleBoxFlat.new()
-		bar.bg_color = Color(UITheme.PAPER, 0.9)
-		bar.set_corner_radius_all(int(h * 0.2))
-		bar.shadow_color = Color(UITheme.INK, 0.14)
-		bar.shadow_size = 6
-		draw_style_box(bar, Rect2(-h * 0.4, y - h * 0.2, size.x + h * 0.8, h * 0.4))
-		draw_line(Vector2(0, y - h * 0.3), Vector2(0, y + h * 0.3), UITheme.INK, 3.0)
-		draw_line(Vector2(size.x, y - h * 0.3), Vector2(size.x, y + h * 0.3), UITheme.INK, 3.0)
-		# the ended cars first, the ones still going drawn over them
-		for pass_live in 2:
-			for k in where.size():
-				var live := colours[k] != ENDED
-				if live != (pass_live == 1):
-					continue
-				var x := clampf(where[k] / length, 0.0, 1.0) * size.x
-				draw_circle(Vector2(x, y), r * 1.25, Color(UITheme.INK, 0.55))
-				draw_circle(Vector2(x, y), r, colours[k])
-
-
-## The drone's whole path through a swarm shot, worked out before the shot plays (the replays
-## know what comes next) and smoothed with no lag, so it never jolts. It frames the cars still
-## driving at most BAND_M behind the front of the pack (its 90th percentile; stragglers further
-## back run out of shot) from behind and a little to one side (`side`), looking down PITCH_DEG
-## through a FOV° lens at a point LEAD of its distance ahead of their middle. It backs off, up to
-## FAR m, to fit most of them (FIT times the spread of the nearest 80 %) and while the ground
-## would cross the frame faster than PAN_PX a frame (the clock runs at up to MAX_SPEED times
-## real speed); it turns with the road over about TURN_S and keeps CLEAR_M over the ground.
-## `pan_p95`, `pan_max`: how far the ground moves on screen from one frame to the next (px of a
-## 1080p frame, the worst of five points across it); `jerk_max`: the largest change of that
-## motion between frames; `dist_p50`: the median distance to where it looks.
-class DronePath:
-	const PITCH_DEG := 55.0
-	const FOV := 55.0
-	const BAND_M := 120.0
-	const FIT := 1.6
-	const MARGIN_M := 10.0
-	const NEAR := 35.0
-	const FAR := 150.0
-	const PAN_PX := 45.0
-	const LEAD := 0.12
-	const SIDE := 0.15
-	const CLEAR_M := 15.0
-	const FOCUS_S := 0.4
-	const TURN_S := 1.0
-	const RANGE_S := 0.8
-	## Camera transform per frame.
-	var camera: Array[Transform3D] = []
-	var pan_p95 := 0.0
+## A shot's camera, one transform and vertical FOV per frame, worked out before it plays.
+## `pan_max`, `pan_p95`: how far the ground at the aim moves on screen from one frame to the next
+## (px of the output frame, the worst of five points around the aim).
+class CameraPath:
+	var xf: Array[Transform3D] = []
+	var fov := PackedFloat32Array()
+	var aim := PackedVector3Array()
 	var pan_max := 0.0
-	var jerk_max := 0.0
-	## Median distance (m) from the camera to where it looks: how big the cars are.
-	var dist_p50 := 0.0
-	var _map: MapWorld
-	var _side := 1.0
-	var _f_px := 540.0 / tan(deg_to_rad(FOV * 0.5))
-	var _targets := PackedVector3Array()
-	var _cx := PackedFloat32Array()
-	var _cy := PackedFloat32Array()
-	var _cz := PackedFloat32Array()
-	var _yaw := PackedFloat32Array()
-	var _dist := PackedFloat32Array()
+	var pan_p95 := 0.0
 
-	## `times`: the playback time of every frame of the shot.
-	func _init(sw: Swarm, track: Track, map: MapWorld, times: PackedFloat32Array, side: float) -> void:
-		_map = map
-		_side = side
-		var n := times.size()
-		var fit := PackedFloat32Array()
-		for f in n:
-			var alive := PackedFloat32Array()
-			for k in sw.runs.size():
-				if times[f] < sw.ends[k]:
-					alive.append(sw.progress_at(k, times[f]))
-			if alive.is_empty():
-				_cx.append(NAN)
-				_cy.append(NAN)
-				_cz.append(NAN)
-				_yaw.append(NAN)
-				fit.append(NAN)
-				continue
-			alive.sort()
-			var m := alive.size()
-			var front := alive[m - 1] if m < 6 else alive[int(m * 0.9)]
-			var c := Vector3.ZERO
-			var s_sum := 0.0
-			var pts := PackedVector3Array()
-			for p in alive:
-				if p >= front - BAND_M:
-					var w := track.position_at_abs(track.start_s + p, 0.0)
-					pts.append(w)
-					c += w
-					s_sum += p
-			c /= pts.size()
-			var d := PackedFloat32Array()
-			for w in pts:
-				d.append(Vector2(w.x - c.x, w.z - c.z).length())
-			d.sort()
-			var s := track.start_s + s_sum / pts.size()
-			var a := track.position_at_abs(s - 30.0, 0.0)
-			var b := track.position_at_abs(s + 40.0, 0.0)
-			_cx.append(c.x)
-			_cy.append(c.y)
-			_cz.append(c.z)
-			_yaw.append(atan2(b.x - a.x, b.z - a.z))
-			fit.append(clampf(FIT * (d[mini(int(d.size() * 0.8), d.size() - 1)] + MARGIN_M), NEAR, FAR))
-		# nobody driving: hold the aim before (or, before anyone, the first to come)
-		_cx = _held(_cx)
-		_cy = _held(_cy)
-		_cz = _held(_cz)
-		_yaw = _held(_yaw)
-		fit = _held(fit)
-		for f in range(1, n):
-			_yaw[f] = _yaw[f - 1] + wrapf(_yaw[f] - _yaw[f - 1], -PI, PI)
-		_cx = _smooth(_cx, FOCUS_S * FPS)
-		_cy = _smooth(_cy, FOCUS_S * FPS)
-		_cz = _smooth(_cz, FOCUS_S * FPS)
-		_yaw = _smooth(_yaw, TURN_S * FPS)
-		# far enough to fit the pack and to keep the ground under PAN_PX a frame at the middle's speed
-		var want := PackedFloat32Array()
-		for f in n:
-			var i0 := maxi(f - 1, 0)
-			var i1 := mini(f + 1, n - 1)
-			var v := Vector3(_cx[i1] - _cx[i0], _cy[i1] - _cy[i0], _cz[i1] - _cz[i0]).length() / maxi(i1 - i0, 1)
-			want.append(clampf(maxf(fit[f], v * sin(deg_to_rad(PITCH_DEG)) * _f_px / PAN_PX), NEAR, FAR))
-		var r := int(RANGE_S * FPS)
-		_dist = _smooth(_dilate(want, r), r)
-		# where the rotation or the terrain still moves the ground too fast, back off there too
-		var pans := PackedFloat32Array()
-		for i in 3:
-			_build()
-			pans = _pans()
-			var scale := PackedFloat32Array()
-			var over := false
-			for f in n:
-				scale.append(maxf(pans[f] / PAN_PX, 1.0))
-				over = over or pans[f] > PAN_PX * 1.02
-			if not over:
-				break
-			scale = _smooth(_dilate(scale, r), r)
-			for f in n:
-				_dist[f] = minf(_dist[f] * scale[f], FAR)
-		_build()
-		pans = _pans()
+	## `rows`: the output frame's height in px (its focal length follows from the FOV).
+	func measure(rows: float, cols: float) -> void:
+		var pans := PackedFloat32Array([0.0])
+		for f in range(1, xf.size()):
+			var was := xf[f - 1].affine_inverse()
+			var now := xf[f].affine_inverse()
+			var d := xf[f - 1].origin.distance_to(aim[f - 1])
+			var r := xf[f - 1].basis.x * d * 0.3
+			var u := xf[f - 1].basis.y * d * 0.2
+			var worst := 0.0
+			var focal := rows * 0.5 / tan(deg_to_rad(fov[f] * 0.5))
+			for p: Vector3 in [aim[f - 1], aim[f - 1] + r, aim[f - 1] - r, aim[f - 1] + u, aim[f - 1] - u]:
+				worst = maxf(worst, (CameraPath.px(now * p, focal) - CameraPath.px(was * p, focal)).length())
+			pans.append(worst)
 		var sorted := pans.duplicate()
 		sorted.sort()
-		pan_p95 = sorted[int(0.95 * (n - 1))]
-		pan_max = sorted[n - 1]
-		var ds := _dist.duplicate()
-		ds.sort()
-		dist_p50 = ds[n / 2]
+		pan_max = sorted[sorted.size() - 1]
+		pan_p95 = sorted[int(0.95 * (sorted.size() - 1))]
 
-	func _build() -> void:
-		camera.clear()
-		_targets.clear()
-		var pitch := deg_to_rad(PITCH_DEG)
-		var at := PackedVector3Array()
-		var raise := PackedFloat32Array()
-		for f in _dist.size():
-			var dir := Vector3(sin(_yaw[f]), 0.0, cos(_yaw[f]))
-			var right := Vector3(-dir.z, 0.0, dir.x)
-			var d := _dist[f]
-			var target := Vector3(_cx[f], _cy[f], _cz[f]) + dir * d * LEAD
-			var pos := target - dir * d * cos(pitch) + right * d * SIDE * _side + Vector3.UP * d * sin(pitch)
-			_targets.append(target)
-			at.append(pos)
-			raise.append(maxf(_map.ground_height(pos.x, pos.z) + CLEAR_M - pos.y, 0.0))
-		var r := int(0.5 * FPS)
-		raise = _smooth(_dilate(raise, r), r)
-		for f in at.size():
-			camera.append(Transform3D(Basis(), at[f] + Vector3.UP * raise[f]).looking_at(_targets[f], Vector3.UP))
-
-	## Per frame: the largest on-screen move (px) of five ground points across the last frame's
-	## view (its target and four around it) into this frame's view; sets jerk_max.
-	func _pans() -> PackedFloat32Array:
-		var out := PackedFloat32Array([0.0])
-		var last: Array[Vector2] = []
-		jerk_max = 0.0
-		for f in range(1, camera.size()):
-			var was := camera[f - 1].affine_inverse()
-			var now := camera[f].affine_inverse()
-			var t := _targets[f - 1]
-			var d := _dist[f - 1]
-			var dir := Vector3(sin(_yaw[f - 1]), 0.0, cos(_yaw[f - 1]))
-			var right := Vector3(-dir.z, 0.0, dir.x)
-			var moves: Array[Vector2] = []
-			var worst := 0.0
-			for p in [t, t + right * d * 0.7, t - right * d * 0.7, t + dir * d * 0.35, t - dir * d * 0.35]:
-				var mv := _px(now * p) - _px(was * p)
-				moves.append(mv)
-				worst = maxf(worst, mv.length())
-			if last.size() == moves.size():
-				for j in moves.size():
-					jerk_max = maxf(jerk_max, (moves[j] - last[j]).length())
-			last = moves
-			out.append(worst)
-		return out
-
-	## Screen position (px from the centre of a 1080-row frame) of a point in camera space.
-	func _px(q: Vector3) -> Vector2:
-		return Vector2(q.x, -q.y) / maxf(-q.z, 0.01) * _f_px
-
-	## NAN entries take the value before them (the first ones the first value after).
-	static func _held(a: PackedFloat32Array) -> PackedFloat32Array:
-		var out := a.duplicate()
-		var first := NAN
-		for v in out:
-			if not is_nan(v):
-				first = v
-				break
-		var last := first if not is_nan(first) else 0.0
-		for i in out.size():
-			if is_nan(out[i]):
-				out[i] = last
-			else:
-				last = out[i]
-		return out
-
-	## Close to a Gaussian of `sigma` samples (three box passes), with the ends held.
-	static func _smooth(a: PackedFloat32Array, sigma: float) -> PackedFloat32Array:
-		var r := maxi(int(roundf(sigma)), 1)
-		var out := a
-		for i in 3:
-			var n := out.size()
-			var box := PackedFloat32Array()
-			box.resize(n)
-			var sum := 0.0
-			for j in range(-r, r + 1):
-				sum += out[clampi(j, 0, n - 1)]
-			for j in n:
-				box[j] = sum / (2 * r + 1)
-				sum += out[clampi(j + r + 1, 0, n - 1)] - out[clampi(j - r, 0, n - 1)]
-			out = box
-		return out
-
-	## The largest value within `r` samples.
-	static func _dilate(a: PackedFloat32Array, r: int) -> PackedFloat32Array:
-		var n := a.size()
-		var out := PackedFloat32Array()
-		out.resize(n)
-		for i in n:
-			var m := a[i]
-			for j in range(maxi(i - r, 0), mini(i + r, n - 1) + 1):
-				m = maxf(m, a[j])
-			out[i] = m
-		return out
+	## Screen position (px from the centre) of a point in camera space.
+	static func px(q: Vector3, focal: float) -> Vector2:
+		return Vector2(q.x, -q.y) / maxf(-q.z, 0.01) * focal
 
 
 ## What the network sees, drawn over the road around `car`: the rays to the edge of the drivable
 ## road and the centre-line points ahead (DriveSense), nothing else. Drawn through everything,
 ## the car included, turned to the camera and one size on screen near and far. Colours as in
-## cut_film.py's legend.
+## cut_film.py's cards.
 class SenseView extends MeshInstance3D:
 	const RAY_COLOUR := Color(0.91, 0.32, 0.49, 0.85)
 	const HIT_COLOUR := Color(0.91, 0.32, 0.49, 1.0)
 	const ROAD_COLOUR := Color(0.25, 0.71, 0.54, 1.0)
 	const LIFT := 0.5 # m above the car's origin
-	## Half a ray's width and a mark's radius per metre from the camera (1080p, 55° FOV: rays
-	## 6 px wide, marks 17 px).
+	## Half a ray's width and a mark's radius per metre from the camera.
 	const RAY_HALF := 0.004
 	const MARK_R := 0.011
 	var car: Car
@@ -535,14 +232,71 @@ class SenseView extends MeshInstance3D:
 			_mesh.surface_add_vertex(v)
 
 
+## The shots in order. Each: `tag`, `route`, `gen`, `beats` (its length in the edit), `speed`
+## (playback seconds per screen second), where its window sits (`at`: the median time the cars
+## reach `at` m, centred in the shot, shifted by `lead` screen seconds; `from`: a fixed playback
+## time), and its camera per aspect (`wide`, `tall`):
+##   roadside: `pos` [m from the start line, m right of the centre line, m over the ground], to
+##   `pos1` over the shot when given (a crane or a dolly, eased); looking at `aim` (same
+##   coordinates, to `aim1`) pulled `follow` of the way towards the cars inside `zone` [m, m];
+##   `fov` vertical degrees.
+##   chase: the `car` run (best: the fastest) from `back` m behind, `side` m right and `up` m
+##   over it, looking `ahead` m in front of it.
+##   drone: over the pack, holding one heading (the road's at `yaw_at` m, turned `yaw`° to the
+##   right): `dist` m from a point `lead` of that ahead of the middle of the cars still driving
+##   within `band` m of the front, looking down `pitch`°, `side` of `dist` to the right, at
+##   least `clear` m over the ground.
+func _plan() -> Array[Dictionary]:
+	# The corner camera: on the inside of the right-hander, looking back up the road at the cars
+	# coming down to it and past the apex into the cherry trees where the outside is. The tall
+	# lens stands higher and further out: from the wide lens's spot a 9:16 frame takes in the
+	# vending machine and the stone lantern at the roadside there (lat 11, 585 m).
+	var corner := {"kind": "roadside", "zone": [470.0, 640.0],
+			"wide": {"pos": [592.0, 16.0, 2.2], "pos1": [590.0, 17.0, 2.4], "aim": [548.0, -6.0, 1.0], "follow": 0.45, "fov": 31.0},
+			"tall": {"pos": [590.0, 21.0, 5.0], "pos1": [588.0, 22.0, 5.5], "aim": [552.0, -5.0, 1.0], "follow": 0.45, "fov": 46.0}}
+	var shots: Array[Dictionary] = [
+		{"tag": "hook", "route": ROUTE, "gen": "demo_0", "beats": 6, "speed": 1.0, "from": 1.3,
+			"cam": {"kind": "roadside", "zone": [-10.0, 60.0],
+				"wide": {"pos": [58.0, -3.5, 3.2], "pos1": [52.0, -4.0, 2.6], "aim": [5.0, 0.0, 0.8], "follow": 0.3, "fov": 36.0},
+				"tall": {"pos": [62.0, -3.0, 3.6], "pos1": [55.0, -3.5, 2.8], "aim": [8.0, 0.0, 0.8], "follow": 0.3, "fov": 56.0}}},
+	]
+	var corner_at: Array[float] = [525.0, 555.0, 560.0]
+	for i in CORNER_GENS.size():
+		shots.append({"tag": "corner_%d" % i, "route": ROUTE, "gen": CORNER_GENS[i], "beats": 7 if i == 0 else 6,
+				"speed": 1.0, "at": corner_at[i], "lead": 0.3, "cam": corner})
+	shots.append({"tag": "sees", "route": ROUTE, "gen": SHIPPED, "beats": 6, "speed": 1.0, "at": 545.0, "lead": 0.0,
+			"car": "best", "cam": {"kind": "chase",
+				"wide": {"back": 7.5, "side": -2.4, "up": 2.6, "ahead": 18.0, "fov": 52.0},
+				"tall": {"back": 8.5, "side": -1.8, "up": 3.4, "ahead": 16.0, "fov": 64.0}}})
+	# Momiji from above, sped up: the whole pack through the S-bend into the hairpin under the
+	# maples, the drone looking down the road into the hairpin, so the cars run away up the frame,
+	# turn and come back towards it.
+	shots.append({"tag": "momiji", "route": HELD_OUT, "gen": SHIPPED, "beats": 9, "end_beats": 5, "speed": 2.5, "at": 1060.0, "lead": 0.0,
+			"cam": {"kind": "drone",
+				"wide": {"yaw_at": 990.0, "yaw": 0.0, "dist": 62.0, "pitch": 52.0, "lead": 0.1, "side": 0.0, "band": 90.0, "clear": 14.0, "fov": 46.0},
+				"tall": {"yaw_at": 990.0, "yaw": 0.0, "dist": 70.0, "pitch": 54.0, "lead": 0.12, "side": 0.0, "band": 90.0, "clear": 14.0, "fov": 66.0}}})
+	var only := str(opts["shots"]).split(",", false)
+	if only.is_empty():
+		return shots
+	var picked: Array[Dictionary] = []
+	for s in shots:
+		if str(s["tag"]) in only:
+			picked.append(s)
+	return picked
+
+
 func _initialize() -> void:
 	for arg in OS.get_cmdline_user_args():
 		var kv := arg.split("=", true, 1)
 		if kv.size() == 2:
 			opts[kv[0]] = kv[1]
 	DirAccess.make_dir_recursive_absolute(opts["footage"])
-	var p: Variant = JSON.parse_string(FileAccess.get_file_as_string(str(opts["swarm"]).path_join("practice.json")))
-	practice = p if typeof(p) == TYPE_DICTIONARY else {}
+	var prac: Variant = JSON.parse_string(FileAccess.get_file_as_string(str(opts["swarm"]).path_join("practice.json")))
+	if typeof(prac) == TYPE_DICTIONARY:
+		practice = prac
+	var music: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://assets/audio/music/music.json"))
+	if typeof(music) == TYPE_DICTIONARY:
+		beat = 60.0 / float(music["drive"]["bpm"])
 	root.close_requested.connect(func() -> void: print("WINDOW close requested at %.2f s" % _now()))
 	_frame0 = Engine.get_process_frames()
 	root.add_child(KeepDrawing.new())
@@ -550,34 +304,40 @@ func _initialize() -> void:
 
 
 func _run() -> void:
-	var gens: PackedStringArray = str(opts["gens"]).split(",", false) if str(opts["gens"]) != "" \
-			else PackedStringArray(GENERATIONS)
-	hud = Hud.new()
-	root.add_child(hud)
-	await _world(ROUTE)
-	var track: Track = view.map.routes[ROUTE]["track"]
-	for i in gens.size():
-		var swarm := _load(ROUTE, gens[i])
-		if swarm == null:
-			return
-		await _swarm_shot("gen_%d" % i, swarm, track, "Generation %d" % (i + 1), _practice_label(gens[i]),
-				FIRST_HOLD_S if i == 0 else HOLD_S, LAP_S, 1.0 if i % 2 == 0 else -1.0)
-	var shipped := _load(ROUTE, SHIPPED)
-	if shipped == null:
-		return
-	await _sees_shot(shipped, track)
-	await _world(HELD_OUT)
-	var held := _load(HELD_OUT, SHIPPED)
-	if held == null:
-		return
-	await _swarm_shot("held_out", held, view.map.routes[HELD_OUT]["track"], "Momiji Valley",
-			"a road it never practised on", HOLD_S, HELD_OUT_S, 1.0)
+	var stills := int(opts["stills"])
+	var sizes := str(opts["sizes"]).split(",", false)
+	if sizes.is_empty():
+		sizes.append("")
+	for size in sizes:
+		if size != "":
+			var wh := size.split("x")
+			root.size = Vector2i(int(wh[0]), int(wh[1]))
+			await process_frame
+			await process_frame
+		var tall := _tall()
+		print("FILM aspect %s, window %s" % ["tall" if tall else "wide", str(root.size)])
+		for shot in _plan():
+			if str(shot["route"]) != _route:
+				await _world(str(shot["route"]))
+			var sw := _load(str(shot["route"]), str(shot["gen"]))
+			if sw == null:
+				return
+			await _shot(shot, sw, tall, stills)
+		_route = ""
 	_cue("end")
-	var f := FileAccess.open("%s/cues.json" % opts["footage"], FileAccess.WRITE)
-	f.store_string(JSON.stringify(cues, "  "))
-	f.close()
+	if stills == 0:
+		var f := FileAccess.open("%s/cues.json" % opts["footage"], FileAccess.WRITE)
+		f.store_string(JSON.stringify(cues, "  "))
+		f.close()
 	print("FILM done: %d cues, %.1f s of footage" % [cues.size(), _now()])
 	quit()
+
+
+func _tall() -> bool:
+	if str(opts["aspect"]) != "":
+		return str(opts["aspect"]) == "tall"
+	var s := root.get_visible_rect().size
+	return s.y > s.x
 
 
 ## A fresh world for `route` (the old one freed), its road gates open as swarm.gd drove them.
@@ -591,6 +351,11 @@ func _world(route: String) -> void:
 	await view.build_world(route, "high")
 	for gate: RoadGate in view.map.gates.values():
 		gate.set_open(true, false)
+	# let the fresh world settle (streaming, the gates' props) before a shot's first frame
+	for i in 30:
+		await process_frame
+	_route = route
+	print("FILM world %s: sun %s" % [route, str(view.map.sun_dir)])
 
 
 func _load(route: String, gen: String) -> Swarm:
@@ -629,136 +394,348 @@ func _load(route: String, gen: String) -> Swarm:
 	return sw
 
 
-## A generation's cars from the start line: the clock eased up, the drone over the pack, the card
-## and the strip. `until`: the most playback seconds shown.
-func _swarm_shot(tag: String, sw: Swarm, track: Track, heading: String, caption: String, hold: float,
-		until: float, side: float) -> void:
-	var n := sw.runs.size()
-	var end := minf(sw.until(), until)
-	var clock := clampf(end / SHOT_S, 1.0, MAX_SPEED)
-	var times := _schedule(hold, clock, end, sw.until())
-	var drone := DronePath.new(sw, track, view.map, times, side)
-	var ghosts: Array[ReplayGhost] = []
-	var colours := PackedColorArray()
-	for k in n:
-		var g := ReplayGhost.spawn(view, sw.runs[k].header)
-		var c := LIVERIES[k % LIVERIES.size()]
-		g.car.set_livery(c, c.darkened(0.45))
-		ghosts.append(g)
-		colours.append(c)
-	var live := colours.duplicate()
-	var greyed := PackedByteArray()
-	greyed.resize(n)
-	var where := PackedFloat32Array()
-	where.resize(n)
-	hud.show_shot(heading, caption, sw.length)
-	_cue(tag, {"generation": sw.name, "steps": int(sw.info.get("steps", 0)), "run": str(sw.info.get("run", "")),
-			"practice": caption, "cars": n, "clock": snappedf(clock, 0.01), "until": snappedf(end, 0.01)})
-	# share of the driving cars inside the frame, summed over the frames with any driving
-	var framed := 0.0
-	var framed_frames := 0
-	for f in times.size():
-		var t := times[f]
-		var driving := 0
-		var done := 0
-		for k in n:
-			var data := sw.runs[k]
-			ghosts[k].pose(data.car_at(t), minf(clock, 3.0) / FPS)
-			where[k] = sw.progress_at(k, t)
-			if t < sw.ends[k]:
-				driving += 1
-			elif sw.finished[k] == 1:
-				done += 1
-			elif greyed[k] == 0:
-				greyed[k] = 1
-				live[k] = ENDED
-				ghosts[k].car.set_livery(ENDED, ENDED.darkened(0.35))
-		view.camera.global_transform = drone.camera[f]
-		var seen := 0
-		for k in n:
-			if t < sw.ends[k] and view.camera.is_position_in_frustum(ghosts[k].car.global_position):
-				seen += 1
-		if driving > 0:
-			framed += float(seen) / driving
-			framed_frames += 1
-		hud.tick(driving, done, n, clock if f / FPS > hold else 1.0, where, live)
-		await process_frame
-	var finished := 0
-	var furthest := 0.0
-	for k in n:
-		finished += sw.finished[k]
-		furthest = maxf(furthest, where[k])
-	_cue(tag + "_end", {"finished": finished, "furthest": snappedf(furthest, 0.1),
-			"framed": snappedf(framed / maxi(framed_frames, 1), 0.01), "pan_p95": snappedf(drone.pan_p95, 0.1),
-			"pan_max": snappedf(drone.pan_max, 0.1), "jerk_max": snappedf(drone.jerk_max, 0.1),
-			"dist_p50": snappedf(drone.dist_p50, 1.0)})
-	for g in ghosts:
-		g.car.queue_free()
-
-
-## The playback time of every frame of a swarm shot: `hold` on the line, then the clock eased
-## from real speed up to `clock` over RAMP_S until `end`, and END_HOLD_S more: still running
-## while cars drive (up to `stop`, the last one's stop), so a shot cut early ends in motion.
-func _schedule(hold: float, clock: float, end: float, stop: float) -> PackedFloat32Array:
+## Plays one shot: its window of the practice, every car posed each frame (grey once its run has
+## ended), the camera on its path. With `stills` > 0, only that many frames, each saved as a PNG.
+func _shot(shot: Dictionary, sw: Swarm, tall: bool, stills: int) -> void:
+	var track: Track = view.map.routes[str(shot["route"])]["track"]
+	var n_edit := roundi(int(shot["beats"]) * beat * FPS)
+	var n_end := roundi(int(shot.get("end_beats", 0)) * beat * FPS)
+	var n := n_edit + n_end + roundi(TAIL_S * FPS)
+	var speed := float(shot["speed"])
+	var t0 := float(shot.get("from", 0.0))
+	if shot.has("at"):
+		var arrive := PackedFloat32Array()
+		for k in sw.runs.size():
+			var t := sw.time_at(k, float(shot["at"]))
+			if t < INF:
+				arrive.append(t)
+		arrive.sort()
+		var mid := arrive[arrive.size() / 2] if not arrive.is_empty() else 0.0
+		t0 = maxf(mid - (n_edit / FPS * 0.5 - float(shot.get("lead", 0.0))) * speed, 0.0)
 	var times := PackedFloat32Array()
-	var t := 0.0
-	var tau := -hold
-	var ending := 0.0
-	while true:
-		if t >= end:
-			ending += 1.0 / FPS
-			if ending >= END_HOLD_S:
-				break
-		times.append(t)
-		tau += 1.0 / FPS
-		if tau > 0.0:
-			t = minf(t + lerpf(1.0, clock, smoothstep(0.0, RAMP_S, tau)) / FPS, stop)
-	return times
+	for f in n:
+		times.append(t0 + f / FPS * speed)
+	var cam_spec: Dictionary = shot["cam"]
+	var lens: Dictionary = cam_spec["tall" if tall else "wide"]
+	var car := sw.best() if str(shot.get("car", "")) == "best" else -1
+	var path: CameraPath
+	match str(cam_spec["kind"]):
+		"chase":
+			path = _chase(sw, car, times, lens)
+		"drone":
+			path = _drone(sw, track, times, lens)
+		_:
+			path = _roadside(sw, track, times, lens, cam_spec["zone"])
+	var rows := 1920.0 if tall else 1080.0
+	var cols := 1080.0 if tall else 1920.0
+	path.measure(rows, cols)
+
+	var ghosts: Array[ReplayGhost] = []
+	var eye: SenseView = null
+	for k in sw.runs.size():
+		if car >= 0 and k != car:
+			ghosts.append(null)
+			continue
+		var g := ReplayGhost.spawn(view, sw.runs[k].header)
+		var c := LIVERIES[k % LIVERIES.size()] if car < 0 else UITheme.PAPER
+		g.car.set_livery(c, c.darkened(0.45) if car < 0 else UITheme.SAKURA)
+		ghosts.append(g)
+	if car >= 0:
+		eye = SenseView.new()
+		eye.car = ghosts[car].car
+		eye.sense = DriveSense.new(track)
+		view.add_child(eye)
+	var greyed := PackedByteArray()
+	greyed.resize(sw.runs.size())
+	var tag := str(shot["tag"])
+	_cue(tag, {"generation": sw.name, "route": str(shot["route"]), "steps": int(sw.info.get("steps", 0)),
+			"cars": sw.runs.size(), "finished": sw.finishers(), "beats": int(shot["beats"]), "frames": n_edit,
+			"speed": speed, "from": snappedf(t0, 0.01), "aspect": "tall" if tall else "wide",
+			"practice": str((practice.get(sw.name, {}) as Dictionary).get("label", "")),
+			"end_frames": n_end, "end_beats": int(shot.get("end_beats", 0))})
+	var pick := PackedInt32Array()
+	if stills > 0:
+		for i in stills:
+			pick.append(roundi(i * (n_edit - 1) / maxf(stills - 1, 1)))
+	var hero := PackedFloat32Array()
+	var in_frame := PackedFloat32Array()
+	var focal := rows * 0.5 / tan(deg_to_rad(path.fov[0] * 0.5))
+	for f in n:
+		if stills > 0 and not (f in pick):
+			continue
+		var t := times[f]
+		var dt := speed / FPS if f > 0 and stills == 0 else 1.0 / FPS
+		var inv := path.xf[f].affine_inverse()
+		var big := 0.0
+		var seen := 0
+		for k in sw.runs.size():
+			if ghosts[k] == null:
+				continue
+			ghosts[k].pose(sw.runs[k].car_at(t), dt)
+			if t >= sw.ends[k] and sw.finished[k] == 0 and greyed[k] == 0:
+				greyed[k] = 1
+				if car < 0:
+					ghosts[k].car.set_livery(ENDED, ENDED.darkened(0.35))
+			if t < sw.ends[k] or sw.finished[k] == 1:
+				var q := inv * ghosts[k].car.global_position
+				var sp := CameraPath.px(q, focal)
+				if q.z < -1.0 and absf(sp.x) < cols * 0.5 and absf(sp.y) < rows * 0.5:
+					seen += 1
+					big = maxf(big, 4.2 * focal / -q.z)
+		hero.append(big)
+		in_frame.append(seen)
+		view.camera.global_transform = path.xf[f]
+		view.camera.fov = path.fov[f]
+		view.camera.near = 0.1
+		view.camera.far = 4000.0
+		if stills > 0:
+			await process_frame
+			await process_frame
+			await process_frame
+			var img := root.get_texture().get_image()
+			var file := "%s/stills/%s_%s_%d.png" % [opts["footage"], "tall" if tall else "wide", tag, pick.find(f)]
+			DirAccess.make_dir_recursive_absolute(file.get_base_dir())
+			img.save_png(file)
+			print("STILL %s t=%.2f %dx%d cars in frame %d, nearest %.0f px" % [file, t, img.get_width(), img.get_height(), seen, big])
+		else:
+			await process_frame
+	var hs := hero.duplicate()
+	hs.sort()
+	var fs := in_frame.duplicate()
+	fs.sort()
+	_cue(tag + "_end", {"pan_max": snappedf(path.pan_max, 0.1), "pan_p95": snappedf(path.pan_p95, 0.1),
+			"hero_px_p50": snappedf(hs[hs.size() / 2], 1.0), "hero_px_max": snappedf(hs[hs.size() - 1], 1.0),
+			"in_frame_p50": fs[fs.size() / 2], "in_frame_max": fs[fs.size() - 1]})
+	if eye != null:
+		eye.queue_free()
+	for g in ghosts:
+		if g != null:
+			g.car.queue_free()
 
 
-## The fastest run of `sw` at real speed from above and behind, with what its network sees drawn
-## over the road; the other cars off.
-func _sees_shot(sw: Swarm, track: Track) -> void:
-	var k := sw.best()
+## A point [m from the start line, m right of the centre line, m over the ground] on `track`.
+func _spot(track: Track, v: Array) -> Vector3:
+	var p := track.position_at_abs(track.start_s + float(v[0]), float(v[1]))
+	p.y = view.map.ground_height(p.x, p.z) + float(v[2])
+	return p
+
+
+## A camera standing by the road (moving from `pos` to `pos1` when given, eased), looking at
+## `aim` pulled `follow` of the way towards the middle of the cars inside `zone` (those still
+## driving, or ended less than a second ago; with none there, the nearest time there were),
+## smoothed with no lag.
+func _roadside(sw: Swarm, track: Track, times: PackedFloat32Array, lens: Dictionary, zone: Array) -> CameraPath:
+	var n := times.size()
+	var p0 := _spot(track, lens["pos"])
+	var p1 := _spot(track, lens.get("pos1", lens["pos"]))
+	var a0 := _spot(track, lens["aim"])
+	var a1 := _spot(track, lens.get("aim1", lens["aim"]))
+	var follow := float(lens.get("follow", 0.0))
+	var cx := PackedFloat32Array()
+	var cy := PackedFloat32Array()
+	var cz := PackedFloat32Array()
+	var seen := PackedByteArray()
+	for f in n:
+		var c := Vector3.ZERO
+		var m := 0
+		for k in sw.runs.size():
+			if times[f] > sw.ends[k] + 1.0 and sw.finished[k] == 0:
+				continue
+			var s := sw.progress_at(k, times[f])
+			if s >= float(zone[0]) and s <= float(zone[1]):
+				c += sw.runs[k].pos(sw.runs[k].index_at(times[f]))
+				m += 1
+		if m > 0:
+			c /= m
+			c.y = view.map.ground_height(c.x, c.z) + 1.0
+		cx.append(c.x)
+		cy.append(c.y)
+		cz.append(c.z)
+		seen.append(1 if m > 0 else 0)
+	# frames with nobody in the zone hold the nearest frame that had someone (before, else after),
+	# so the aim never swings back to the bare `aim` when the pack has passed
+	var last := -1
+	for f in n:
+		if seen[f] == 1:
+			last = f
+		elif last >= 0:
+			cx[f] = cx[last]
+			cy[f] = cy[last]
+			cz[f] = cz[last]
+	var first := seen.find(1)
+	var w := 1.0 if first >= 0 else 0.0
+	for f in range(0, maxi(first, 0)):
+		cx[f] = cx[first]
+		cy[f] = cy[first]
+		cz[f] = cz[first]
+	var sigma := 0.6 * FPS
+	cx = _smooth(cx, sigma)
+	cy = _smooth(cy, sigma)
+	cz = _smooth(cz, sigma)
+	var path := CameraPath.new()
+	for f in n:
+		var u := smoothstep(0.0, 1.0, f / maxf(n - 1, 1))
+		var aim := a0.lerp(a1, u)
+		var pack := Vector3(cx[f], cy[f], cz[f])
+		var look := aim.lerp(pack, follow * w)
+		var pos := p0.lerp(p1, u)
+		path.xf.append(Transform3D(Basis(), pos).looking_at(look, Vector3.UP))
+		path.fov.append(float(lens["fov"]))
+		path.aim.append(look)
+	return path
+
+
+## A camera at the shoulder of run `k`: `back` m behind, `side` m right, `up` m over it, looking
+## `ahead` m in front, the car's path smoothed with no lag so the camera floats.
+func _chase(sw: Swarm, k: int, times: PackedFloat32Array, lens: Dictionary) -> CameraPath:
 	var data := sw.runs[k]
-	var t0 := 0.0
-	for i in data.count:
-		if sw.progress[k][i] >= SEES_FROM:
-			t0 = data.time(i)
-			break
-	var g := ReplayGhost.spawn(view, data.header)
-	g.car.set_livery(UITheme.PAPER, UITheme.SAKURA)
-	var eye := SenseView.new()
-	eye.car = g.car
-	eye.sense = DriveSense.new(track)
-	view.add_child(eye)
-	var cam := view.camera
-	cam.fov = 55.0
-	hud.hide_all()
-	_cue("sees", {"generation": sw.name, "car": k, "from_m": SEES_FROM})
-	var t := t0
-	var pos := Vector3.ZERO
-	var look := Vector3.ZERO
-	while t < t0 + SEES_S:
-		g.pose(data.car_at(t), 1.0 / FPS)
-		var fwd := -g.car.global_basis.z
+	var n := times.size()
+	var px := PackedFloat32Array()
+	var py := PackedFloat32Array()
+	var pz := PackedFloat32Array()
+	var lx := PackedFloat32Array()
+	var ly := PackedFloat32Array()
+	var lz := PackedFloat32Array()
+	for f in n:
+		var s: Dictionary = data.car_at(times[f])
+		var xf: Transform3D = s["xform"]
+		var fwd := -xf.basis.z
 		fwd.y = 0.0
 		fwd = fwd.normalized()
-		var want := g.car.global_position - fwd * 13.0 + Vector3.UP * 8.5
-		var ahead := g.car.global_position + fwd * 14.0
-		pos = want if t == t0 else pos.lerp(want, 1.0 - exp(-1.0 / (FPS * 0.35)))
-		look = ahead if t == t0 else look.lerp(ahead, 1.0 - exp(-1.0 / (FPS * 0.2)))
-		cam.global_position = pos
-		cam.look_at(look, Vector3.UP)
-		await process_frame
-		t += 1.0 / FPS
-	_cue("sees_end")
-	eye.queue_free()
-	g.car.queue_free()
+		var right := Vector3(-fwd.z, 0.0, fwd.x)
+		var p := xf.origin - fwd * float(lens["back"]) + right * float(lens["side"]) + Vector3.UP * float(lens["up"])
+		var l := xf.origin + fwd * float(lens["ahead"]) + Vector3.UP * 0.5
+		px.append(p.x)
+		py.append(p.y)
+		pz.append(p.z)
+		lx.append(l.x)
+		ly.append(l.y)
+		lz.append(l.z)
+	var sp := 0.25 * FPS
+	var sl := 0.35 * FPS
+	px = _smooth(px, sp)
+	py = _smooth(py, sp)
+	pz = _smooth(pz, sp)
+	lx = _smooth(lx, sl)
+	ly = _smooth(ly, sl)
+	lz = _smooth(lz, sl)
+	var path := CameraPath.new()
+	for f in n:
+		var look := Vector3(lx[f], ly[f], lz[f])
+		path.xf.append(Transform3D(Basis(), Vector3(px[f], py[f], pz[f])).looking_at(look, Vector3.UP))
+		path.fov.append(float(lens["fov"]))
+		path.aim.append(look)
+	return path
 
 
-func _practice_label(gen: String) -> String:
-	return str((practice.get(gen, {}) as Dictionary).get("label", ""))
+## A drone over the pack that never turns, so the ground only slides under it: the middle of
+## the cars still driving within `band` m of the front (their 90th percentile, all of them when
+## fewer than 6), taken on the centre line at their distance along the road and smoothed with no
+## lag; the camera `dist` m from a point `lead` of that ahead of the middle, looking down `pitch`°
+## along the road's heading at `yaw_at` m turned `yaw`° to the right, `side` of `dist` to the
+## right, raised where the ground comes within `clear` m.
+func _drone(sw: Swarm, track: Track, times: PackedFloat32Array, lens: Dictionary) -> CameraPath:
+	var n := times.size()
+	var band := float(lens["band"])
+	var cx := PackedFloat32Array()
+	var cy := PackedFloat32Array()
+	var cz := PackedFloat32Array()
+	cx.resize(n)
+	cy.resize(n)
+	cz.resize(n)
+	var seen := PackedByteArray()
+	seen.resize(n)
+	for f in n:
+		var alive := PackedFloat32Array()
+		for k in sw.runs.size():
+			if times[f] < sw.ends[k]:
+				alive.append(sw.progress_at(k, times[f]))
+		if alive.is_empty():
+			continue
+		alive.sort()
+		var front := alive[alive.size() - 1] if alive.size() < 6 else alive[int(alive.size() * 0.9)]
+		var c := Vector3.ZERO
+		var m := 0
+		for p in alive:
+			if p >= front - band and p <= front:
+				c += track.position_at_abs(track.start_s + p, 0.0)
+				m += 1
+		c /= maxi(m, 1)
+		cx[f] = c.x
+		cy[f] = c.y
+		cz[f] = c.z
+		seen[f] = 1
+	# nobody driving: hold the middle from before (at the start, the first one after)
+	var first := seen.find(1)
+	if first < 0:
+		_fail("drone: no car drives during the shot")
+		first = 0
+	var last := first
+	for f in n:
+		if seen[f] == 1:
+			last = f
+		else:
+			cx[f] = cx[last]
+			cy[f] = cy[last]
+			cz[f] = cz[last]
+	var sigma := 0.5 * FPS
+	cx = _smooth(cx, sigma)
+	cy = _smooth(cy, sigma)
+	cz = _smooth(cz, sigma)
+	var fwd := track.forward_at_abs(track.start_s + float(lens["yaw_at"]))
+	var heading := atan2(fwd.x, fwd.z) - deg_to_rad(float(lens["yaw"]))
+	var dir := Vector3(sin(heading), 0.0, cos(heading))
+	var right := Vector3(-dir.z, 0.0, dir.x)
+	var d := float(lens["dist"])
+	var pitch := deg_to_rad(float(lens["pitch"]))
+	var back := -dir * d * cos(pitch) + right * d * float(lens["side"]) + Vector3.UP * d * sin(pitch)
+	var aims := PackedVector3Array()
+	var spots := PackedVector3Array()
+	var raise := PackedFloat32Array()
+	for f in n:
+		var aim := Vector3(cx[f], cy[f], cz[f]) + dir * d * float(lens["lead"])
+		var pos := aim + back
+		aims.append(aim)
+		spots.append(pos)
+		raise.append(maxf(view.map.ground_height(pos.x, pos.z) + float(lens["clear"]) - pos.y, 0.0))
+	raise = _smooth(_dilate(raise, roundi(0.5 * FPS)), 0.5 * FPS)
+	var path := CameraPath.new()
+	for f in n:
+		path.xf.append(Transform3D(Basis(), spots[f] + Vector3.UP * raise[f]).looking_at(aims[f], Vector3.UP))
+		path.fov.append(float(lens["fov"]))
+		path.aim.append(aims[f])
+	return path
+
+
+## Close to a Gaussian of `sigma` samples (three box passes), with the ends held.
+static func _smooth(a: PackedFloat32Array, sigma: float) -> PackedFloat32Array:
+	var r := maxi(int(roundf(sigma)), 1)
+	var out := a
+	for i in 3:
+		var n := out.size()
+		var box := PackedFloat32Array()
+		box.resize(n)
+		var sum := 0.0
+		for j in range(-r, r + 1):
+			sum += out[clampi(j, 0, n - 1)]
+		for j in n:
+			box[j] = sum / (2 * r + 1)
+			sum += out[clampi(j + r + 1, 0, n - 1)] - out[clampi(j - r, 0, n - 1)]
+		out = box
+	return out
+
+
+## The largest value within `r` samples (so smoothing after it never dips under a peak).
+static func _dilate(a: PackedFloat32Array, r: int) -> PackedFloat32Array:
+	var n := a.size()
+	var out := PackedFloat32Array()
+	out.resize(n)
+	for i in n:
+		var m := a[i]
+		for j in range(maxi(i - r, 0), mini(i + r, n - 1) + 1):
+			m = maxf(m, a[j])
+		out[i] = m
+	return out
 
 
 func _now() -> float:
