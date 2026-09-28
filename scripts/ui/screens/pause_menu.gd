@@ -133,8 +133,8 @@ func open() -> void:
 	elif not leg.is_empty():
 		_sub.text = "%s  ·  %s  ·  CAMPAIGN" % [leg["code"], str(m.get("name", "")).to_upper()]
 	else:
-		var free: bool = str(game.mode) == str(game.MODE_FREE_ROAM)
-		_sub.text = "%s  ·  %s" % [str(m.get("name", "")).to_upper(), "FREE ROAM" if free else "TIME TRIAL"]
+		var kinds := {str(game.MODE_FREE_ROAM): "FREE ROAM", str(game.MODE_RACE): "RACE"}
+		_sub.text = "%s  ·  %s" % [str(m.get("name", "")).to_upper(), kinds.get(str(game.mode), "TIME TRIAL")]
 	_restart.visible = not liaison
 	_restart.text = "Retry stage" if not leg.is_empty() else "Restart"
 	_menu.text = "Quit to title" if not leg.is_empty() else "Main menu"

@@ -15,6 +15,12 @@ extends RefCounted
 ## Nothing else: no racing line, checkpoints, progress, track identity, tyre or engine state.
 ## Both the rays and the road points come from `track` (the route's centre-line samples and half
 ## widths), not from colliders, so grass, trees and walls all look alike: "not road".
+##
+## Race lanes (scripts/ai/race_bot.gd): with `lane_half_width` > 0 the driver sees a narrower road
+## of that carriageway half width (plus the real verge) whose centre line runs `lane` metres right
+## of the real one, clamped per sample so it never reaches past the real carriageway. The network
+## trained on 7 m roads only; on a wider road this keeps what it sees familiar and puts it on one
+## side. 0 (training, auto-drive, ghosts): the real road, computed exactly as before.
 
 ## Bump when the layout of observe() changes; exported policies carry the version they expect.
 const VERSION := 1
@@ -41,6 +47,10 @@ var track: Track
 var hint: int = -1
 ## Ray distances (m) from the last observe(), for debug drawing.
 var rays := PackedFloat32Array()
+## Virtual road for racing (see above): carriageway half width (0 = the real road) and its centre
+## line's offset right of the real one (m).
+var lane_half_width: float = 0.0
+var lane: float = 0.0
 
 var _ray_x := PackedFloat32Array()
 var _ray_z := PackedFloat32Array()
@@ -150,7 +160,8 @@ func _hint_or_search(pos: Vector3) -> int:
 	return hint
 
 
-## Centre line (x, z) at absolute distance s, like Track.position_at_abs on the ground plane.
+## Centre line (x, z) at absolute distance s, like Track.position_at_abs on the ground plane; on a
+## virtual road the lane's centre line.
 func _centre_at(s: float) -> Vector2:
 	var data := track.data
 	var f: float
@@ -170,7 +181,13 @@ func _centre_at(s: float) -> Vector2:
 		t = f - i
 		a = i * Track.COLS
 		b = a + Track.COLS
-	return Vector2(lerpf(data[a], data[b], t), lerpf(data[a + 2], data[b + 2], t))
+	var p := Vector2(lerpf(data[a], data[b], t), lerpf(data[a + 2], data[b + 2], t))
+	if lane_half_width > 0.0 and lane != 0.0:
+		var room := maxf(lerpf(data[a + 5], data[b + 5], t) - lane_half_width, 0.0)
+		var fx := lerpf(data[a + 3], data[b + 3], t)
+		var fz := lerpf(data[a + 4], data[b + 4], t)
+		p += Vector2(-fz, fx) * (clampf(lane, -room, room) / sqrt(fx * fx + fz * fz))
+	return p
 
 
 ## Both edges of the drivable road around the car, in the car's ground frame (x right, z ahead),
@@ -189,14 +206,22 @@ func _cast_rays(pos: Vector3, fwd: Vector3, right: Vector3) -> void:
 		var o := i * cols
 		var cx := data[o] - pos.x
 		var cz := data[o + 2] - pos.z
-		# Track.right() is (-forward.z, 0, forward.x); times the drivable half width
-		var hw := data[o + 5] + verge
-		var rx := -data[o + 4] * hw
-		var rz := data[o + 3] * hw
-		var lx := cx - rx
-		var lz := cz - rz
-		var ux := cx + rx
-		var uz := cz + rz
+		# Track.right() is (-forward.z, 0, forward.x); the edges lie lo and hi metres along it
+		var hw := data[o + 5]
+		var lo := -hw - verge
+		var hi := hw + verge
+		if lane_half_width > 0.0:
+			var room := maxf(hw - lane_half_width, 0.0)
+			var c := clampf(lane, -room, room)
+			var vhw := minf(lane_half_width, hw)
+			lo = c - vhw - verge
+			hi = c + vhw + verge
+		var rx := -data[o + 4]
+		var rz := data[o + 3]
+		var lx := cx + rx * lo
+		var lz := cz + rz * lo
+		var ux := cx + rx * hi
+		var uz := cz + rz * hi
 		# left edge in slot m, right edge in slot n + m
 		var ax := lx * right.x + lz * right.z
 		var az := lx * fwd.x + lz * fwd.z

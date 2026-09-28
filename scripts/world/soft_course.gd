@@ -12,7 +12,9 @@ extends Node3D
 ## the same way but never break: they cost a little speed and wobble back.
 ##
 ## Everything comes back on a stage restart (a new car), a reset to the track (the car jumps)
-## and a map reload (a new MapWorld builds a new SoftCourse).
+## and a map reload (a new MapWorld builds a new SoftCourse). A race's rival (group `race_rival`)
+## smashes and knocks like any car, but its arrival and its rescues restore nothing: the course
+## comes back for the player's run only.
 ##
 ## Spectators are knockable people, not smashables: the child `crowd` (scripts/world/crowd.gd)
 ## gets each car's box from the same per-tick scan and costs speed through `slow_car()`.
@@ -50,6 +52,8 @@ const SMASHABLE := {
 	"hay_bale_square": {"loss": 0.08, "sfx": &"thump", "db": -1.0, "fling": 0.65, "chip": Color("e3c16f")},
 	"hay_bale_round": {"loss": 0.12, "sfx": &"thump", "db": 0.0, "fling": 0.55, "chip": Color("e3c16f")},
 }
+## Cars whose passage through a checkpoint gate billows its banner (the first ones in).
+const GATE_CARS := 8
 ## Mapgen road signs (map.json `signs` with a `mesh`): one node each, not a MultiMesh instance.
 const ROAD_SIGN := "road_sign"
 const ROAD_SIGN_DATA := {"loss": 0.04, "sfx": &"thump", "db": -3.0, "fling": 0.8, "chip": Color("f5f2ea")}
@@ -116,6 +120,8 @@ var _car_half: PackedVector3Array
 var _car_centre: PackedVector3Array
 var _car_last: PackedVector3Array
 var _car_recent: PackedFloat32Array ## speed share lost lately (see LOSS_BUDGET)
+## Per car: whether its arrival and its resets restore the course (not a race's rivals).
+var _car_restores: Array[bool] = []
 var _gate_side: PackedFloat32Array ## per car, per gate: signed distance along the gate last tick
 
 # ---------------------------------------------------------------- debris and bursts
@@ -352,7 +358,7 @@ func build_gates(checkpoints: Array[Dictionary], track: Track, closed: bool, arc
 				"gate": gate, "side": side, "mm": null, "idx": -1, "xf": Transform3D(),
 				"angle": 0.0, "vel": 0.0, "axis": Vector3.RIGHT, "touch": -10,
 			})
-	_gate_side.resize(4 * maxi(_gates.size(), 1))
+	_gate_side.resize(GATE_CARS * maxi(_gates.size(), 1))
 	_gate_side.fill(0.0)
 	_settle_in = 2
 
@@ -458,9 +464,11 @@ func _add_car(car: Car) -> void:
 	_car_centre.append(box.get_center())
 	_car_last.append(car.global_position)
 	_car_recent.append(0.0)
+	_car_restores.append(not car.is_in_group(&"race_rival"))
 	car.tree_exiting.connect(_remove_car.bind(car), CONNECT_ONE_SHOT)
 	# a new car is a new run: the course is whole again
-	restore()
+	if _car_restores.back():
+		restore()
 
 
 func _remove_car(car: Car) -> void:
@@ -472,6 +480,7 @@ func _remove_car(car: Car) -> void:
 	_car_centre.remove_at(i)
 	_car_last.remove_at(i)
 	_car_recent.remove_at(i)
+	_car_restores.remove_at(i)
 
 
 # ================================================================ per tick
@@ -489,7 +498,7 @@ func _physics_process(delta: float) -> void:
 		var pos := car.global_position
 		var speed := car.linear_velocity.length()
 		# reset_to() teleports the car: a jump no physics step could make
-		if pos.distance_to(_car_last[ci]) > 1.5 + speed * delta * 2.0:
+		if pos.distance_to(_car_last[ci]) > 1.5 + speed * delta * 2.0 and _car_restores[ci]:
 			restore()
 		_car_last[ci] = pos
 		if _car_recent[ci] > 0.0:
@@ -641,18 +650,18 @@ func _hit_upright(u: Dictionary, car: Car, ci: int) -> void:
 
 ## Car crossing a gate plane between its uprights: the banner billows.
 func _check_gates(ci: int, car: Car) -> void:
-	if ci >= 4:
+	if ci >= GATE_CARS:
 		return
 	var p := car.global_position
 	for gi in _gates.size():
 		var g := _gates[gi]
 		var d := p - g.global_position
 		if d.length_squared() > 900.0:
-			_gate_side[gi * 4 + ci] = 0.0
+			_gate_side[gi * GATE_CARS + ci] = 0.0
 			continue
 		var s := d.dot(g.global_basis.z)
-		var last := _gate_side[gi * 4 + ci]
-		_gate_side[gi * 4 + ci] = s
+		var last := _gate_side[gi * GATE_CARS + ci]
+		_gate_side[gi * GATE_CARS + ci] = s
 		if last != 0.0 and signf(last) != signf(s) and absf(d.dot(g.global_basis.x)) < g.half_span:
 			g.billow(car.linear_velocity, 0.6)
 

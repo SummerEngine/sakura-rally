@@ -139,6 +139,11 @@ class Placer:
             return math.atan2((p[0] - x), (p[2] - z))
         if face == "along" and i is not None:
             return self.road_yaw(i)
+        if face == "road_side" and i is not None:
+            # square to the road, front out toward the side it stands on, like a `line` row
+            p, r = self.road.pos[i], self.road.right[i]
+            side = 1.0 if (x - p[0]) * r[0] + (z - p[2]) * r[1] >= 0.0 else -1.0
+            return self.road_yaw(i) + side * math.pi / 2
         if face == "center" and center is not None:
             return math.atan2(-(center[0] - x), -(center[1] - z))
         return float(self.rng.uniform(0, 2 * math.pi))
@@ -215,7 +220,7 @@ class Placer:
             x = float(road.pos[i, 0] + road.right[i, 0] * lat)
             z = float(road.pos[i, 2] + road.right[i, 1] * lat)
             yaw = self.road_yaw(i) + (math.pi / 2 if side > 0 else -math.pi / 2)
-            if float(self.ter.sample(self.ter.road_dist, x, z)) < road.half_width[i] + gap - 0.6:
+            if float(self.ter.sample(self.ter.road_edge, x, z)) < gap - 0.6:
                 continue  # another stretch of road is closer than this one
             self.emit(barrier, x, z, yaw, 1.0, sink=0.05, radius=0.6)
         people = f.get("props", SPECTATORS)
@@ -233,7 +238,7 @@ class Placer:
             z = float(road.pos[i, 2] + road.right[i, 1] * lat)
             if not self.occ.free(x, z, 0.4):
                 continue
-            if float(self.ter.sample(self.ter.road_dist, x, z)) < road.half_width[i] + 7.6:
+            if float(self.ter.sample(self.ter.road_edge, x, z)) < 7.6:
                 continue
             name = people[int(self.rng.choice(len(people), p=weights))]
             p = road.pos[i]
@@ -248,7 +253,7 @@ class Placer:
             z = float(road.pos[i, 2] + road.right[i, 1] * lat)
             if not self.occ.free(x, z, self.footprint(name) * 0.6):
                 continue
-            if float(self.ter.sample(self.ter.road_dist, x, z)) < road.half_width[i] + 9.0:
+            if float(self.ter.sample(self.ter.road_edge, x, z)) < 9.0:
                 continue
             p = road.pos[i]
             self.emit(name, x, z, math.atan2(-(p[0] - x), -(p[2] - z)), 1.0, sink=0.05)
@@ -285,7 +290,7 @@ class Placer:
             r = f["radius"] * math.sqrt(self.rng.uniform(f.get("inner", 0.0), 1.0))
             x = cx + math.cos(a) * r
             z = cz + math.sin(a) * r
-            if float(self.ter.sample(self.ter.road_dist, x, z)) < road_clear + self.road.half_width.max():
+            if float(self.ter.sample(self.ter.road_edge, x, z)) < road_clear:
                 continue
             if float(self.ter.sample(self.ter.lake_sd, x, z)) < 2.0:
                 continue
@@ -355,7 +360,7 @@ class Placer:
         wr = ter.sample(self.weight, x, z) if self.weight is not None else np.ones(x.shape)
         inside = wr > 1e-3
         x, z, wr = x[inside], z[inside], wr[inside]
-        D = ter.sample(ter.road_dist, x, z)
+        D = ter.sample(ter.road_edge, x, z)  # metres beyond the nearest carriageway edge
         prob = r.get("density", 1.0) * wr
         prob *= (D >= r.get("road_min", 0.0)) & (D <= r.get("road_max", 1e9))
         prob *= ter.sample(ter.lot_sd, x, z) > r.get("lot_clear", 4.0)

@@ -8,10 +8,13 @@ extends Node
 ## campaign leg carries on from the previous one (the liaison from a stage's finish stop, a stage
 ## from its grid at the end of the liaison) without moving the car.
 ##
-## Joins the "track" group for Car.reset_to_track(). In a time trial the car resets to
-## the last point of the route it legitimately reached (no shortcuts by falling down a
-## switchback). Free roam and liaisons go anywhere: back on the road somewhere else, or
+## Joins the "track" group for Car.reset_to_track(). Against the clock (a time trial, a race) the
+## car resets to the last point of the route it legitimately reached (no shortcuts by falling
+## down a switchback). Free roam and liaisons go anywhere: back on the road somewhere else, or
 ## after R, the route carries on from the nearest stretch of road.
+##
+## A race (mode "race") times nothing here: its laps, checkpoints and finish are the RaceField's,
+## which calls finish_race() when the player takes the flag.
 ## Reports to the Game autoload through notify_*; Main owns the game state.
 
 signal finished(result: Dictionary)
@@ -128,9 +131,9 @@ func start_timer() -> void:
 	_lap_start = 0.0
 
 
-## Called by Car.reset_to_track(): the last legitimately reached point of the route in
-## a time trial, the nearest point of the route on a liaison, the nearest road of the world
-## (any route's track) in free roam.
+## Called by Car.reset_to_track(): the last legitimately reached point of the route against the
+## clock, the nearest point of the route on a liaison, the nearest road of the world (any
+## route's track) in free roam.
 func nearest_reset_transform(from: Vector3) -> Transform3D:
 	var road := track
 	var i := _idx
@@ -138,13 +141,18 @@ func nearest_reset_transform(from: Vector3) -> Transform3D:
 		var hit := _nearest_road(from)
 		road = hit[0]
 		i = hit[1]
-	elif mode != "time_trial":
+	elif not _timed():
 		i = track.nearest(from)
 	# Nudge back a little so the car does not land on the obstacle it just hit.
 	var xf := road.transform_at_abs(road.dist(i) - 4.0, 0.0, 0.35)
-	if mode != "time_trial" and road == track:
+	if not _timed() and road == track:
 		_reanchor(track.nearest(xf.origin, i, SEARCH_WINDOW), xf.origin)
 	return xf
+
+
+## Against the clock: a time trial or a race.
+func _timed() -> bool:
+	return mode == "time_trial" or mode == "race"
 
 
 ## Free roam: the nearest road of the world, [Track, sample index]: over every route's
@@ -198,7 +206,7 @@ func _physics_process(delta: float) -> void:
 	var on_route := absf(track.lateral(i, pos)) < track.half_width(i) + track.verge + ROUTE_MARGIN
 	if on_route:
 		_on_other_road = false
-	elif mode != "time_trial" and _tick % REANCHOR_TICKS == 0:
+	elif not _timed() and _tick % REANCHOR_TICKS == 0:
 		# Rejoining the route re-anchors the lap on it; in free roam another road of the world
 		# (the branch, the other loop) is not "off the route" either.
 		var road: Track = track
@@ -224,7 +232,8 @@ func _physics_process(delta: float) -> void:
 		_last_p = p
 		_check_crossings(before, _dist, delta)
 		if track.closed:
-			progress = clampf(fposmod(_dist, track.length) / track.length, 0.0, 1.0)
+			# A car still behind the start line (on the grid) has not begun the lap.
+			progress = clampf(fposmod(maxf(_dist, 0.0), track.length) / track.length, 0.0, 1.0)
 		else:
 			progress = clampf(p / track.length, 0.0, 1.0)
 			distance_left = track.length - p
@@ -239,7 +248,7 @@ func _physics_process(delta: float) -> void:
 	if mode == "liaison" and not has_arrived:
 		_check_arrival(pos, on_route)
 	# Direction only matters against the clock, and only judged on the road.
-	if on_route and mode == "time_trial":
+	if on_route and _timed():
 		_update_wrong_way(i, delta, kmh)
 	else:
 		_wrong_way_time = 0.0
@@ -289,6 +298,19 @@ func _finish(t: float) -> void:
 	if _game():
 		_game().notify_finished(result)
 		best_time = _game().best_time(map.route_id)
+	finished.emit(result)
+
+
+## Race: the RaceField saw the player take the flag at race time `race["time"]`; `race` carries
+## its result (position, laps, classification ...), which goes out like a time trial's.
+func finish_race(race: Dictionary) -> void:
+	var t: float = race["time"]
+	running = false
+	elapsed = t
+	var result := {"time": t, "splits": [], "top_speed_kmh": top_speed_kmh}
+	result.merge(race, true)
+	if _game():
+		_game().notify_finished(result)
 	finished.emit(result)
 
 

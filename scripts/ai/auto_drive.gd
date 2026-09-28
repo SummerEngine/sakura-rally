@@ -1,16 +1,19 @@
 class_name AutoDrive
 extends Node
 ## The trained neural driver in the game (docs/RL.md). Lives under Main (one line in
-## Main._ready) and reads Main's `car`, `map` and `chase`:
+## Main._ready) and reads Main's `car`, `map`, `chase` and, in a race, `race` and `rivals`:
 ##
 ##   I  auto-drive: the driver (a NeuralPilot with DRIVER) takes the player's car in Time Attack,
 ##      the liaison or free roam and gives it back when pressed again. A Time Attack run it drove
 ##      any part of sets no record or medal (Game.ai_drove); campaign stages, which count for the
 ##      rally classification, it sits out. The game's own takeovers (the finish stop, the liaison
-##      arrival) still win. In free roam it keeps to the road the car is on.
+##      arrival) still win. In free roam it keeps to the road the car is on. In a race (Main.race)
+##      it is a RaceBot among the rivals instead: it sees their cars, passes them and rescues
+##      itself, at the free driver's own speed (RACE_PACE).
 ##   G  ghosts: the training generations (GENERATIONS_DIR, one DrivePolicy file each, oldest
 ##      first) join as ghost cars on a staggered grid behind the player, held on the line with the
-##      player's car through the countdown: no collisions (cars never collide), their own
+##      player's car through the countdown: on no collision layer (a car with `car_contacts` on
+##      drives through them too), their own
 ##      liveries, a label over each. They leave the soft course alone (group `ghost_car`: no
 ##      smashed tape or cones, no knocked spectators, no course restore in the player's run),
 ##      park at the end of an open road, and every new run (a new car or a countdown) puts them
@@ -22,13 +25,15 @@ extends Node
 ## `policy=<file>` drives with another policy file.
 ## A driven car that leaves the road (or stops making progress) for RESCUE_S is put back on it:
 ## the player's car as with the reset key (which also works while the driver has it), a ghost on
-## its own road.
+## its own road; a RaceBot does this itself, clear of the other cars.
 
 ## The driver shipped with the game.
 const DRIVER := "res://assets/ai/driver.json"
 const GENERATIONS_DIR := "res://assets/ai/generations"
 const RESCUE_S := 2.5
 const OFF_ROAD_M := 3.0
+## Pace of the player's RaceBot in a race: no limit, the free driver's own speed.
+const RACE_PACE := INF
 ## The last stretch of an open road: the road ahead a car sees shrinks onto the end there and it
 ## only creeps, so a ghost parks and the player's car in free roam looks for the next road.
 const ROAD_END_M := 15.0
@@ -121,9 +126,13 @@ func _physics_process(delta: float) -> void:
 	var free_roam := Game.state == Game.State.FREE_ROAM
 
 	if auto_drive and drivable and not _campaign_stage():
-		if _pilot == null or _pilot.car != car:
+		var race: Variant = main.get(&"race") # Main's RaceField, null outside a race
+		if _pilot == null or _pilot.car != car or (_pilot is RaceBot) != (race != null):
 			_detach(false)
-			_pilot = _make_pilot(policy, _road_under(car, track) if free_roam else track, 0)
+			if race != null:
+				_pilot = _make_race_bot(race, track, main.rivals.size())
+			else:
+				_pilot = _make_pilot(policy, _road_under(car, track) if free_roam else track, 0)
 			car.add_child(_pilot)
 		elif not free_roam and _pilot.track != track:
 			_pilot.track = track
@@ -202,6 +211,22 @@ func _make_pilot(p: DrivePolicy, track: Track, phase: int) -> NeuralPilot:
 	return pilot
 
 
+## The player's driver in a race: a RaceBot among every entrant's car (the player's first), on
+## a phase of its own after the rivals' (0 .. rivals - 1).
+func _make_race_bot(race: Variant, track: Track, phase: int) -> RaceBot:
+	var bot := RaceBot.new()
+	bot.name = "RaceBot"
+	bot.policy = policy
+	bot.track = track
+	bot.pace = RACE_PACE
+	bot.phase = phase
+	var field: Array[Car] = []
+	for e in race.entrants:
+		field.append(e.car)
+	bot.field = field
+	return bot
+
+
 ## Hands the car back: to the player when auto-drive was switched off with the car on the road,
 ## to nobody when the game is taking it over (finish stop, arrival) or it is gone.
 func _detach(to_player: bool) -> void:
@@ -217,9 +242,10 @@ func _detach(to_player: bool) -> void:
 ## Puts a driven car back on the road after RESCUE_S off it (OFF_ROAD_M beyond the verge) or
 ## without progress; true when it did. The player's car goes where the reset key would put it
 ## (RaceSession: in a time trial the last point legitimately reached); a ghost goes back on its
-## own road, so it neither lands next to the player nor touches the player's session.
+## own road, so it neither lands next to the player nor touches the player's session. A RaceBot
+## rescues its car itself.
 func _rescue(car: Car, pilot: NeuralPilot, delta: float) -> bool:
-	if pilot == null or pilot.sense == null or pilot.sense.hint < 0 or car.launch_hold:
+	if pilot == null or pilot is RaceBot or pilot.sense == null or pilot.sense.hint < 0 or car.launch_hold:
 		return false
 	var sense := pilot.sense
 	var id := car.get_instance_id()
@@ -296,6 +322,7 @@ func _spawn_ghosts(car: Car, track: Track) -> void:
 		label.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 		ghost.add_child(label)
 		get_parent().add_child(ghost)
+		ghost.collision_layer = 0 # after _ready (which puts every car on layer 2): nothing hits a ghost
 		var c := GHOST_LIVERIES[i % GHOST_LIVERIES.size()]
 		ghost.set_livery(c, c.darkened(0.45))
 		CarLook.apply(ghost)

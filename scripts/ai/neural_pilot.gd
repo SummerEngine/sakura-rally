@@ -64,20 +64,26 @@ func _exit_tree() -> void:
 
 func _physics_process(delta: float) -> void:
 	if (Engine.get_physics_frames() + phase) % DriveHands.DECISION_TICKS == 0:
-		var pos := car.global_position
-		if pos.distance_squared_to(_last_pos) > JUMP_M * JUMP_M:
-			sense.reset()
-		_last_pos = pos
-		sense.observe(car, _obs)
-		var kmh := absf(car.speed_kmh)
-		_stuck_s = _stuck_s + delta * DriveHands.DECISION_TICKS if kmh < STUCK_KMH and not car.launch_hold else 0.0
-		if _stuck_s > STUCK_S:
-			_unsticking = true
-		elif kmh > UNSTICK_KMH or car.launch_hold:
-			_unsticking = false
-		var a := policy.act(_obs, _rng)
-		if _unsticking:
-			a[1] = 2 # throttle
-			a[2] = 0 # handbrake off
-		hands.set_action(a[0], a[1], a[2])
+		decide(delta)
 	hands.apply(car, delta)
+
+
+## One decision (RaceBot wraps it): look, ask the policy, full throttle when stuck, and set the
+## hands to the answer.
+func decide(delta: float) -> void:
+	var pos := car.global_position
+	if pos.distance_squared_to(_last_pos) > JUMP_M * JUMP_M:
+		sense.reset()
+	_last_pos = pos
+	sense.observe(car, _obs)
+	var kmh := absf(car.speed_kmh)
+	_stuck_s = _stuck_s + delta * DriveHands.DECISION_TICKS if kmh < STUCK_KMH and not car.launch_hold else 0.0
+	if _stuck_s > STUCK_S:
+		_unsticking = true
+	elif kmh > UNSTICK_KMH or car.launch_hold:
+		_unsticking = false
+	var a := policy.act(_obs, _rng)
+	if _unsticking:
+		a[1] = 2 # throttle
+		a[2] = 0 # handbrake off
+	hands.set_action(a[0], a[1], a[2])

@@ -317,8 +317,9 @@ def emit_road(pack: MeshPack, rid: str, road, verts, lat, ter, rgba: np.ndarray,
         C = col[rows].reshape(-1, 4)
         U2 = np.stack([np.repeat(grav[rows], PROFILE), np.repeat(wood[rows], PROFILE)], axis=1)
         surf = phys_surface(int(np.bincount(road.surface[rows]).argmax()))
+        # the shader turns uv.x back into metres with the mesh's half width (one width per road)
         d = pack.add(f"road_{rid}_{rows[0]}", P, _ribbon_quads(len(rows), keep), col=C, uv=U, material="road",
-                     collide="trimesh", surface=surf)
+                     collide="trimesh", surface=surf, half_width=round(float(road.half_width[rows].mean()), 3))
         raw = pack.add_raw(f"road_{rid}_{rows[0]}_uv2", U2, "<f4")
         d["uv2_raw"] = raw["name"]
         count += 1
@@ -340,7 +341,8 @@ def emit_apron(pack: MeshPack, J, branch, loop, bverts, blat, lverts, ter, rgba:
     grav = 1.0 if branch.surface[J.clear_i] != SURFACES.index("tarmac") else 0.0
     U2 = np.stack([np.full(len(pos), grav), np.full(len(pos), -1.0)], axis=1)
     d = pack.add(f"apron_{J.loop_id}", pos, idx, col=col, uv=U.reshape(-1, 2), material="road",
-                 collide="trimesh", surface="gravel" if grav else "tarmac")
+                 collide="trimesh", surface="gravel" if grav else "tarmac",
+                 half_width=round(float(branch.half_width[J.clear_i]), 3))
     raw = pack.add_raw(f"apron_{J.loop_id}_uv2", U2, "<f4")
     d["uv2_raw"] = raw["name"]
     return pos, idx
@@ -991,7 +993,8 @@ def build() -> None:
     season_q, season_org, season_cell = seasons.grid(world["bounds"], world["seasons"], world["seed"])
     pack.add_raw("season_grid", season_q, "u1", origin=season_org, cell=season_cell,
                  dims=[int(season_q.shape[1]), int(season_q.shape[0])], order=list(seasons.SEASONS))
-    road_info = {rid: {"length": round(float(r.length), 2), "closed": r.closed, "verge": r.verge} for rid, r in roads.items()}
+    road_info = {rid: {"length": round(float(r.length), 2), "closed": r.closed, "verge": r.verge,
+                       "half_width": round(float(r.half_width.max()), 2)} for rid, r in roads.items()}
     road_info["branch"]["junctions"] = [{"road": j.loop_id, "end": j.end, "s": round(float(branch.dist[j.fork_i]), 2),
                                          "other_s": round(float(roads[j.loop_id].dist[j.loop_fork]), 2)} for j in J]
     for g in gates:
@@ -1001,7 +1004,6 @@ def build() -> None:
         "id": MAP_ID, "version": 2,
         "bin": f"res://assets/maps/{MAP_ID}/map.bin",
         "bounds": [float(v) for v in world["bounds"]], "cell": ter.cell,
-        "road_half_width": 3.5,
         "roads": road_info,
         "routes": routes,
         "gates": gates,

@@ -137,33 +137,45 @@ var wheels: Array              # 4 entries, order FL, FR, RL, RR; each a WheelSt
 ```
 
 Signals: `gear_changed(new_gear: int, old_gear: int)`, `backfire`, `rev_limiter`,
-`impact(strength: float, point: Vector3)` (strength ~0..1+), `landed(strength: float)`.
+`impact(strength: float, point: Vector3)` (world contacts, strength ~0..1+), `landed(strength: float)`,
+`bumped(strength: float, point: Vector3, other: Car)` (contacts with another car, same scale).
 
 Control inputs (set by the player input reader or an autopilot):
 `var input_throttle: float`, `var input_brake: float`, `var input_steer: float`,
 `var input_handbrake: bool`, `var controlled_by_player: bool` (reads InputMap actions when true),
 `var always_automatic: bool` (the automatic box whatever the Gearbox setting; NeuralPilot sets it
-on the car it drives).
+on the car it drives), `var car_contacts: bool` (default false: cars pass through each other;
+true: the car's `collision_mask` includes layer 2 "car", so it hits other cars - also ones with it
+off -, switchable at any time; Race mode sets it on every entrant; AutoDrive ghosts keep it off and
+sit on no layer, so nothing hits them).
 Methods: `reset_to(transform: Transform3D)`, `set_livery(primary: Color, secondary: Color)`,
 `shift_up()`, `shift_down()`.
 
 ## Game flow (`Game` autoload, `scripts/autoload/game.gd`)
 
 States: `BOOT, MENU, LOADING, INTRO, COUNTDOWN, RACING, FINISHED, FREE_ROAM`.
-Modes: `"time_trial"` (one lap, checkpoints, medals, record) and `"free_roam"` (drive freely).
+Modes: `"time_trial"` (one lap, checkpoints, medals, record), `"race"` (`Game.MODE_RACE`:
+`Game.RACE_LAPS` laps against the six `Game.RIVALS` from the back of the grid, cars colliding; see
+Race below) and `"free_roam"` (drive freely).
 Maps: `Game.MAPS` (`hanami` — Hanami Pass 花見峠, spring noon; `momiji` — Momiji Valley 紅葉谷,
 autumn golden hour).
 
 UI calls: `Game.request_start(map_id, mode)`, `Game.request_restart()`, `Game.request_menu()`,
 `Game.set_paused(bool)`, `Game.set_setting(key, value)`, `Game.request_quit()`.
 UI listens: `state_changed`, `session_started`, `countdown_tick(3,2,1,0)`, `race_started`,
-`checkpoint_passed(index, total, split, delta)`, `race_finished(result)`, `paused_changed`,
-`settings_changed`, `notice(text)`.
+`checkpoint_passed(index, total, split, delta)` (a race: `delta` is the interval to the car ahead,
+negative when leading), `race_finished(result)`, `race_classification_changed(rows)` (a race: a
+rival finished after the player), `paused_changed`, `settings_changed`, `notice(text)`.
 Live data for the HUD: `Game.player_car` (car API above), `Game.session` with
 `elapsed: float`, `checkpoint_index: int`, `checkpoint_total: int`, `progress: float` (0..1 lap),
-`best_time: float`, `mode: String`.
+`best_time: float`, `mode: String`; in a race `Game.race` (`RaceField`) with `laps`,
+`entrants`, `player_position()`, `player_lap()`, `player_lap_time(n)`,
+`player_neighbour(offset)` (`{"name", "gap"}` of the car ahead, -1, or behind, +1) and
+`classification()`.
 `race_finished` result keys: `time, splits, best_time, previous_best, is_record, medal, map_id,
-top_speed_kmh`.
+top_speed_kmh`; a race instead: `time, splits` (empty), `laps` (lap times), `best_lap`,
+`position`, `field`, `classification` (rows: `name, name_jp, team, player, car_id, colors,
+finished, time, best_lap, laps_done, gap`), `race: true`, `map_id, ai_drove, top_speed_kmh`.
 Helpers: `Game.format_time(t)`, `Game.format_delta(d)`, `Game.best_time(map_id)`,
 `Game.car_colors()`, `Game.CAR_COLORS`, `Game.get_setting(key)`.
 
@@ -332,6 +344,9 @@ meets only walls it can scrape along or props it knocks over.
   road and out to half width + verge + 4 m around every checkpoint.
 - The course comes back whole when a new car enters the tree (restart), when a car jumps farther
   than one physics step could move it (`Car.reset_to()`, reset to the track), and on a map reload.
+  A race's rivals (group `race_rival`, added before `add_child`) smash and knock like any car,
+  but neither their arrival nor their rescues restore anything: the course comes back for the
+  player's run only. The first `SoftCourse.GATE_CARS` (8) cars in billow the checkpoint banners.
 - Nothing is created or loaded at hit time: the debris bodies, burst emitters and their materials
   are built with the map, the hit sounds sit in Sound's cache from boot, and once `MapWorld.built`
   fires (the loading cover is still up) every smashable mesh and burst type is drawn for a few
@@ -448,10 +463,13 @@ rates measured during ep3 work are noisy: report them, the lead re-measures at i
   between them carries Natsu's content (terraces, village, stone bridge, time control). One rim
   around the world, none between regions.
 - `map.json` keys:
-  - `bounds` `[x0, z0, x1, z1]`, `cell` (terrain, 4 m), `road_half_width` 3.5.
-  - `roads{id: {length, closed, verge, junctions?}}`: the physical ribbons `hanami`, `momiji`
-    (loops) and `branch` (open). `junctions[{road, end, s, other_s}]`: the branch end (`start` /
-    `end`) at branch `s` meets `road` at its `other_s`, with an apron (no step, no z-fighting).
+  - `bounds` `[x0, z0, x1, z1]`, `cell` (terrain, 4 m).
+  - `roads{id: {length, closed, verge, half_width, junctions?}}`: the physical ribbons `hanami`,
+    `momiji` (loops, 10 m carriageway: `half_width` 5.0) and `branch` (open, 7 m: 3.5); verge
+    1.4 m on all three. `junctions[{road, end, s, other_s}]`: the branch end (`start` / `end`) at
+    branch `s` meets `road` at its `other_s`, with an apron (no step, no z-fighting). Road ribbon
+    and apron meshes carry their `half_width` (the road shader turns uv.x back into metres with
+    it; MapWorld keeps one road material per width).
   - `routes{id: {track, closed, season, atmosphere, road{length, start_s, verge, surfaces,
     bridges, start}, spawn, checkpoints, corners, finish_stop | arrival}}`: what a session
     drives, `track` naming its raw (the v1 ten columns). `hanami` and `momiji` are closed laps
@@ -465,7 +483,9 @@ rates measured during ep3 work are noisy: report them, the lead re-measures at i
     per cell summing to 255. The terrain vertex colours are blended by the same weights and the
     scatter runs sakura → summer greens → maples along the branch.
   - `water{lake{level, poly}, rivers[{id, width, points}]}` (`rivers` replaces v1's `river`).
-  - `garage{pos, yaw, workshop, lot, keep_out, road_side}` (Garage).
+  - `garage{pos, yaw, workshop, lot, keep_out, road_side, road_x, lane}` (Garage): `road_x` the
+    road centreline in garage-local x, `lane` the left lane's centre in lateral metres (the
+    menu's arriving and leaving cars).
   - As in v1, in world coordinates: `collision_boxes`, `signs`, `parked`, `materials`, `meshes`
     (terrain chunks carry `visibility` ranges: fine near, coarse far, beyond the rim), `raw`,
     `instances`. `map.bin` is 45 MB uncompressed.
@@ -595,3 +615,40 @@ rates measured during ep3 work are noisy: report them, the lead re-measures at i
   (`SPECTATORS`, `SPECTATOR_WEIGHTS`); `corridor.py` `KNOCKABLE` = `Crowd.PEOPLE` (off the
   tarmac only). A knock costs 1-1.5 % of the car's speed through SoftCourse's loss budget.
   Verification: `tools/crowd/crowd_probe.gd` (shots, lineup, knock).
+
+## Race mode (branch `race`)
+
+`Game.MODE_RACE`: the player against the campaign's six rivals over `Game.RACE_LAPS` (2) laps of a
+stage loop, every car hitting the others. Picked on the Time Attack page (Time Trial / Race / Free
+Roam); `Game.request_start(map_id, "race")`.
+
+- Grid (`Main._spawn_race`, `Main._grid_slot(g)`): `Game.RIVALS` sorted by
+  `Game.rival_lap_time(rival, map_id)` (the stage's gold × the rival's campaign pace for it),
+  slowest on pole. Slot g stands `RACE_GRID_GAP` (5 m) × g behind the route's spawn, alternately
+  `RACE_GRID_LAT` (2.2 m) left and right of the centre line; the player's car takes the last slot
+  (6), 30 m behind pole. Every car is placed at rest and held (`launch_hold`) through the
+  countdown; `car_contacts` is on for all of them.
+- Rivals: the car of `rival["car"]` in `rival["colors"]`, named `Rival<g>`, in group
+  `race_rival` (SoftCourse: they never restore the course), a `NameTag` Label3D, their own
+  CarFX. Driver: a `RaceBot` child named `RaceBot` (`scripts/ai/race_bot.gd`, docs/RL.md) with
+  `track` = the route, `pace = RaceBot.pace_for_lap(map_id, rival_lap_time, car_id)`, `field` =
+  all seven cars, a `phase` of its own.
+- `RaceField` (`scripts/game/race_field.gd`, `Main.race`, `Game.race`): enters every car
+  (`add(car, info)`), starts the clock at GO (`start()`), tracks each car's road distance, laps and
+  checkpoint crossings as a time trial does, keeps the running order (`order`: finishers by time,
+  then by distance) and the gaps (how long ago the car ahead was where the other car is now). The
+  player's checkpoints go out through `Game.notify_race_checkpoint(index, total, split, interval)`,
+  the player's flag through `RaceSession.finish_race(race)` → `Game.notify_finished(result)`. Every
+  finisher emits `car_finished(car, position)`; a rival finishing after the player sends
+  `Game.notify_race_classification(rows)`.
+- The player's `RaceSession` in mode `race` keeps the reset point, re-anchoring, the wrong-way
+  nag and the hazards of a time trial, without checkpoints or a finish of its own.
+- Finish: Main swaps the finisher's RaceBot (the player: its controls) for an `ArrivalStop` to
+  `Main._parc_slot(position)`: the winner on the route's finish stop, each next finisher
+  `PARC_GAP` (8 m) behind the one before, so nobody drives into a parked car.
+- A race sets no record and no medal (`Game.notify_finished` returns before them) and allows the
+  AI driver (I).
+- Verification: `tools/game/flows.gd -- flow=race map=<stage> speed=3` (grid, countdown, HUD,
+  pause, a RaceBot-driven player to the flag, results, parc, retry, title),
+  `tools/physics/contact_probe.gd` (car contacts), `tools/rl/race_probe.gd` (the rivals' race and
+  the pace calibration).

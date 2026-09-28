@@ -22,9 +22,23 @@ extends SceneTree
 ## landing on the branch, SS2 grid), quitting mid-liaison, and Esc on the arrival card (back to
 ## the title with the save at SS2).
 ##
+## flow=race: a race on `map`. The grid: the player's car in the last slot behind the six rivals
+## (slowest on pole, each in its own car and colours with a RaceBot), every car colliding with the
+## others and held through the countdown, the gates closed. The rivals drive off at GO; the race
+## HUD shows the position card and the lap. A RaceBot at gold pace drives the player's car
+## through both laps: the position improves from last, every checkpoint reaches the HUD, the lap
+## counter turns to the final lap. The finish: the results say RACE, stamp the position and list
+## the classification in running order; the finishers come to rest one behind the other past the
+## line in finishing order, and the rivals still racing fill in their rows as they finish. Pause
+## says RACE; Retry builds a fresh grid; the title clears every car of the race. Rendered, it also
+## logs frame times for 10 s at normal speed behind the pack and saves frames of the first
+## overtakes and of the first real bump.
+##
 ##   timeout 400 $S --headless --disable-crash-handler --path . -s res://tools/game/flows.gd -- map=hanami
 ##   timeout 900 $S --headless --disable-crash-handler --path . -s res://tools/game/flows.gd -- \
 ##       flow=campaign speed=3
+##   timeout 900 $S --headless --disable-crash-handler --path . -s res://tools/game/flows.gd -- \
+##       flow=race map=hanami speed=3
 
 var opts := {"flow": "core", "map": "hanami", "out": "/tmp/flows", "speed": "3"}
 var main: Node
@@ -65,6 +79,8 @@ func _run() -> void:
 	await _seconds(1.0)
 	if opts["flow"] == "campaign":
 		await _run_campaign()
+	elif opts["flow"] == "race":
+		await _run_race()
 	else:
 		await _run_core()
 	_log("SUMMARY: %d failures" % failures.size())
@@ -213,6 +229,217 @@ func _run_core() -> void:
 	game.request_menu()
 	await _until_state(&"MENU", 60.0)
 	_check(Engine.time_scale == 1.0 and not paused, "back on the title with normal time")
+
+
+# ---------------------------------------------------------------- race
+
+func _run_race() -> void:
+	var ui: CanvasLayer = main.ui
+	var route := str(opts["map"])
+	_mark()
+	game.request_start(route, game.MODE_RACE)
+	await _until_state(&"INTRO", 60.0)
+	var car: Car = game.player_car
+	var rivals: Array[Car] = main.rivals
+	_check(game.mode == game.MODE_RACE and game.race == main.race and main.race != null and rivals.size() == game.RIVALS.size(),
+			"race: %d rivals on the grid, a RaceField" % rivals.size())
+	_check(_near(car, main._grid_slot(rivals.size()), 0.5), "race: the player's car in the last slot (%s)" % _off(car, main._grid_slot(rivals.size())))
+	var on_slots := true
+	var slow_first := true
+	var targets: Dictionary = {}
+	for g in rivals.size():
+		on_slots = on_slots and _near(rivals[g], main._grid_slot(g), 0.5)
+		var entrant: RaceField.Entrant = main.race.entrants[g + 1]
+		var rival := _rival(str(entrant.info["name"]))
+		targets[entrant.info["name"]] = game.rival_lap_time(rival, route)
+		if g > 0:
+			slow_first = slow_first and float(targets[entrant.info["name"]]) <= float(targets[main.race.entrants[g].info["name"]])
+		_check(rivals[g].get_node_or_null(^"RaceBot") is RaceBot and rivals[g].has_node(^"NameTag") and not rivals[g].controlled_by_player,
+				"race: %s on slot %d, lap target %s, a RaceBot and a name tag" % [entrant.info["name"], g, game.format_time(targets[entrant.info["name"]])])
+	_check(on_slots and slow_first, "race: rivals on their slots, slowest on pole")
+	var all: Array[Car] = [car]
+	all.append_array(rivals)
+	var contacts := true
+	for c in all:
+		contacts = contacts and c.car_contacts and c.launch_hold
+	_check(contacts, "race: every car collides with the others and is held on the grid")
+	_check(_gates_open() == 0, "race: branch gates closed (%d open)" % _gates_open())
+	var grid_pos: Array[Vector3] = []
+	for c in all:
+		grid_pos.append(c.global_position)
+	await _seconds(1.6)
+	await shot("race_intro")
+	_mark()
+	await _until_state(&"COUNTDOWN", 20.0)
+	await _seconds(1.5)
+	var held := true
+	for k in all.size():
+		held = held and all[k].global_position.distance_to(grid_pos[k]) < 0.5
+	_check(held, "race: every car held through the countdown")
+	await shot("race_countdown")
+	_mark()
+	await _until_state(&"RACING", 10.0)
+	await _seconds(0.5)
+	var hud: Control = ui.hud
+	_check(hud.shown and hud._tr.visible and hud._pos_value.text == str(all.size()) and hud._best_label.text == "LAP 1 / %d" % game.RACE_LAPS,
+			"race HUD: position %s%s, %s" % [hud._pos_value.text, hud._pos_of.text, hud._best_label.text])
+	await _event(&"pause")
+	await _seconds(0.5)
+	var pm: Control = ui.pause_menu
+	_check(game.paused and str(pm._sub.text).ends_with("RACE") and pm._restart.visible, "race: pause menu (%s)" % pm._sub.text)
+	await _event(&"pause")
+	await _seconds(5.3)
+	var moved := 0
+	for g in rivals.size():
+		moved += int(rivals[g].global_position.distance_to(grid_pos[g + 1]) > 30.0)
+	_check(moved == rivals.size(), "race: the rivals drove off at GO (%d of %d beyond 30 m)" % [moved, rivals.size()])
+	var card: Rect2 = hud._pos_card.get_global_rect()
+	var screen := Rect2(Vector2.ZERO, hud.get_viewport_rect().size)
+	_check(hud._pos_card.is_visible_in_tree() and screen.encloses(card) and card.end.x > screen.size.x * 0.75 and card.position.y < screen.size.y * 0.25,
+			"race HUD: the position card sits in the top-right corner (%s on %s)" % [card, screen.size])
+	await shot("race_start")
+
+	# A RaceBot at gold pace drives the player's car to the flag.
+	var cps: Array[float] = []
+	var grab_cp := func(_i: int, _t: int, _s: float, interval: float) -> void: cps.append(interval)
+	game.checkpoint_passed.connect(grab_cp)
+	var result := {}
+	var grab := func(r: Dictionary) -> void: result.merge(r, true)
+	game.race_finished.connect(grab)
+	var gold := float((game.get_map(route)["medals"] as Dictionary)["gold"])
+	var driver := RaceBot.new()
+	driver.name = "RaceBot"
+	driver.track = main.map.track
+	driver.pace = RaceBot.pace_for_lap(route, gold, str(game.current_car()["id"]))
+	driver.field = (rivals[0].get_node(^"RaceBot") as RaceBot).field
+	driver.phase = rivals.size() % DriveHands.DECISION_TICKS
+	car.controlled_by_player = false
+	car.add_child(driver)
+	var bumps: Array[float] = []
+	var grab_bump := func(strength: float, _p: Vector3, _o: Car) -> void: bumps.append(strength)
+	car.bumped.connect(grab_bump)
+	# 10 s at normal speed with the whole field ahead: the time a frame spends in scripts
+	# (_process) and in a physics tick (scripts and the solver), and, rendered, the frame time.
+	var frames: Array[float] = []
+	var proc: Array[float] = []
+	var phys: Array[float] = []
+	var t0 := Time.get_ticks_usec()
+	var last := t0
+	while Time.get_ticks_usec() - t0 < 10000000:
+		await process_frame
+		var now := Time.get_ticks_usec()
+		frames.append((now - last) / 1000.0)
+		last = now
+		proc.append(Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0)
+		phys.append(Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0)
+	for a: Array[float] in [frames, proc, phys]:
+		a.sort()
+	_log("race, 10 s behind the pack: process %.2f ms (95th %.2f), physics tick %.2f ms (95th %.2f) at the median"
+			% [proc[int(proc.size() * 0.5)], proc[int(proc.size() * 0.95)], phys[int(phys.size() * 0.5)], phys[int(phys.size() * 0.95)]])
+	if DisplayServer.get_name() != "headless":
+		_log("race: frame time at %s: median %.1f ms, 95th percentile %.1f ms, worst %.1f ms (%d frames)"
+				% [str(root.size), frames[int(frames.size() * 0.5)], frames[int(frames.size() * 0.95)], frames.back(), frames.size()])
+	Engine.time_scale = float(opts["speed"])
+	var best_pos := all.size()
+	var last_pos := all.size()
+	var pass_shots := 0
+	var bump_shot := false
+	var final_lap := false
+	var start := Time.get_ticks_msec()
+	while game.state == game.State.RACING and Time.get_ticks_msec() - start < 600000:
+		var p: int = main.race.player_position()
+		best_pos = mini(best_pos, p)
+		final_lap = final_lap or hud._best_label.text == "FINAL LAP"
+		if p < last_pos and pass_shots < 3:
+			pass_shots += 1
+			await shot("race_pass_%d" % pass_shots)
+		last_pos = p
+		if not bump_shot and not bumps.is_empty() and bumps.max() >= 0.2:
+			bump_shot = true
+			await shot("race_bump")
+		await process_frame
+	game.checkpoint_passed.disconnect(grab_cp)
+	game.race_finished.disconnect(grab)
+	car.bumped.disconnect(grab_bump)
+	_log("race: the player's car was bumped %d times (strongest %.2f)" % [bumps.size(), bumps.max() if not bumps.is_empty() else 0.0])
+	_check(game.state == game.State.FINISHED, "race: the player finished (%s)" % game.format_time(float(result.get("time", INF))))
+	_check(best_pos < all.size(), "race: the player passed rivals (best P%d)" % best_pos)
+	_check(final_lap, "race: the lap counter reached FINAL LAP")
+	var n_cp: int = game.RACE_LAPS * main.race.checkpoints.size() - 1
+	var known := 0
+	for v in cps:
+		known += int(not is_nan(v))
+	_check(cps.size() == n_cp and known * 2 >= n_cp, "race: %d checkpoints reached the HUD (%d of %d with an interval)" % [cps.size(), known, n_cp])
+	var rows: Array = result.get("classification", [])
+	var pos := int(result.get("position", 0))
+	var ordered := rows.size() == all.size()
+	for k in range(1, rows.size()):
+		var a: Dictionary = rows[k - 1]
+		var b: Dictionary = rows[k]
+		ordered = ordered and (bool(a["finished"]) or not bool(b["finished"])) \
+				and (not bool(b["finished"]) or float(a["time"]) <= float(b["time"]))
+	_check(bool(result.get("race", false)) and pos >= 1 and pos <= all.size() and int(result.get("field", 0)) == all.size() and ordered
+			and bool((rows[pos - 1] as Dictionary)["player"]) and (result.get("laps", []) as Array).size() == game.RACE_LAPS,
+			"race result: P%d of %d, laps %s, best lap %s, classification in order" % [pos, int(result.get("field", 0)),
+			str(result.get("laps", [])), game.format_time(float(result.get("best_lap", INF)))])
+	_check(not bool(result.get("is_record", false)) and str(result.get("medal", "")) == "", "race: no record, no medal")
+	Engine.time_scale = 1.0
+	var res: Control = ui.results
+	await _until(func() -> bool: return root.gui_get_focus_owner() == res._retry, 15.0)
+	_check(str(res._kind_label.text).begins_with("RACE") and res._hanko.visible and str(res._hanko.text) == "%d位" % pos
+			and str(res._position_value.text) == "P%d of %d" % [pos, all.size()] and res._next.visible and not res._continue.visible,
+			"race results: %s, seal %s, %s, Retry focused" % [res._kind_label.text, res._hanko.text, res._position_value.text])
+	await _seconds(1.5)
+	await shot("race_results")
+	await _until_rest(car, 20.0)
+	_check(_near(car, main._parc_slot(pos), 4.0), "race: the player's car came to rest at its place past the line (%s)" % _off(car, main._parc_slot(pos)))
+
+	# The rivals still racing finish; their rows fill in and they stop in finishing order.
+	Engine.time_scale = float(opts["speed"])
+	start = Time.get_ticks_msec()
+	while main.race.finishers < all.size() and Time.get_ticks_msec() - start < 240000:
+		await process_frame
+	await _seconds(8.0)
+	Engine.time_scale = 1.0
+	var parked := 0
+	for e: RaceField.Entrant in main.race.order:
+		parked += int(e.finished and _near(e.car, main._parc_slot(e.position), 4.0) and e.car.linear_velocity.length() < 0.5)
+		var laps := PackedStringArray()
+		for lt in e.lap_times:
+			laps.append(game.format_time(lt))
+		_log("RACE %d. %s  %s  laps %s  (target lap %s)" % [e.position, e.info["name"], game.format_time(e.time),
+				", ".join(laps), game.format_time(float(targets.get(e.info["name"], NAN)))])
+	var dashes := 0
+	for ch in res._splits_box.get_children():
+		dashes += int(ch is Label and (ch as Label).text == "—")
+	_check(main.race.finishers == all.size() and dashes == 0, "race: every car finished and the classification filled in (%d finishers, %d open rows)"
+			% [main.race.finishers, dashes])
+	_check(parked == all.size(), "race: all %d finishers at rest one behind the other past the line (%d parked)" % [all.size(), parked])
+	await shot("race_parc")
+
+	# Retry: a fresh grid.
+	var old_rivals := rivals.duplicate()
+	_mark()
+	await _event(&"ui_accept")
+	await _until_state(&"INTRO", 60.0)
+	var fresh: bool = main.rivals.size() == game.RIVALS.size() and main.race.elapsed == 0.0 and main.race.finishers == 0
+	for r in old_rivals:
+		fresh = fresh and not is_instance_valid(r)
+	_check(fresh and _near(game.player_car, main._grid_slot(game.RIVALS.size()), 0.5), "race: Retry builds a fresh grid")
+	_mark()
+	game.request_menu()
+	await _until_state(&"MENU", 60.0)
+	await process_frame
+	_check(main.rivals.is_empty() and main.race == null and game.race == null and get_nodes_in_group(&"race_rival").is_empty(),
+			"race: the title clears every car of the race")
+	_check(Engine.time_scale == 1.0 and not paused, "back on the title with normal time")
+
+
+func _rival(name_: String) -> Dictionary:
+	for r: Dictionary in game.RIVALS:
+		if r["name"] == name_:
+			return r
+	return {}
 
 
 # ---------------------------------------------------------------- campaign

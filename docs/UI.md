@@ -59,10 +59,10 @@ func _on_menu() -> void:
 | `start_requested` / `LOADING` | Title leaves (the chosen map card pops, the rest slides away). |
 | `session_started`, `INTRO` | HUD configured for the map/mode; intro title card slides in. |
 | `countdown_tick(3,2,1,0)` | Kinetic numerals over 三/二/一, ring sweep; GO! + 出発 with ink splash + flash. Plays `Sound.play_stinger(&"countdown"/&"go")`. |
-| `COUNTDOWN`, `RACING`, `FREE_ROAM` | HUD slides in (time trial: timer + progress; free roam: odometer, no timer). |
-| `checkpoint_passed` | Split popup under the timer (delta green/red vs best, none on a first run), progress tick pulses, timer pops. `play_stinger(&"checkpoint")`. |
+| `COUNTDOWN`, `RACING`, `FREE_ROAM` | HUD slides in (time trial: timer + progress; free roam: odometer, no timer; a race: the timer runs from GO with the lap under it, "LAP 1 / 2" then "FINAL LAP", and a position card top-right, "3 / 7" with the cars just ahead and behind and the gaps to them, which pulses matcha for a place gained and vermilion for one lost; it reads `Game.race`). |
+| `checkpoint_passed` | Split popup under the timer (delta green/red vs best, none on a first run), progress tick pulses, timer pops. `play_stinger(&"checkpoint")`. In a race the chip is the interval to the car ahead (red), or minus the lead when leading (green); at the lap line the popup shows the lap and its time and the progress bar starts the next lap. |
 | `notice(text)` | Centre paper pill for ~2 s (only while the HUD is up). |
-| `race_finished(result)` | FINISH 完走 slam, time count-up, results card, medal hanko stamp, NEW RECORD ribbon. `play_stinger(&"finish")`, `&"record"`. Buttons: Retry (`request_restart`), Next map (`request_start(next, time_trial)`, the other stage), Menu (`request_menu`). A campaign stage (`result.campaign`) says the stage is complete, adds a "Rally standing" row and the next-stage road sign beside the card, and swaps the buttons for Continue (`request_campaign_continue`, focused), Retry stage, Quit to title (see Campaign screens). |
+| `race_finished(result)` | FINISH 完走 slam, time count-up, results card, medal hanko stamp, NEW RECORD ribbon. `play_stinger(&"finish")`, `&"record"`. Buttons: Retry (`request_restart`), Next map (`request_start(next, time_trial)`, the other stage), Menu (`request_menu`). A campaign stage (`result.campaign`) says the stage is complete, adds a "Rally standing" row and the next-stage road sign beside the card, and swaps the buttons for Continue (`request_campaign_continue`, focused), Retry stage, Quit to title (see Campaign screens). A race (`result.race`) says "RACE · 2 LAPS", shows the race time, "Finished P3 of 7", the best lap and top speed, stamps the position seal (`3位`, "OF 7"; the winner's `1位` "WINNER" in gold ink) and lists the classification (position, driver, the winner's time then each gap; "—" for a car still racing). `race_classification_changed` fills in the rows of the rivals that finish while the card is up. Next map starts a race on the other stage. |
 | `paused_changed` | Pause menu (blurred backdrop): Resume / Restart / Settings / Main menu. In the campaign: Resume / Retry stage (stages only) / Settings / Quit to title. |
 
 The UI owns the **`pause` action** (Esc / P / gamepad Start): it calls `Game.set_paused(true)`
@@ -105,10 +105,11 @@ processing, and the intro would start seconds late (episode 2's first-run title 
 without its wordmark that way). `KineticText` runs on tweens for the same reason: every intro element
 shares one clock, so a long frame moves the wordmark exactly as far as the logo and hanko.
 
-**Time Attack** (`screens/time_attack_panel.gd`): Time Trial / Free Roam picker over one card
-per stage of the world (`Game.MAPS`: Hanami, Momiji; the liaison is the road between them, not
-a level). A card calls `Game.request_start(map_id, mode)`: a time trial drives that stage's loop
-with the branch gates closed, free roam starts on the same grid with every gate open.
+**Time Attack** (`screens/time_attack_panel.gd`): Time Trial / Race / Free Roam picker over one
+card per stage of the world (`Game.MAPS`: Hanami, Momiji; the liaison is the road between them,
+not a level). A card calls `Game.request_start(map_id, mode)`: a time trial drives that stage's
+loop with the branch gates closed, a race puts the player at the back of a grid of the six rivals
+there (gates closed too), free roam starts on the same grid with every gate open.
 
 **Map cards** (`widgets/map_card.gd`): the map's top-down render
 (`assets/ui/maps/<id>_top.png`, rounded top corners, `shaders/ui/map_image.gdshader`) with

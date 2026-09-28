@@ -60,12 +60,14 @@ Per stored frame (every other physics tick, 60 Hz):
   (name and chase mode) and the exact time of that frame, so playback shows what was on screen.
 
 Events, each with its time: `state`, `countdown`, `start`, `checkpoint` (split, delta to the
-record), `finish` (the whole result: time, splits, medal, record, standing), `arrived`, `notice`
+record; in a race the interval to the car ahead), `finish` (the whole result: time, splits, medal,
+record, standing; in a race position, field, laps and classification), `arrived`, `notice`
 (every HUD notice: wrong way, off the route, car reset, laps), `impact` (strength, point, speed),
-`landed`, `reset` (from, to, whether R was held), `hazard` (the session's water / out-of-bounds
-resets), `smash` and `upright` (roadside props), `pause`, `camera`, `settings` (what changed),
-`gate` (a road gate opened or closed: id, open), `surface` (id table for the wheel surfaces) and
-`end` (why it closed, recording cost, and again the finish or the arrival).
+`bump` (another car hit this one in a race: strength, point, speed and the other car's node
+name), `landed`, `reset` (from, to, whether R was held), `hazard` (the session's water /
+out-of-bounds resets), `smash` and `upright` (roadside props), `pause`, `camera`, `settings`
+(what changed), `gate` (a road gate opened or closed: id, open), `surface` (id table for the
+wheel surfaces) and `end` (why it closed, recording cost, and again the finish or the arrival).
 
 The header: game name, version (the git branch and commit when run from a checkout, read from
 `.git` once at boot), engine version, date (local, UTC, unix), route id, mode, the Game state it
@@ -166,10 +168,11 @@ timeout 900 nice -n 5 $S --summer-offscreen --audio-driver Dummy $R compare <cap
   and medal, arrived, or the state that closed it: a restart, the menu, quitting).
 - `summary <file> [--json]`: builds the route's map headless (about 2 s) and prints the timeline
   with replay time, race clock, route distance, speed and where on the road (in a corner, so many
-  metres before or after one, a straight): splits against the record, the finish, crashes
-  (impacts within a second grouped, strength ≥ 0.25) and knocks, resets and their cause (R, the
-  car's own reset when stuck or on its roof, water or out of bounds), off-road excursions (the
-  whole car beyond the tarmac: side, duration, how far, entry speed), jumps and hard landings,
+  metres before or after one, a straight): splits against the record (a race: the interval to
+  the car ahead), the finish (a race: the position), crashes (impacts within a second grouped,
+  strength ≥ 0.25), bumps from other cars (strength ≥ 0.3) and knocks, resets and their cause
+  (R, the car's own reset when stuck or on its roof, water or out of bounds), off-road excursions
+  (the whole car beyond the tarmac: side, duration, how far, entry speed), jumps and hard landings,
   wrong way (the notice and any second of driving against the road), pauses, camera and settings
   changes, and the hesitations: sudden lifts (flat out for a second, then off both pedals at speed
   outside a corner), heavy braking (flagged when already inside the corner, or with nothing to

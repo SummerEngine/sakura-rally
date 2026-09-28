@@ -44,9 +44,21 @@ const BACKFIRE_DB := -2.0
 const STONE_DB := -9.0
 const THUMP_DB := -2.0
 const IMPACT_DB := 0.0
+const BUMP_DB := -3.0
 
 const LIMITER_HZ := 17.0
 const SILENT := 0.00001
+## Loops run only while they can be heard: a playing AudioStreamPlayer3D costs a pan and area query
+## every physics tick and a mix even at -100 dB, which with seven cars on the road was most of a
+## frame's audio cost. Engine loops run within one loop of the rpm bracket (_mix_set); the rest start
+## above START_GAIN (-54 dB) and stop below STOP_GAIN (-60 dB).
+const START_GAIN := 0.002
+const STOP_GAIN := 0.001
+## A loop starts silent and takes its gain START_S later. The audio server mixes a new playback at
+## full volume from its first sample, a click at a loop's random start phase, and ramps only later
+## volume changes; START_S covers the frame and physics tick until the player starts the playback
+## plus a 1024-frame driver period until its first mix. A stop fades over one mix buffer by itself.
+const START_S := 0.05
 
 ## Positions in car space (forward is -Z).
 const ENGINE_POS := Vector3(0.0, 0.6, -1.25)
@@ -93,6 +105,8 @@ var _turbo_gain: float = 0.0
 var _whine_gain: float = 0.0
 var _wind_gain: float = 0.0
 var _horn_gain: float = 0.0
+## Loop player -> _t when it was started.
+var _started: Dictionary = {}
 var _is_player: bool = false
 var _player_config_applied: int = -1
 var _sound: Node
@@ -175,14 +189,29 @@ func _new_player(bus: StringName, pos: Vector3) -> AudioStreamPlayer3D:
 	return p
 
 
-## Continuous loop: starts immediately (silent) at a random phase, gain driven per frame.
+## Continuous loop: stopped until _run_loop starts it from a random phase.
 func _loop(path: String, bus: StringName, pos: Vector3) -> AudioStreamPlayer3D:
 	var p := _new_player(bus, pos)
 	p.stream = _stream(path)
 	p.volume_db = linear_to_db(SILENT)
-	if p.stream != null:
-		p.play(randf() * p.stream.get_length())
 	return p
+
+
+## Runs or stops a loop and sets its gain (linear) plus trim, silent for START_S after a start.
+func _run_loop(p: AudioStreamPlayer3D, gain: float, trim_db: float, run: bool) -> void:
+	if run and not p.playing and p.stream != null:
+		p.play(randf() * p.stream.get_length())
+		_started[p] = _t
+	elif not run and p.playing:
+		p.stop()
+	if p.playing and _t - float(_started[p]) < START_S:
+		gain = 0.0
+	p.volume_db = linear_to_db(maxf(gain, SILENT)) + trim_db
+
+
+## A loop that runs while it is audible.
+func _set_loop(p: AudioStreamPlayer3D, gain: float, trim_db: float) -> void:
+	_run_loop(p, gain, trim_db, gain > START_GAIN or (p.playing and gain >= STOP_GAIN))
 
 
 ## One-shot player with random variant choice, light pitch/volume randomisation, polyphony.
@@ -214,6 +243,8 @@ func _connect_car_signals() -> void:
 		car.connect(&"impact", _on_impact)
 	if car.has_signal(&"landed"):
 		car.connect(&"landed", _on_landed)
+	if car.has_signal(&"bumped"):
+		car.connect(&"bumped", _on_bumped)
 
 
 func _apply_player_config() -> void:
@@ -281,7 +312,9 @@ func _mix_engine(slowmo: float, limiting: bool) -> void:
 	_mix_set(_off_players, _off_rpms, off_set * cut, slowmo)
 
 
-## Equal-power crossfade between the two loops that bracket the current rpm.
+## Equal-power crossfade between the two loops that bracket the current rpm. The loops next to the
+## bracket run silent so an rpm sweep or a throttle change brings in a loop that is already playing;
+## a loop stops two loops out, so rpm hovering at a loop's rpm starts and stops nothing.
 func _mix_set(players: Array[AudioStreamPlayer3D], rpms: Array[float], set_gain: float, slowmo: float) -> void:
 	var n := rpms.size()
 	var lo := 0
@@ -298,9 +331,9 @@ func _mix_set(players: Array[AudioStreamPlayer3D], rpms: Array[float], set_gain:
 		elif i == hi:
 			g = sin(x * PI * 0.5)
 		var p := players[i]
-		g *= set_gain
-		p.volume_db = linear_to_db(maxf(g, SILENT)) + ENGINE_DB
-		if g > SILENT * 10.0:
+		var run := (i >= lo - 1 and i <= hi + 1) or (p.playing and i >= lo - 2 and i <= hi + 2)
+		_run_loop(p, g * set_gain, ENGINE_DB, run)
+		if run:
 			p.pitch_scale = clampf(_rpm / rpms[i], 0.25, 3.0) * slowmo
 
 
@@ -310,14 +343,14 @@ func _mix_turbo(throttle: float, slowmo: float, max_rpm: float) -> void:
 	var rpm_n := clampf(_rpm / maxf(max_rpm, 1000.0), 0.0, 1.1)
 	var target := pow(_boost, 1.5) * lerpf(0.35, 1.0, maxf(_load, throttle))
 	_turbo_gain = target
-	_turbo.volume_db = linear_to_db(maxf(_turbo_gain, SILENT)) + TURBO_DB
+	_set_loop(_turbo, _turbo_gain, TURBO_DB)
 	_turbo.pitch_scale = (0.42 + 0.72 * _boost) * (0.85 + 0.25 * rpm_n) * slowmo
 
 
 func _mix_whine(speed: float, slowmo: float, delta: float) -> void:
 	var target := smoothstep(6.0, 45.0, speed) * lerpf(1.0, 0.6, _load)
 	_whine_gain = _smooth(_whine_gain, target, 0.08, delta)
-	_whine.volume_db = linear_to_db(maxf(_whine_gain, SILENT)) + _whine_db
+	_set_loop(_whine, _whine_gain, _whine_db)
 	_whine.pitch_scale = clampf(speed / WHINE_BASE_KMH, 0.05, 3.0) * slowmo
 
 
@@ -356,14 +389,14 @@ func _mix_tyres(speed: float, slowmo: float, delta: float) -> void:
 	for key in ROLL_LOOPS:
 		_roll_gain[key] = _smooth(_roll_gain[key], sqrt(roll_target[key]), 0.06, delta)
 		var p: AudioStreamPlayer3D = _roll[key]
-		p.volume_db = linear_to_db(maxf(_roll_gain[key], SILENT)) + ROLL_DB
+		_set_loop(p, _roll_gain[key], ROLL_DB)
 		p.pitch_scale = roll_pitch
 	for key in SLIDE_LOOPS:
 		var target := sqrt(slide_target[key])
 		var tau := 0.035 if target > _slide_gain[key] else 0.12
 		_slide_gain[key] = _smooth(_slide_gain[key], target, tau, delta)
 		var sp: AudioStreamPlayer3D = _slide[key]
-		sp.volume_db = linear_to_db(maxf(_slide_gain[key], SILENT)) + float(SLIDE_DB[key])
+		_set_loop(sp, _slide_gain[key], float(SLIDE_DB[key]))
 		if key == &"tarmac":
 			sp.pitch_scale = (0.93 + 0.12 * clampf(max_slip - 1.0, 0.0, 1.0)) * slowmo
 		else:
@@ -381,7 +414,7 @@ func _mix_wind(speed: float, slowmo: float, delta: float) -> void:
 	var airborne := _num(&"airborne_time", 0.0) > 0.15
 	var target := pow(smoothstep(15.0, 170.0, speed), 1.3) * (1.15 if airborne else 1.0)
 	_wind_gain = _smooth(_wind_gain, target, 0.25, delta)
-	_wind.volume_db = linear_to_db(maxf(_wind_gain, SILENT)) + WIND_DB
+	_set_loop(_wind, _wind_gain, WIND_DB)
 	_wind.pitch_scale = (0.85 + 0.35 * clampf(speed / 200.0, 0.0, 1.0)) * slowmo
 
 
@@ -389,7 +422,7 @@ func _mix_horn(delta: float) -> void:
 	var pressed := _is_player and InputMap.has_action(&"horn") and Input.is_action_pressed(&"horn")
 	var target := 1.0 if pressed else 0.0
 	_horn_gain = _smooth(_horn_gain, target, 0.012 if pressed else 0.04, delta)
-	_horn.volume_db = linear_to_db(maxf(_horn_gain, SILENT)) + HORN_DB
+	_set_loop(_horn, _horn_gain, HORN_DB)
 
 
 # ---------------------------------------------------------------- events
@@ -420,6 +453,26 @@ func _on_impact(strength: float, point: Vector3) -> void:
 	shot.global_position = point
 	var gain := lerpf(0.3, 1.0, clampf(s / 0.4, 0.0, 1.0)) if s < 0.4 else lerpf(0.55, 1.0, clampf((s - 0.4) / 0.8, 0.0, 1.0))
 	_fire(shot, IMPACT_DB + linear_to_db(gain), 1.0)
+
+
+## Car-to-car bump (`Car.bumped`, already rate-limited by the car's `bump_cooldown`): a body knock
+## at the contact point, louder and lower with the strength, the body thump under it from 0.3 up,
+## and the crash layer only for a real wreck (1.0 and up: about a 100 km/h hit), so bumping at
+## race speed never sounds like hitting a wall. Both cars of a contact get the signal; only one
+## plays it: the player's car, else the one with the lower instance id.
+func _on_bumped(strength: float, point: Vector3, other: Node) -> void:
+	if not _is_player and is_instance_valid(other) and (bool(other.get(&"controlled_by_player")) \
+			or other.get_instance_id() < car.get_instance_id()):
+		return
+	var s := clampf(strength, 0.0, 1.5)
+	_impact_light.global_position = point
+	var knock := smoothstep(0.03, 0.6, s)
+	_fire(_impact_light, BUMP_DB + linear_to_db(lerpf(0.2, 0.9, knock)), lerpf(1.08, 0.85, clampf(s / 0.8, 0.0, 1.0)))
+	if s >= 0.3:
+		_fire(_thump, THUMP_DB + linear_to_db(lerpf(0.3, 1.0, clampf((s - 0.3) / 0.7, 0.0, 1.0))), 1.0)
+	if s >= 1.0:
+		_impact_heavy.global_position = point
+		_fire(_impact_heavy, IMPACT_DB + linear_to_db(lerpf(0.5, 0.9, clampf((s - 1.0) / 0.5, 0.0, 1.0))), 1.0)
 
 
 func _on_landed(strength: float) -> void:

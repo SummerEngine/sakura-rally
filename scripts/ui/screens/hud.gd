@@ -1,7 +1,9 @@
 extends Control
-## Driving HUD. Top-left: map card with stage progress (time trial) or odometer (free roam).
-## Top-centre: stage timer with split popups. Bottom-right: tachometer. Centre: notices.
-## Reads Game.player_car / Game.session every frame (both may be null).
+## Driving HUD. Top-left: map card with stage progress (time trial, race) or odometer (free roam).
+## Top-centre: stage timer with split popups (a race: the lap under it, the interval to the car
+## ahead on the popups). Top-right, in a race: the position with the cars just ahead and behind.
+## Bottom-right: tachometer. Centre: notices.
+## Reads Game.player_car / Game.session / Game.race every frame (all may be null).
 
 const UITheme := preload("res://scripts/ui/ui_theme.gd")
 const UIMotion := preload("res://scripts/ui/ui_motion.gd")
@@ -17,6 +19,7 @@ const NOTICE_HOLD := 1.8
 
 var shown := false
 var free_roam := false
+var race := false
 
 var _accent := UITheme.SAKURA
 var _tl := Control.new()
@@ -53,6 +56,17 @@ var _notice_card: PaperCard
 var _notice_label: Label
 var _notice_tween: Tween
 
+var _tr := Control.new()
+var _tr_inner := Control.new()
+var _pos_card: PaperCard
+var _pos_value: Label
+var _pos_of: Label
+var _ahead: Label
+var _behind: Label
+var _position := 0
+var _pos_pulse := 1.0
+var _pos_tint := UITheme.INK
+
 var _enter_tween: Tween
 var _odometer_m := 0.0
 var _checkpoint_total := 0
@@ -64,6 +78,7 @@ func _ready() -> void:
 	_build_top_left()
 	_build_top_centre()
 	_build_tach()
+	_build_position()
 	_build_notice()
 	visible = false
 
@@ -177,6 +192,43 @@ func _build_tach() -> void:
 	_br_inner.add_child(_tach)
 
 
+## Race: position card in the top-right corner (right-aligned in _process).
+func _build_position() -> void:
+	_holder(_tr, _tr_inner, Control.PRESET_TOP_RIGHT)
+	# Offsets from the right anchor (`position` counts from the parent's left edge).
+	_tr.offset_left = -EDGE.x
+	_tr.offset_right = -EDGE.x
+	_tr.offset_top = EDGE.y
+	_tr.offset_bottom = EDGE.y
+	_pos_card = PaperCard.new()
+	_pos_card.padding = Vector4(26, 12, 28, 16)
+	_pos_card.radius = 20.0
+	_pos_card.paper_alpha = 0.84
+	_pos_card.set_shadow(0.16, 26.0, Vector2(0, 8))
+	_tr_inner.add_child(_pos_card)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 2)
+	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_pos_card.add_child(col)
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 8)
+	head.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(head)
+	var caption := UITheme.make_label("POSITION", UITheme.tracked(UITheme.FONT_UI_BLACK, 3), 12, Color(UITheme.INK, 0.5))
+	caption.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	caption.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	head.add_child(caption)
+	_pos_value = UITheme.make_label("", UITheme.FONT_TITLE, 54, UITheme.INK)
+	head.add_child(_pos_value)
+	_pos_of = UITheme.make_label("", UITheme.FONT_TITLE, 24, Color(UITheme.INK, 0.5))
+	_pos_of.size_flags_vertical = Control.SIZE_SHRINK_END
+	head.add_child(_pos_of)
+	_ahead = UITheme.make_label("", UITheme.FONT_UI_BOLD, 17, UITheme.INK)
+	col.add_child(_ahead)
+	_behind = UITheme.make_label("", UITheme.FONT_UI_BOLD, 17, Color(UITheme.INK, 0.7))
+	col.add_child(_behind)
+
+
 func _build_notice() -> void:
 	_notice.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
 	_notice.position.y = 290.0
@@ -200,19 +252,25 @@ func setup(map_id: String, mode: String) -> void:
 	var m: Dictionary = game.get_map(map_id)
 	_accent = UITheme.season_accent(str(m.get("season", "spring")))
 	free_roam = mode == str(game.MODE_FREE_ROAM)
+	race = mode == str(game.MODE_RACE)
 	_map_kanji.text = str(m.get("name_jp", ""))
 	_map_kanji.label_settings.font_color = _accent
 	_map_name.text = str(m.get("name", "")).to_upper()
-	_mode_label.text = "FREE ROAM" if free_roam else "TIME TRIAL"
+	_mode_label.text = "FREE ROAM" if free_roam else ("RACE" if race else "TIME TRIAL")
 	_progress.visible = not free_roam
 	_progress.accent = _accent
 	_odo_row.visible = free_roam
 	_tc.visible = not free_roam
+	_tr.visible = race
+	_position = 0
+	_pos_pulse = 1.0
 	_odometer_m = 0.0
 	_checkpoint_total = int(UIApi.num(game.session, &"checkpoint_total", 0.0))
 	_progress.reset(_checkpoint_total)
 	var best: float = game.best_time(map_id)
 	_best_label.text = "BEST  %s" % game.format_time(best) if not is_inf(best) else "FIRST RUN"
+	if race:
+		_best_label.text = _lap_text()
 	_timer.text = game.format_time(0.0)
 	_timer_tint = UITheme.INK
 	_split.visible = false
@@ -228,7 +286,8 @@ func show_hud() -> void:
 	UIMotion.kill(_enter_tween)
 	_enter_tween = UIMotion.tween(self)
 	_enter_tween.set_parallel(true)
-	var blocks := [[_tl_inner, Vector2(-60, 0), 0.0], [_tc_inner, Vector2(0, -50), 0.08], [_br_inner, Vector2(70, 40), 0.16]]
+	var blocks := [[_tl_inner, Vector2(-60, 0), 0.0], [_tc_inner, Vector2(0, -50), 0.08], [_tr_inner, Vector2(60, 0), 0.12],
+			[_br_inner, Vector2(70, 40), 0.16]]
 	for b: Array in blocks:
 		var c: Control = b[0]
 		c.position = b[1]
@@ -247,7 +306,7 @@ func hide_hud(instant: bool = false) -> void:
 		return
 	_enter_tween = UIMotion.tween(self)
 	_enter_tween.set_parallel(true)
-	var blocks := [[_tl_inner, Vector2(-50, 0)], [_tc_inner, Vector2(0, -40)], [_br_inner, Vector2(60, 30)]]
+	var blocks := [[_tl_inner, Vector2(-50, 0)], [_tc_inner, Vector2(0, -40)], [_tr_inner, Vector2(50, 0)], [_br_inner, Vector2(60, 30)]]
 	for b: Array in blocks:
 		var c: Control = b[0]
 		_enter_tween.tween_property(c, "position", b[1], 0.35).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
@@ -260,12 +319,19 @@ func hide_hud(instant: bool = false) -> void:
 func on_checkpoint(index: int, total: int, split_time: float, delta_to_best: float) -> void:
 	var game := UIApi.game()
 	_checkpoint_total = total
-	if _progress.checkpoint_total != total:
+	var lap_line := race and index == total - 1
+	if _progress.checkpoint_total != total or lap_line:
 		_progress.reset(total)
-	_progress.mark_passed(index, UIApi.num(game.session, &"progress", float(index + 1) / float(total + 1)))
+	if not lap_line:
+		_progress.mark_passed(index, UIApi.num(game.session, &"progress", float(index + 1) / float(total + 1)))
 	UIApi.stinger(&"checkpoint")
 	_split_cp.text = "CP %d / %d" % [index + 1, total]
 	_split_time.text = game.format_time(split_time)
+	if lap_line and game.race != null:
+		# The lap just completed and its time.
+		var n: int = game.race.player_lap() - 1
+		_split_cp.text = "LAP %d / %d" % [n, int(game.race.laps)]
+		_split_time.text = game.format_time(game.race.player_lap_time(n))
 	var chip := _split_delta.get_parent() as PanelContainer
 	var has_delta := not is_nan(delta_to_best)
 	chip.visible = has_delta
@@ -359,3 +425,51 @@ func _process(delta: float) -> void:
 		_timer.pivot_offset = _timer.size * 0.5
 		_timer.scale = Vector2(s, s)
 		_timer.color = _timer_tint.lerp(UITheme.INK, smoothstep(0.35, 1.0, _timer_pulse))
+	if race:
+		_update_race(d)
+
+
+## Race: the lap under the timer; the position (a pulse when it changes, matcha for a place gained,
+## vermilion for one lost) with the cars just ahead and behind and the gaps to them.
+func _update_race(d: float) -> void:
+	var r: Object = UIApi.game().race
+	if r == null:
+		return
+	_best_label.text = _lap_text()
+	var pos: int = r.player_position()
+	if pos != _position:
+		if _position > 0:
+			_pos_tint = UITheme.MATCHA if pos < _position else UITheme.VERMILION
+			_pos_pulse = 0.0
+		_position = pos
+		_pos_value.text = str(pos)
+		_pos_of.text = "/ %d" % r.entrants.size()
+	_pos_pulse = minf(_pos_pulse + d * 1.4, 1.0)
+	var s := lerpf(1.3, 1.0, UIMotion.out_spring(_pos_pulse))
+	_pos_value.pivot_offset = _pos_value.size * 0.5
+	_pos_value.scale = Vector2(s, s)
+	_pos_value.label_settings.font_color = _pos_tint.lerp(UITheme.INK, smoothstep(0.35, 1.0, _pos_pulse))
+	_ahead.text = _neighbour_text(r.player_neighbour(-1), "▲")
+	_behind.text = _neighbour_text(r.player_neighbour(1), "▼")
+	_ahead.visible = _ahead.text != ""
+	_behind.visible = _behind.text != ""
+	_pos_card.position.x = -_pos_card.size.x
+
+
+## Race: the lap the player is on.
+func _lap_text() -> String:
+	var r: Object = UIApi.game().race
+	if r == null:
+		return ""
+	var laps: int = r.laps
+	var lap: int = r.player_lap()
+	return "FINAL LAP" if lap == laps and laps > 1 else "LAP %d / %d" % [lap, laps]
+
+
+## A neighbour in the running order ({"name", "gap"} from RaceField.player_neighbour) as a line
+## of the position card; "" for none.
+func _neighbour_text(n: Dictionary, arrow: String) -> String:
+	if n.is_empty():
+		return ""
+	var g := float(n["gap"])
+	return "%s  %s" % [arrow, n["name"]] if is_nan(g) else "%s  %s   %.1f s" % [arrow, n["name"], absf(g)]

@@ -8,13 +8,18 @@ extends Node
 ##                       the title screen
 ##   start -> LOADING    ink covers the screen while the car is placed at rest on the grid
 ##   -> INTRO            camera swoop onto the car, letterboxed
-##   -> COUNTDOWN        (time trial) the car is held in neutral, throttle revs it
+##   -> COUNTDOWN        (time trial, race) the car is held in neutral, throttle revs it
 ##   -> RACING / FREE_ROAM
 ##   -> FINISHED         slow-motion beat; the car is brought to rest at the route's finish
 ##                       stop while the camera orbits it behind the results card
 ##
-## Time trials keep the branch gates closed; free roam opens them. The campaign (Game.CAMPAIGN)
-## is one continuous drive with no cover between legs:
+## A race (Game.MODE_RACE) puts the six rivals (Game.RIVALS) on a grid ahead of the player's car,
+## slowest on pole, each driven by a RaceBot at its lap time for the stage; every car collides with
+## the others (Car.car_contacts) and a RaceField times them all. Past the line the finishers come
+## to rest one behind the other in finishing order (the winner on the finish stop).
+##
+## Time trials and races keep the branch gates closed; free roam opens them. The campaign
+## (Game.CAMPAIGN) is one continuous drive with no cover between legs:
 ##
 ##   SS1 (INTRO, COUNTDOWN, RACING, FINISHED at Hanami's finish stop, results)
 ##   -> Continue         the hanami_branch gate opens in view over the resting car (short beat)
@@ -34,6 +39,7 @@ extends Node
 signal world_ready
 
 const UI_ROOT := preload("res://scenes/ui/ui_root.tscn")
+const UITheme := preload("res://scripts/ui/ui_theme.gd")
 const INTRO_TIME := 3.4
 ## Route of the title flyover (a closed loop) and the route the world is built with.
 const MENU_MAP := "hanami"
@@ -49,6 +55,15 @@ const GATE_CLOSE := 20.0
 ## Longest wait for a car still rolling to its stop (a finish stop, the next stage's grid) before
 ## the next leg starts anyway.
 const REST_WAIT := 8.0
+## Race grid: slot 0 (pole) on the route's spawn, each next slot RACE_GRID_GAP metres further
+## back, alternating RACE_GRID_LAT metres left and right of the centre line.
+const RACE_GRID_GAP := 5.0
+const RACE_GRID_LAT := 2.2
+## Race finishers come to rest PARC_GAP metres apart behind the winner on the finish stop.
+const PARC_GAP := 8.0
+## A rival's name tag shows within NAME_TAG_RANGE metres of the camera: the cars around you, not
+## a pack further up the road, whose tags would pile up into one smear.
+const NAME_TAG_RANGE := 40.0
 
 var ui: CanvasLayer
 var post: PostFX
@@ -62,6 +77,10 @@ var fx: CarFX
 var session: RaceSession
 var autopilot: Autopilot
 var menu_stage: MenuStage
+## A race: its timing, the rivals' cars and their wheel effects (empty outside a race).
+var race: RaceField
+var rivals: Array[Car] = []
+var rival_fx: Array[CarFX] = []
 
 var _run: int = 0
 var _busy: bool = false
@@ -243,8 +262,8 @@ func _enter_menu(map_id: String, run: int) -> void:
 
 
 ## A drive from a route's spawn, placed at rest under the cover (screen covered on entry):
-## Time Attack, free roam, a retry, a campaign leg resumed from the title (a liaison starts at
-## its spawn, Hanami's finish stop, with the gates open).
+## Time Attack, a race (its grid), free roam, a retry, a campaign leg resumed from the title (a
+## liaison starts at its spawn, Hanami's finish stop, with the gates open).
 func _start_race(route: String, mode: String, run: int) -> void:
 	var covered_at := Time.get_ticks_msec()
 	_restore_time()
@@ -255,11 +274,15 @@ func _start_race(route: String, mode: String, run: int) -> void:
 	if run != _run:
 		return
 	map.select_route(route)
-	_set_gates(mode != Game.MODE_TIME_TRIAL, false)
+	var timed := mode == Game.MODE_TIME_TRIAL or mode == Game.MODE_RACE
+	_set_gates(not timed, false)
 	var liaison := mode == Game.MODE_LIAISON
 	_spawn_car(true, mode)
+	if mode == Game.MODE_RACE:
+		_spawn_race(route)
 	Game.player_car = car
 	Game.session = session
+	Game.race = race
 	chase.target = car
 	car.launch_hold = true
 	await _hold_cover(covered_at)
@@ -281,7 +304,7 @@ func _start_race(route: String, mode: String, run: int) -> void:
 	post.letterbox_target = 0.0
 	chase.make_current()
 	chase.snap()
-	if mode == Game.MODE_TIME_TRIAL:
+	if timed:
 		await _countdown(run)
 		return
 	car.launch_hold = false
@@ -289,7 +312,7 @@ func _start_race(route: String, mode: String, run: int) -> void:
 	Game.notify_race_started()
 
 
-## COUNTDOWN on the spot (the car is held on the line), then RACING.
+## COUNTDOWN on the spot (the cars are held on the line), then RACING.
 func _countdown(run: int) -> void:
 	Game.set_state(Game.State.COUNTDOWN)
 	for v in [3, 2, 1]:
@@ -299,7 +322,11 @@ func _countdown(run: int) -> void:
 			return
 	Game.notify_countdown(0)
 	car.launch_hold = false
+	for rival in rivals:
+		rival.launch_hold = false
 	session.start_timer()
+	if race != null:
+		race.start()
 	Game.set_state(Game.State.RACING)
 	Game.notify_race_started()
 
@@ -477,14 +504,15 @@ func _finale(run: int) -> void:
 	ui.transition_in()
 
 
-func _on_session_finished(_result: Dictionary) -> void:
+func _on_session_finished(result: Dictionary) -> void:
 	if Game.state != Game.State.RACING:
 		return
 	Game.set_state(Game.State.FINISHED)
 	var run := _run
-	# The car is brought to rest at the finish stop; the camera holds the chase view through
-	# the slow-motion beat, then swings out into an orbit behind the results card.
-	_stop_at(map.finish_stop)
+	# The car is brought to rest at the finish stop (in a race: its place in the queue of
+	# finishers); the camera holds the chase view through the slow-motion beat, then swings out
+	# into an orbit behind the results card.
+	_stop_at(map.finish_stop if race == null else _parc_slot(int(result["position"])))
 	Engine.time_scale = FINISH_SLOWMO
 	Sound.set_slowmo(FINISH_SLOWMO)
 	post.letterbox_target = 1.0
@@ -527,8 +555,9 @@ func _set_gates(open: bool, animate: bool) -> void:
 		map.gates[id].set_open(open, animate)
 
 
-## New car at the route's spawn, placed at rest, cel-converted, with wheel effects and a route
-## follower (the session also supplies reset points for the menu car).
+## New car at the route's spawn (in a race: the last slot of the grid), placed at rest,
+## cel-converted, with wheel effects and a route follower (the session also supplies reset points
+## for the menu car).
 func _spawn_car(player: bool, mode: String) -> void:
 	car = (load(str(Game.current_car()["scene"])) as PackedScene).instantiate() as Car
 	car.name = "PlayerCar" if player else "MenuCar"
@@ -536,7 +565,7 @@ func _spawn_car(player: bool, mode: String) -> void:
 	add_child(car)
 	var c := Game.car_colors()
 	car.set_livery(c["primary"], c["secondary"])
-	car.place_at_rest(map.spawn)
+	car.place_at_rest(_grid_slot(Game.RIVALS.size()) if mode == Game.MODE_RACE else map.spawn)
 	var lights := CarLook.apply(car)
 	fx = CarFX.new()
 	fx.name = "CarFX"
@@ -550,6 +579,105 @@ func _spawn_car(player: bool, mode: String) -> void:
 	session.arrived.connect(_on_session_arrived)
 	session.reset_needed.connect(func(_reason: String) -> void: car.reset_to_track())
 	_apply_quality()
+
+
+## A race: the rivals on the grid ahead of the player's car (slowest on pole), each in its own car
+## and colours, held on the line and driven from GO by a RaceBot set to its lap time for the stage;
+## every car of the race collides with the others; the RaceField enters them all.
+func _spawn_race(route: String) -> void:
+	var grid := Game.RIVALS.duplicate()
+	grid.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return Game.rival_lap_time(a, route) > Game.rival_lap_time(b, route))
+	var field: Array[Car] = [car]
+	for g in grid.size():
+		var r: Dictionary = grid[g]
+		var rival := (load(str(Game.get_car(str(r["car"]))["scene"])) as PackedScene).instantiate() as Car
+		rival.name = "Rival%d" % g
+		rival.controlled_by_player = false
+		rival.add_to_group(&"race_rival") # before add_child: SoftCourse looks when the car is ready
+		rival.add_child(_name_tag(str(r["name"])))
+		add_child(rival)
+		rival.set_livery(r["colors"][0], r["colors"][1])
+		rival.place_at_rest(_grid_slot(g))
+		rival.launch_hold = true
+		var rfx := CarFX.new()
+		rfx.name = "RivalFX%d" % g
+		add_child(rfx)
+		rfx.setup(rival, CarLook.apply(rival), map.sun_dir)
+		rivals.append(rival)
+		rival_fx.append(rfx)
+		field.append(rival)
+	race = RaceField.new()
+	race.name = "Race"
+	add_child(race)
+	race.setup(map, session, Game.RACE_LAPS)
+	race.car_finished.connect(_on_race_car_finished)
+	var you := Game.current_car()
+	race.add(car, {"name": "You", "name_jp": you["name_jp"], "team": "%s · %s" % [you["name"], Game.car_colors()["name"]],
+			"player": true, "car_id": you["id"], "colors": [car.livery_primary, car.livery_secondary]})
+	for g in grid.size():
+		var r: Dictionary = grid[g]
+		race.add(rivals[g], {"name": r["name"], "name_jp": r["name_jp"], "team": r["team"], "player": false,
+				"car_id": r["car"], "colors": r["colors"]})
+		var bot := RaceBot.new()
+		bot.name = "RaceBot"
+		bot.track = map.track
+		bot.pace = RaceBot.pace_for_lap(route, Game.rival_lap_time(r, route), str(r["car"]))
+		bot.field = field
+		bot.phase = g % DriveHands.DECISION_TICKS
+		rivals[g].add_child(bot)
+	for c in field:
+		c.car_contacts = true
+
+
+## A car took the flag: its RaceBot lets go (a rival's; a test harness may drive the player's car
+## with one too) and a rival's ArrivalStop brings it to rest at its place in the queue of finishers
+## (the player's car stops in _on_session_finished).
+func _on_race_car_finished(c: Car, position: int) -> void:
+	var bot := c.get_node_or_null(^"RaceBot")
+	if bot != null:
+		c.remove_child(bot)
+		bot.queue_free()
+	if c == car:
+		return
+	var stop := ArrivalStop.new()
+	stop.name = "ArrivalStop"
+	stop.track = map.track
+	stop.target = _parc_slot(position)
+	c.add_child(stop)
+
+
+## Race grid slot `g` (0: pole) on the selected route, facing along the road.
+func _grid_slot(g: int) -> Transform3D:
+	var t := map.track
+	var s := t.abs_s(t.nearest(map.spawn.origin), map.spawn.origin) - RACE_GRID_GAP * g
+	return t.transform_at_abs(s, -RACE_GRID_LAT if g % 2 == 0 else RACE_GRID_LAT)
+
+
+## Where the race finisher in `position` (from 1) comes to rest: the winner on the finish stop,
+## each next one PARC_GAP metres behind on the road.
+func _parc_slot(position: int) -> Transform3D:
+	var t := map.track
+	var stop := map.finish_stop.origin
+	return t.transform_at_abs(t.abs_s(t.nearest(stop), stop) - PARC_GAP * (position - 1), 0.0)
+
+
+## The name over a rival's car, drawn at a fixed size, fading out beyond NAME_TAG_RANGE.
+func _name_tag(text: String) -> Label3D:
+	var label := Label3D.new()
+	label.name = "NameTag"
+	label.text = text
+	label.font = UITheme.FONT_UI_BLACK
+	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	label.fixed_size = true
+	label.pixel_size = 0.0011
+	label.font_size = 26
+	label.outline_size = 8
+	label.position = Vector3(0.0, 2.0, 0.0)
+	label.visibility_range_end = NAME_TAG_RANGE
+	label.visibility_range_end_margin = 10.0
+	label.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+	return label
 
 
 ## Autopilot on the route (replacing any earlier one). An open route's line runs on 45 m past
@@ -581,14 +709,18 @@ func drive_curve() -> Curve3D:
 func _clear_car() -> void:
 	Game.player_car = null
 	Game.session = null
+	Game.race = null
 	chase.target = null
-	for n: Node in [autopilot, car, fx, session]:
+	for n: Node in [autopilot, car, fx, session, race] + rivals + rival_fx:
 		if n != null and is_instance_valid(n):
 			n.queue_free()
 	autopilot = null
 	car = null
 	fx = null
 	session = null
+	race = null
+	rivals.clear()
+	rival_fx.clear()
 
 
 func _hold_cover(since_ms: int) -> void:
@@ -610,3 +742,5 @@ func _apply_quality() -> void:
 	post.apply_quality(q)
 	if fx != null:
 		fx.set_quality(q)
+	for rfx in rival_fx:
+		rfx.set_quality(q)
