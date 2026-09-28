@@ -92,6 +92,33 @@ func reset(s: float = NAN) -> void:
 	hint = -1 if is_nan(s) else track.index_at_abs(s)
 
 
+## Road `t` driven the other way (training's ":rev" routes, AutoDrive in free roam): samples in
+## reverse order (index j is sample count - j on a loop, so distances still start at 0), forward
+## and bank negated, distances mirrored.
+static func reversed_road(t: Track) -> Track:
+	var cols := Track.COLS
+	var src := t.data
+	var out := PackedFloat32Array()
+	out.resize(src.size())
+	for j in t.count:
+		var i := (t.count - j) % t.count if t.closed else t.count - 1 - j
+		for c in cols:
+			out[j * cols + c] = src[i * cols + c]
+		var o := j * cols
+		out[o + 3] = -out[o + 3]
+		out[o + 4] = -out[o + 4]
+		out[o + 9] = -out[o + 9]
+		out[o + 8] = fposmod(t.length - src[i * cols + 8], t.length) if t.closed \
+				else t.first_s + t.last_s - src[i * cols + 8]
+	var start := fposmod(t.length - t.start_s, t.length) if t.closed else t.first_s + t.last_s - t.start_s
+	var surfaces: Array[String] = []
+	for s in t.surface_names:
+		surfaces.append(str(s))
+	var r := Track.new()
+	r.setup(out, {"length": t.length, "start_s": start, "verge": t.verge, "surfaces": surfaces}, t.closed)
+	return r
+
+
 ## Writes OBS_SIZE floats for `car` into `out` from `offset`.
 func observe(car: Car, out: PackedFloat32Array, offset: int = 0) -> void:
 	var pos := car.global_position

@@ -7,9 +7,9 @@ extends Node
 ##      the liaison or free roam and gives it back when pressed again. A Time Attack run it drove
 ##      any part of sets no record or medal (Game.ai_drove); campaign stages, which count for the
 ##      rally classification, it sits out. The game's own takeovers (the finish stop, the liaison
-##      arrival) still win. In free roam it keeps to the road the car is on. In a race (Main.race)
-##      it is a RaceBot among the rivals instead: it sees their cars, passes them and rescues
-##      itself, at the free driver's own speed (RACE_PACE).
+##      arrival) still win. In free roam it keeps to the road the car is on, the way the car goes
+##      (below). In a race (Main.race) it is a RaceBot among the rivals instead: it sees their
+##      cars, passes them and rescues itself, at the free driver's own speed (RACE_PACE).
 ##   G  ghosts: the training generations (GENERATIONS_DIR, one DrivePolicy file each, oldest
 ##      first) join as ghost cars on a staggered grid behind the player, held on the line with the
 ##      player's car through the countdown: on no collision layer (a car with `car_contacts` on
@@ -30,6 +30,12 @@ extends Node
 ## A driven car that leaves the road (or stops making progress) for RESCUE_S is put back on it:
 ## the player's car as with the reset key (which also works while the driver has it), a ghost on
 ## its own road; a RaceBot does this itself, clear of the other cars.
+## Free roam has no wrong way. The driver takes a road the way the car goes, when it takes the car
+## and when the car reaches another road (the route's track, or the same road reversed:
+## DriveSense.reversed_road), and a car that travels against its road for FLIP_S (after a spin,
+## the pixel driver turning onto a loop the other way round) drives it the other way from then on.
+## Progress, the rescue and the reset key follow that way; the car's own reset (RaceSession's,
+## which faces the route's way) waits while the driver has the car.
 
 ## The driver shipped with the game.
 const DRIVER := "res://assets/ai/driver.json"
@@ -38,6 +44,9 @@ const GENERATIONS_DIR := "res://assets/ai/generations"
 const PIXEL_DRIVER := "res://assets/ai/pixel_driver.json"
 const RESCUE_S := 2.5
 const OFF_ROAD_M := 3.0
+## Free roam: a car moving faster than FLIP_MPS against its road for FLIP_S drives it the other way.
+const FLIP_MPS := 3.0
+const FLIP_S := 0.5
 ## Pace of the player's RaceBot in a race: no limit, the free driver's own speed.
 const RACE_PACE := INF
 ## The last stretch of an open road: the road ahead a car sees shrinks onto the end there and it
@@ -79,8 +88,13 @@ var rescues: int = 0
 var _pilot: NeuralPilot
 var _took_car: bool = false
 var _ghosts_for: Car
-## Per driven car (instance id): [seconds in trouble, last road distance].
+## Per driven car (instance id): [seconds in trouble, last road distance, seconds against its road].
 var _trouble: Dictionary = {}
+## Free roam's reversed roads: a route's track -> the same road reversed (made once), and back.
+var _reversed: Dictionary = {}
+var _route_of: Dictionary = {}
+## The player's car's auto_reset_time while the driver holds it in free roam (NAN: not held).
+var _car_reset: float = NAN
 ## Game.state at the last physics tick: entering COUNTDOWN starts a new run (clears ai_drove).
 var _state: int = -1
 var _pixel_tried: bool = false
@@ -162,7 +176,7 @@ func _physics_process(delta: float) -> void:
 			if race != null:
 				_pilot = _make_race_bot(race, track, main.rivals.size())
 			else:
-				var road := _road_under(car, track) if free_roam else track
+				var road := _free_road(car, _road_under(car, track)) if free_roam else track
 				_pilot = _make_pixel_pilot(road) if from_pixels else _make_pilot(policy, road, 0)
 			car.add_child(_pilot)
 			if _pilot is PixelPilot:
@@ -172,10 +186,11 @@ func _physics_process(delta: float) -> void:
 		if car.controlled_by_player:
 			car.controlled_by_player = false
 			_took_car = true
+		_hold_car_reset(car, free_roam)
 		if Game.state in [Game.State.COUNTDOWN, Game.State.RACING]:
 			Game.ai_drove = true # this run sets no record or medal (Game.notify_finished)
 		if Input.is_action_just_pressed(&"reset_car") and not car.launch_hold:
-			car.reset_to_track()
+			_reset_player(car, _pilot)
 		if _rescue(car, _pilot, delta):
 			rescues += 1
 	elif _pilot != null:
@@ -187,7 +202,12 @@ func _physics_process(delta: float) -> void:
 	if not ghosts.is_empty() and (new_run or car != _ghosts_for or not is_instance_valid(_ghosts_for)):
 		_clear_ghosts()
 	if ghosts_on and drivable and ghosts.is_empty():
-		_spawn_ghosts(car, _pilot.track if _pilot != null else (_road_under(car, track) if free_roam else track))
+		var road := track
+		if _pilot != null:
+			road = _pilot.track
+		elif free_roam:
+			road = _free_road(car, _road_under(car, track))
+		_spawn_ghosts(car, road)
 	for ghost in ghosts: # ghosts exist only for a live `car` (_ghosts_for)
 		var pilot := ghost.get_node(^"NeuralPilot") as NeuralPilot
 		# on the line with the player through the countdown, parked at the end of an open road
@@ -257,6 +277,52 @@ func _road_under(car: Car, fallback: Track, exclude: Track = null) -> Track:
 			best_d = d
 			best = t
 	return best
+
+
+## Free roam: road `route` (a route's track) the way the car goes: that track, or the same road
+## reversed when the car moves (nearly still: points) against it.
+func _free_road(car: Car, route: Track) -> Track:
+	var v := car.linear_velocity
+	var dir := v if v.length() > FLIP_MPS else -car.global_basis.z
+	return route if route.forward(route.nearest(car.global_position)).dot(dir) >= 0.0 else _twin(route)
+
+
+## The same road the other way: a route's track reversed, or a reversed road's route track.
+func _twin(t: Track) -> Track:
+	if _route_of.has(t):
+		return _route_of[t]
+	if not _reversed.has(t):
+		var r := DriveSense.reversed_road(t)
+		_reversed[t] = r
+		_route_of[r] = t
+	return _reversed[t]
+
+
+## The route track of road `t` (itself unless it is a reversed road).
+func _route_road(t: Track) -> Track:
+	return _route_of.get(t, t)
+
+
+## Free roam: the car's own reset (RaceSession's, facing the route's way) waits while the driver
+## has the car; the rescue, which knows the way the car drives, puts it back instead.
+func _hold_car_reset(car: Car, hold: bool) -> void:
+	if hold and is_nan(_car_reset):
+		_car_reset = car.auto_reset_time
+		car.auto_reset_time = INF
+	elif not hold and not is_nan(_car_reset):
+		car.auto_reset_time = _car_reset
+		_car_reset = NAN
+
+
+## The player's car back on the road as the reset key puts it (RaceSession: in a time trial the
+## last point legitimately reached, facing the route's way); in free roam on the driver's own
+## road, facing the way it drives.
+func _reset_player(car: Car, pilot: NeuralPilot) -> void:
+	var sense := pilot.sense
+	if Game.state == Game.State.FREE_ROAM and not (pilot is RaceBot) and sense != null and sense.hint >= 0:
+		car.reset_to(sense.track.transform_at_abs(sense.road_s(car.global_position) - 4.0, 0.0, 0.35))
+	else:
+		car.reset_to_track()
 
 
 ## A ghost at the end of an open road has no road left to drive: it parks there.
@@ -367,6 +433,9 @@ func _detach(to_player: bool) -> void:
 		_pilot.queue_free()
 		if to_player and _took_car and car != null and is_instance_valid(car) and not car.has_node(^"ArrivalStop"):
 			car.controlled_by_player = true
+		if car != null and is_instance_valid(car):
+			_hold_car_reset(car, false)
+	_car_reset = NAN
 	_pilot = null
 	_took_car = false
 	_hide_view()
@@ -374,15 +443,14 @@ func _detach(to_player: bool) -> void:
 
 ## Puts a driven car back on the road after RESCUE_S off it (OFF_ROAD_M beyond the verge) or
 ## without progress; true when it did. The player's car goes where the reset key would put it
-## (RaceSession: in a time trial the last point legitimately reached); a ghost goes back on its
-## own road, so it neither lands next to the player nor touches the player's session. A RaceBot
-## rescues its car itself.
+## (_reset_player); a ghost goes back on its own road, so it neither lands next to the player nor
+## touches the player's session. A RaceBot rescues its car itself.
 func _rescue(car: Car, pilot: NeuralPilot, delta: float) -> bool:
 	if pilot == null or pilot is RaceBot or pilot.sense == null or pilot.sense.hint < 0 or car.launch_hold:
 		return false
 	var sense := pilot.sense
 	var id := car.get_instance_id()
-	var st: Array = _trouble.get(id, [0.0, NAN])
+	var st: Array = _trouble.get(id, [0.0, NAN, 0.0])
 	var pos := car.global_position
 	var s := sense.road_s(pos)
 	var ds := 0.0 if is_nan(st[1]) else s - float(st[1])
@@ -393,14 +461,23 @@ func _rescue(car: Car, pilot: NeuralPilot, delta: float) -> bool:
 	var players: bool = car == get_parent().car
 	if players and Game.state == Game.State.FREE_ROAM:
 		# Every road of the world is open: once the player's car is on another road (off this one,
-		# or at the end of an open road) it drives that one. A ghost keeps to its own road and parks
-		# at its end.
+		# or at the end of an open road) it drives that one, the way the car goes. A ghost keeps to
+		# its own road and parks at its end.
+		var here := _route_road(sense.track)
 		if off or (not sense.track.closed and s >= sense.track.length - ROAD_END_M):
-			var road := _road_under(car, sense.track, sense.track)
-			if road != sense.track and _on_road(road, pos):
-				pilot.track = road
+			var road := _road_under(car, here, here)
+			if road != here and _on_road(road, pos):
+				pilot.track = _free_road(car, road)
 				_trouble.erase(id)
 				return false
+		# No wrong way either: a car travelling against its road drives it the other way.
+		var v := car.linear_velocity
+		var against := v.length() > FLIP_MPS and sense.track.forward(sense.hint).dot(v.normalized()) < -0.5
+		st[2] = st[2] + delta if against else 0.0
+		if st[2] > FLIP_S:
+			pilot.track = _twin(sense.track)
+			_trouble.erase(id)
+			return false
 	var stuck := ds < 0.05 * delta * 60.0 and Game.state != Game.State.COUNTDOWN
 	st[0] = st[0] + delta if off or stuck else 0.0
 	var rescued: bool = st[0] > RESCUE_S
@@ -408,7 +485,7 @@ func _rescue(car: Car, pilot: NeuralPilot, delta: float) -> bool:
 		st[0] = 0.0
 		st[1] = NAN
 		if players:
-			car.reset_to_track()
+			_reset_player(car, pilot)
 		else:
 			car.reset_to(sense.track.transform_at_abs(s - 4.0, 0.0, 0.35))
 	_trouble[id] = st

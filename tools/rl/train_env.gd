@@ -137,7 +137,7 @@ func _build() -> bool:
 			return false
 		var reverse := parts.size() > 1 and parts[1] == "rev"
 		var t: Track = map.routes[parts[0]]["track"]
-		routes.append({"id": spec, "reverse": reverse, "track": reversed_track(t) if reverse else t})
+		routes.append({"id": spec, "reverse": reverse, "track": DriveSense.reversed_road(t) if reverse else t})
 
 	var n := int(opts["cars"])
 	var car_ids: PackedStringArray = str(opts["car"]).split(",")
@@ -212,32 +212,6 @@ func _drive() -> void:
 		for k in cars.size():
 			hands[k].apply(cars[k], dt)
 		await physics_frame
-
-
-## The route driven the other way: samples in reverse order (index j is sample count - j on a
-## loop, so distances still start at 0), forward and bank negated, distances mirrored.
-static func reversed_track(t: Track) -> Track:
-	var cols := Track.COLS
-	var src := t.data
-	var out := PackedFloat32Array()
-	out.resize(src.size())
-	for j in t.count:
-		var i := (t.count - j) % t.count if t.closed else t.count - 1 - j
-		for c in cols:
-			out[j * cols + c] = src[i * cols + c]
-		var o := j * cols
-		out[o + 3] = -out[o + 3]
-		out[o + 4] = -out[o + 4]
-		out[o + 9] = -out[o + 9]
-		out[o + 8] = fposmod(t.length - src[i * cols + 8], t.length) if t.closed \
-				else t.first_s + t.last_s - src[i * cols + 8]
-	var start := fposmod(t.length - t.start_s, t.length) if t.closed else t.first_s + t.last_s - t.start_s
-	var surfaces: Array[String] = []
-	for s in t.surface_names:
-		surfaces.append(str(s))
-	var r := Track.new()
-	r.setup(out, {"length": t.length, "start_s": start, "verge": t.verge, "surfaces": surfaces}, t.closed)
-	return r
 
 
 ## New episode for car k on a random route at a random point of it, standing still.

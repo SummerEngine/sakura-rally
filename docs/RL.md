@@ -26,7 +26,12 @@ key would, a ghost on its own road (a RaceBot rescues itself, see Racing). A car
 for 1 s gets full throttle (the network still steers) until 15 km/h:
 the likeliest action at a standstill after a reset can be to wait. The AI drives the automatic
 gearbox whatever the Gearbox setting (`Car.always_automatic`), and in free roam it keeps to the
-road the car is on. Command line: `-- auto-drive`, `pixel-drive`, `ghosts`, `policy=<file>`.
+road the car is on, the way the car goes: free roam has no wrong way. The AI drives a road
+backwards when the car goes that way (the road reversed, as training's `:rev` routes), turns
+onto the next road in the direction it arrives, and a car that ends up travelling against its
+road for 0.5 s (after a spin, or the pixel driver taking a loop the other way round) drives it
+that way from then on; its rescue and the reset key put it back facing the way it went.
+Command line: `-- auto-drive`, `pixel-drive`, `ghosts`, `policy=<file>`.
 
 ## What the network sees (`scripts/ai/drive_sense.gd`, 46 numbers)
 
@@ -199,8 +204,9 @@ not resources and need `include_filter="*.bin"` in the preset, or an exported ga
 `tools/rl/render_film.sh` makes "How the AI learned to drive", a narrated vertical video for
 Shorts (1080x1920, 60 fps, about 1.5 min), once per voice in `tools/rl/film.json`
 (`EXPORT=~/Projects/sakura-rally/export ELEVENLABS_API_KEY=... tools/rl/render_film.sh` writes
-`rl_explainer_<voice>.mp4` and a contact sheet of each there). The story: its very first try and
-the same AI 80 minutes later; what it gets (46 numbers ten times a second: the rays, the road
+`rl_explainer_<voice>.mp4` and a contact sheet of each there). The voice is Yuki (anime
+narrator); never ElevenLabs' Brian, the stock AI voice (his cut was dropped). The story: its very
+first try and the same AI 80 minutes later; what it gets (46 numbers ten times a second: the rays, the road
 points, the car) and the network that turns them into a move; the score (+1 every 20 m, -3 for a
 crash or leaving the road) and how the odds of the moves that scored more grow; 64 cars at once
 and the learning curve; the corner at 3 and at 31 minutes; 45 of 64 finishing after 80 minutes;
