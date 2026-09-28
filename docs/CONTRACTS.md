@@ -151,6 +151,12 @@ sit on no layer, so nothing hits them).
 Methods: `reset_to(transform: Transform3D)`, `set_livery(primary: Color, secondary: Color)`,
 `shift_up()`, `shift_down()`.
 
+Visual layer 20 (`DriveEyes.GAME_ONLY_LAYER`) is drawn by every game camera but never by the
+pixel driver's eyes (`scripts/ai/drive_eyes.gd`): cars (CarVisuals puts its model there), CarFX,
+the ghosts' labels, the ink quad and the petals around the camera. A new visual that follows a car
+or the player's camera goes on it (`DriveEyes.keep_out(node)`); one that is part of the world stays
+on layer 1, where the eyes see it, as they saw it in training.
+
 ## Game flow (`Game` autoload, `scripts/autoload/game.gd`)
 
 States: `BOOT, MENU, LOADING, INTRO, COUNTDOWN, RACING, FINISHED, FREE_ROAM`.

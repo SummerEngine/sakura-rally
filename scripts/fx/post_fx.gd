@@ -44,6 +44,7 @@ func _ready() -> void:
 	ink_quad.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	ink_quad.custom_aabb = AABB(Vector3(-1e5, -1e5, -1e5), Vector3(2e5, 2e5, 2e5))
 	ink_quad.extra_cull_margin = 16384.0
+	ink_quad.layers = DriveEyes.GAME_ONLY_LAYER # the ink is the player's view, not a pixel driver's
 	add_child(ink_quad)
 
 	grade_layer = CanvasLayer.new()

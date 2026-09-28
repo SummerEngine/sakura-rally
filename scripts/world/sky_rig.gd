@@ -170,6 +170,7 @@ func _build_particles(season: String, weight: float) -> GPUParticles3D:
 	var summer := season == "summer"
 	var petals := GPUParticles3D.new()
 	petals.name = "Particles_%s" % season
+	petals.layers = DriveEyes.GAME_ONLY_LAYER # they fall around the player's camera, not a pixel driver's
 	petals.amount = 260 if autumn else (140 if summer else 420)
 	petals.lifetime = 9.0
 	petals.preprocess = 9.0

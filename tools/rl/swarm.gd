@@ -4,7 +4,9 @@ extends SceneTree
 ## way they did in training (tools/rl/train_env.gd): the same senses and hands, each option
 ## sampled from the policy's odds with the car's own dice. A run ends by the training rules
 ## (TrainEnv.end_reason: rolled over, a crash, off the road, the wrong way, stalled) or after a
-## full lap; the car then brakes to a stop (at most STOP_S) and its file closes. Every run is a
+## full lap; the car then brakes to a stop (at most STOP_S) and its file closes. A car that
+## finished drives on under the policy for DRIVE_ON_S first, so on film the finishers cross the
+## line at speed instead of braking in a heap behind it. Every run is a
 ## replay file in the player's format (ReplayWriter), so ReplayGhost plays it back and
 ## tools/replay/review.gd reads it. The cars never touch each other (car layer 2 masks only the
 ## world and props), as in training.
@@ -29,20 +31,23 @@ const F := preload("res://scripts/game/replay_format.gd")
 ## The start: every car on the start line, spread up to START_LAT m either side of the centre.
 const START_LAT := 1.5
 ## After its run ends a car brakes with the wheel straight; its file closes once the car is
-## slower than STOP_KMH (from STOP_MIN_S after the end) or STOP_S after the end.
+## slower than STOP_KMH (from STOP_MIN_S after braking starts) or STOP_S after it. A car that
+## finished drives on for DRIVE_ON_S before it brakes.
 const STOP_KMH := 3.0
 const STOP_MIN_S := 0.5
 const STOP_S := 3.0
+const DRIVE_ON_S := 4.0
 const DRIVE := 0
 const STOP := 1
 const DONE := 2
+## Finished, still driving (DRIVE_ON_S).
+const ON := 3
 const FINISH := 6
 
 var opts := {"policies": "", "route": "hanami", "cars": "64", "car": "sakura,hayate", "seed": "1",
 		"dest": "/tmp/sakura_swarm", "limit": "150"}
 var game: Node
 var map: MapWorld
-var state_names: Array[String] = []
 var time: float = 0.0
 
 
@@ -66,6 +71,8 @@ class Run:
 	var since: float = 0.0
 	var reason: int = 0
 	var end_t: float = 0.0
+	## When it started braking.
+	var brake_t: float = 0.0
 	var stop_t: float = 0.0
 
 
@@ -79,11 +86,6 @@ func _initialize() -> void:
 
 func _run() -> void:
 	game = root.get_node("Game")
-	var states: Dictionary = game.State
-	for key in states:
-		while state_names.size() <= int(states[key]):
-			state_names.append("")
-		state_names[int(states[key])] = str(key)
 	var route := str(opts["route"])
 	map = MapWorld.new()
 	map.name = "Map"
@@ -143,7 +145,9 @@ func _record(policy: DrivePolicy, policy_name: String, t: Track, route: String) 
 	time = 0.0
 	var state: int = game.State.FREE_ROAM
 	for r in runs:
-		r.header = _header(r, policy, policy_name, route, t)
+		r.header = tool_header(game, map, r.car, r.car_id, route, t, {"policy": policy_name,
+				"run": str(policy.meta.get("run", "")), "steps": int(policy.meta.get("steps", 0)),
+				"car_index": r.index, "seed": int(opts["seed"])})
 		r.sense.observe(r.car, r.obs)
 		r.last_s = r.sense.road_s(r.car.global_position)
 		r.writer.frame(0.0, r.car, state, 0, 0, 0.0, true)
@@ -153,7 +157,7 @@ func _record(policy: DrivePolicy, policy_name: String, t: Track, route: String) 
 	var live := n
 	while live > 0:
 		for r in runs:
-			if r.phase == DRIVE:
+			if r.phase == DRIVE or r.phase == ON:
 				var a := policy.act(r.obs, r.dice)
 				r.hands.set_action(a[0], a[1], a[2])
 				r.hit = 0.0
@@ -167,12 +171,16 @@ func _record(policy: DrivePolicy, policy_name: String, t: Track, route: String) 
 			if tick % F.TICKS_PER_FRAME == 0:
 				for r in runs:
 					if r.phase != DONE:
-						r.writer.frame(time, r.car, state, 0, 0, time, r.phase == DRIVE)
+						r.writer.frame(time, r.car, state, 0, 0, time, r.phase == DRIVE or r.phase == ON)
 		for r in runs:
 			if r.phase == DRIVE:
 				_judge(r, t, step, limit)
-			elif r.phase == STOP and (time - r.end_t >= STOP_S
-					or (time - r.end_t >= STOP_MIN_S and absf(r.car.speed_kmh) < STOP_KMH)):
+			elif r.phase == ON:
+				r.sense.observe(r.car, r.obs)
+				if time - r.end_t >= DRIVE_ON_S:
+					_brake(r)
+			elif r.phase == STOP and (time - r.brake_t >= STOP_S
+					or (time - r.brake_t >= STOP_MIN_S and absf(r.car.speed_kmh) < STOP_KMH)):
 				_close(r, dir)
 				live -= 1
 	var out := {"policy": policy_name, "run": str(policy.meta.get("run", "")), "steps": int(policy.meta.get("steps", 0)),
@@ -196,7 +204,8 @@ func _record(policy: DrivePolicy, policy_name: String, t: Track, route: String) 
 	await process_frame
 
 
-## Progress and the training rules after one decision; a run that ends starts braking.
+## Progress and the training rules after one decision; a run that ends starts braking (a finish
+## drives on first).
 func _judge(r: Run, t: Track, step: float, limit: float) -> void:
 	r.sense.observe(r.car, r.obs)
 	var pos := r.car.global_position
@@ -220,10 +229,18 @@ func _judge(r: Run, t: Track, step: float, limit: float) -> void:
 		return
 	r.reason = reason
 	r.end_t = time
-	r.phase = STOP
-	r.hands.set_action(3, 0, 0) # wheel straight, brakes on
 	r.writer.event(time, {"type": "ai_end", "reason": TrainEnv.REASONS[reason] if reason != FINISH else "finish",
 			"metres": r.best})
+	if reason == FINISH:
+		r.phase = ON
+	else:
+		_brake(r)
+
+
+func _brake(r: Run) -> void:
+	r.phase = STOP
+	r.brake_t = time
+	r.hands.set_action(3, 0, 0) # wheel straight, brakes on
 
 
 func _close(r: Run, dir: String) -> void:
@@ -246,12 +263,20 @@ func _on_impact(strength: float, point: Vector3, r: Run) -> void:
 		r.writer.event(time, {"type": "impact", "strength": strength, "point": point, "kmh": r.car.speed_kmh})
 
 
-## The replay header, with the keys the Replays autoload writes (ReplayData, ReplayGhost and the
-## review tools read them) plus "ai": the policy and the car's place in the swarm.
-func _header(r: Run, policy: DrivePolicy, policy_name: String, route: String, t: Track) -> Dictionary:
+## The replay header of a tool's AI car, with the keys the Replays autoload writes (ReplayData,
+## ReplayGhost and the review tools read them) plus `ai` (the policy and the car's place in its
+## batch). tools/rl_pixels/pixel_env.gd records its eval laps with it too.
+static func tool_header(game: Node, map: MapWorld, car: Car, car_id: String, route: String, t: Track,
+		ai: Dictionary) -> Dictionary:
+	var state_names: Array[String] = []
+	var states: Dictionary = game.State
+	for key in states:
+		while state_names.size() <= int(states[key]):
+			state_names.append("")
+		state_names[int(states[key])] = str(key)
 	var gates := {}
 	for id: String in map.gates:
-		gates[id] = true
+		gates[id] = (map.gates[id] as RoadGate).is_open
 	return {
 		"game": ProjectSettings.get_setting("application/config/name", ""),
 		"engine": Engine.get_version_info().get("string", ""),
@@ -262,9 +287,9 @@ func _header(r: Run, policy: DrivePolicy, policy_name: String, route: String, t:
 		"mode": "ai_practice",
 		"state": "FREE_ROAM",
 		"campaign": {"active": false, "leg": 0},
-		"car": r.car_id,
-		"car_scene": r.car.scene_file_path,
-		"livery": {"index": 0, "primary": r.car.livery_primary, "secondary": r.car.livery_secondary},
+		"car": car_id,
+		"car_scene": car.scene_file_path,
+		"livery": {"index": 0, "primary": car.livery_primary, "secondary": car.livery_secondary},
 		"settings": {},
 		"tool_run": true,
 		"os": OS.get_name(),
@@ -275,10 +300,9 @@ func _header(r: Run, policy: DrivePolicy, policy_name: String, route: String, t:
 		"buttons": F.BUTTONS,
 		"surfaces": [],
 		"track": {"length": t.length, "closed": t.closed, "checkpoints": []},
-		"spawn": {"pos": r.car.global_position, "yaw": r.car.global_rotation.y},
+		"spawn": {"pos": car.global_position, "yaw": car.global_rotation.y},
 		"gates": gates,
-		"ai": {"policy": policy_name, "run": str(policy.meta.get("run", "")), "steps": int(policy.meta.get("steps", 0)),
-				"car_index": r.index, "seed": int(opts["seed"])},
+		"ai": ai,
 	}
 
 

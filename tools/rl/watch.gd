@@ -14,11 +14,14 @@ extends SceneTree
 ##
 ## Options: route, mode (time_trial | free_roam), ghosts (1: the generations race along), cycle
 ## (seconds per camera target, 0: stay on the player's car), seconds (limit after the start),
-## policy (another driver file), stills.
-## Prints WATCH lines: the start, each camera cut, the finish with the stage time, or where the
+## policy (another driver file), driver (pixels: the O key instead, the pixel driver, which
+## renders, so never headless), stills.
+## Prints WATCH lines: the start (with the pixel driver, its GPU logits' largest difference from
+## torch's on the file's test frame), each camera cut, the finish with the stage time, or where the
 ## car was when time ran out.
 
-var opts := {"route": "hanami", "mode": "time_trial", "ghosts": "1", "cycle": "0", "seconds": "240", "policy": ""}
+var opts := {"route": "hanami", "mode": "time_trial", "ghosts": "1", "cycle": "0", "seconds": "240", "policy": "",
+		"driver": "geometry"}
 var game: Node
 var main: Node
 var clock: float = 0.0
@@ -54,12 +57,15 @@ func _run() -> void:
 	await _seconds(2.0)
 	game.request_start(str(opts["route"]), str(opts["mode"]))
 	await _until(func() -> bool: return game.state in [game.State.COUNTDOWN, game.State.RACING, game.State.FREE_ROAM], 90.0)
-	_press(KEY_I)
-	if not ai.auto_drive:
-		printerr("watch: the I key did not turn auto-drive on")
+	var pixels: bool = opts["driver"] == "pixels"
+	_press(KEY_O if pixels else KEY_I)
+	if not ai.auto_drive or ai.pixels != pixels:
+		printerr("watch: the %s key did not turn auto-drive on" % ("O" if pixels else "I"))
 		game.request_quit(4)
 		return
-	print("WATCH start route=%s mode=%s policy=%s ghosts=%d" % [opts["route"], opts["mode"], ai.policy.path.get_file(), ai.ghosts.size()])
+	var driver: String = ai.pixel_driver.path.get_file() + " check=%.6f" % ai.pixel_driver.check_error if pixels \
+			else ai.policy.path.get_file()
+	print("WATCH start route=%s mode=%s driver=%s ghosts=%d" % [opts["route"], opts["mode"], driver, ai.ghosts.size()])
 	var t0 := clock
 	var result := {}
 	game.race_finished.connect(func(r: Dictionary) -> void: result.merge(r))

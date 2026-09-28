@@ -1,15 +1,22 @@
 #!/usr/bin/env bash
-# "How the AI learned to drive": records the AI's practice as replays (tools/rl/swarm.gd,
-# headless: each generation's 64 cars from the start line), renders the footage offline with
-# Movie Maker (1920x1080, 60 fps, MJPEG in an AVI; the replays are silent) while
-# tools/rl/film.gd plays those replays back, then cuts the edit (tools/rl/cut_film.py). Like
-# tools/video/render_demo.sh.
+# "How the AI learned to drive", the narrated vertical video (1080x1920, 60 fps, about a minute):
+#   1. records the AI's practice as replays (tools/rl/swarm.gd, headless: each generation's 64
+#      cars from the start line; ~5 min);
+#   2. voices the narration (tools/rl/film.json) with ElevenLabs and times every word
+#      (tools/rl/narrate.py; needs ELEVENLABS_API_KEY; only changed lines are voiced again);
+#   3. renders the footage offline with Movie Maker while tools/rl/film.gd plays the replays back,
+#      each shot as long as the longest voice needs it (~4.5 min, offscreen);
+#   4. cuts one video per voice (tools/rl/cut_film.py: captions, the numbers the network gets,
+#      the network, the score, the learning loop and curve drawn over the footage, and the sound
+#      effects of tools/rl/sfx.json, downloaded once into ~/.cache/sakura-rally/sfx; ~4 min each;
+#      the learning curve needs tools/rl/runs/gen1/progress.csv).
 #   tools/rl/render_film.sh [out_dir]              # default /tmp/sakura_film
-#   tools/rl/render_film.sh --no-record [out_dir]  # render and cut from the recordings there
-#   tools/rl/render_film.sh --cut-only [out_dir]   # re-cut existing footage
-# Recordings go to <out_dir>/swarm (under 100 MB, ~5 min), the footage to <out_dir>/raw.mkv
-# (~3.5 GB). The recording runs headless; only the render needs pixels, offscreen, with the
-# engine SUMMER picks below.
+#   tools/rl/render_film.sh --no-record [out_dir]  # voice, render and cut from the recordings there
+#   tools/rl/render_film.sh --cut-only [out_dir]   # voice and cut again over the existing footage
+#                                                  # (a line that got longer needs a render)
+# Outputs to $EXPORT (default <out_dir>): rl_explainer_<voice>.mp4 and a contact sheet of each.
+# Recording runs headless; only the render needs pixels, offscreen, with the engine SUMMER picks
+# below, under the render lock (/tmp/sakura-render.lock, shared with the other film tools).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
@@ -35,8 +42,8 @@ fi
 mkdir -p "$OUT"
 
 if [ "$STEP" = all ]; then
-	# What film.gd shows: GENERATIONS on Hanami, and SHIPPED on Hanami and on Momiji, in four
-	# processes of about equal length (a 64-car swarm of a late generation takes ~3 min).
+	# What film.gd shows, in four processes of about equal length (a 64-car swarm of a late
+	# generation takes ~3 min).
 	rm -rf "$SWARM"
 	mkdir -p "$SWARM"
 	record() {
@@ -61,29 +68,38 @@ if [ "$STEP" = all ]; then
 	uv run --python 3.12 tools/rl/cut_film.py practice "$SWARM"
 fi
 
+uv run --python 3.12 tools/rl/narrate.py "$OUT"
+
 if [ "$STEP" != cut ]; then
 	# Movie Maker records at the window-override size (1600x900 in project.godot). A temporary
-	# override.cfg renders at 1080p without touching project.godot; it is removed on any exit.
+	# override.cfg sets 1080x1920 without touching project.godot; it is removed on any exit.
 	if [ -e override.cfg ]; then
 		echo "override.cfg already exists; move it away first" >&2
 		exit 1
 	fi
 	trap 'rm -f override.cfg' EXIT
-	cat > override.cfg <<'EOF'
+	cat > override.cfg <<EOF
 [display]
 
-window/size/window_width_override=1920
-window/size/window_height_override=1080
+window/size/window_width_override=1080
+window/size/window_height_override=1920
 
 [editor]
 
 movie_writer/video_quality=0.95
 movie_writer/disable_vsync=true
 EOF
-	rm -f "$OUT/raw.avi" "$OUT/raw.mkv"
-	timeout -k 10 1800 nice -n 15 "$SUMMER" --summer-offscreen --audio-driver Dummy --disable-crash-handler \
-		--path . --write-movie "$OUT/raw.avi" -s res://tools/rl/film.gd -- swarm="$SWARM" footage="$OUT"
+	mkdir -p "$OUT/tall"
+	rm -f "$OUT/tall/raw.avi" "$OUT/tall/raw.mkv" "$OUT/tall/cues.json"
+	/usr/bin/lockf -k /tmp/sakura-render.lock timeout -k 10 1800 nice -n 10 "$SUMMER" --summer-offscreen \
+		--audio-driver Dummy --disable-crash-handler --path . --write-movie "$OUT/tall/raw.avi" \
+		-s res://tools/rl/film.gd -- swarm="$SWARM" footage="$OUT/tall" lengths="$OUT/voice/lengths.json" \
+		2>&1 | tee "$OUT/tall/log.txt"
 	rm -f override.cfg
+	if grep -q "SCRIPT ERROR\|Parse Error" "$OUT/tall/log.txt" || [ ! -s "$OUT/tall/cues.json" ]; then
+		echo "render failed: see $OUT/tall/log.txt" >&2
+		exit 1
+	fi
 fi
 
 uv run --python 3.12 tools/rl/cut_film.py "$OUT"

@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://bjojeu2kewthy"
+path="res://.godot/imported/pixel_input.glsl-88013cab393f820f78507d2b47219a9a.res"
+
+[deps]
+
+source_file="res://shaders/ai/pixel_input.glsl"
+dest_files=["res://.godot/imported/pixel_input.glsl-88013cab393f820f78507d2b47219a9a.res"]
+
+[params]
+

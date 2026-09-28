@@ -1,0 +1,172 @@
+{
+	"about": "The explainer's sound effects (tools/rl/cut_film.py), all found in free libraries, none made by us: Mixkit (Sound Effects Free License: free in videos, no credit needed, the files may not be handed on as they are) and Freesound (CC0). So the files are not in the repo: cut_film.py downloads each from `url` into ~/.cache/sakura-rally/sfx once and checks its sha256. `gain` (dB) trims a sound against film.json's sfx level; `duck` (dB) dips the music under it.",
+	"sounds": {
+		"whoosh": {
+			"file": "mixkit-1492.wav",
+			"url": "https://assets.mixkit.co/active_storage/sfx/1492/1492.wav",
+			"sha256": "02b8cd40b3761288d54f4d6706983a2f8c110182b669ae2cdf9aab02935a4e7a",
+			"title": "Cinematic whoosh fast transition",
+			"author": "Mixkit",
+			"page": "https://mixkit.co/free-sound-effects/whoosh/",
+			"license": "Mixkit Sound Effects Free License",
+			"license_url": "https://mixkit.co/license/#sfxFree",
+			"gain": 1
+		},
+		"timeskip": {
+			"file": "mixkit-1092.wav",
+			"url": "https://assets.mixkit.co/active_storage/sfx/1092/1092.wav",
+			"sha256": "f704deafc7cd7d34f18eb36e1fc707c76a0e5eb99a84b5a465f3b24ec6b85203",
+			"title": "Fast tape rewind cinematic transition",
+			"author": "Mixkit",
+			"page": "https://mixkit.co/free-sound-effects/rewind/",
+			"license": "Mixkit Sound Effects Free License",
+			"license_url": "https://mixkit.co/license/#sfxFree",
+			"gain": 1
+		},
+		"pop": {
+			"file": "mixkit-3005.wav",
+			"url": "https://assets.mixkit.co/active_storage/sfx/3005/3005.wav",
+			"sha256": "2ae8c9395cb02fec01d1c24ba85e2251adde5a57b34ca890247d2ecd5bc12a83",
+			"title": "Explainer video pops whoosh light pop",
+			"author": "Mixkit",
+			"page": "https://mixkit.co/free-sound-effects/whoosh/",
+			"license": "Mixkit Sound Effects Free License",
+			"license_url": "https://mixkit.co/license/#sfxFree",
+			"gain": -2
+		},
+		"tick": {
+			"file": "freesound-721514.mp3",
+			"url": "https://cdn.freesound.org/previews/721/721514_15107322-hq.mp3",
+			"sha256": "f2fc7d9c832daacd229111971f745fd99f6c9e895008c64d2b6dab308d80c5cb",
+			"title": "Points_Tick2",
+			"author": "BaggoNotes",
+			"page": "https://freesound.org/people/BaggoNotes/sounds/721514/",
+			"license": "CC0 1.0",
+			"license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+			"gain": -1
+		},
+		"ding": {
+			"file": "mixkit-2870.wav",
+			"url": "https://assets.mixkit.co/active_storage/sfx/2870/2870.wav",
+			"sha256": "084b78463e30dae4aac5edbf9e9c93cdee5ece4a4a688352e6a2b6686f9b1f4a",
+			"title": "Correct answer tone",
+			"author": "Mixkit",
+			"page": "https://mixkit.co/free-sound-effects/correct/",
+			"license": "Mixkit Sound Effects Free License",
+			"license_url": "https://mixkit.co/license/#sfxFree",
+			"gain": 1
+		},
+		"bell": {
+			"file": "mixkit-600.wav",
+			"url": "https://assets.mixkit.co/active_storage/sfx/600/600.wav",
+			"sha256": "7a5c0b2fb7f7cf77f6b3d36e9e165176a0b2f463c6ff3e6f3c133eda7fc945a1",
+			"title": "Achievement bell",
+			"author": "Mixkit",
+			"page": "https://mixkit.co/free-sound-effects/win/",
+			"license": "Mixkit Sound Effects Free License",
+			"license_url": "https://mixkit.co/license/#sfxFree",
+			"gain": 3
+		},
+		"fail": {
+			"file": "mixkit-946.wav",
+			"url": "https://assets.mixkit.co/active_storage/sfx/946/946.wav",
+			"sha256": "830b2019b21f9532d1cf2bf3ebb93919c24d92b92a2aa22d231393a4b8ffb472",
+			"title": "Wrong answer fail notification",
+			"author": "Mixkit",
+			"page": "https://mixkit.co/free-sound-effects/notification/",
+			"license": "Mixkit Sound Effects Free License",
+			"license_url": "https://mixkit.co/license/#sfxFree",
+			"gain": 2
+		},
+		"crash": {
+			"file": "freesound-151624.mp3",
+			"url": "https://cdn.freesound.org/previews/151/151624_71257-hq.mp3",
+			"sha256": "bdd232131b376d6b674e9a4c008eef9e94b1e65d797296b3bd06448b8b3a5944",
+			"title": "Clank Car Crash Collision",
+			"author": "qubodup",
+			"page": "https://freesound.org/people/qubodup/sounds/151624/",
+			"license": "CC0 1.0",
+			"license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+			"gain": 4
+		},
+		"crash2": {
+			"file": "freesound-332056.mp3",
+			"url": "https://cdn.freesound.org/previews/332/332056_71257-hq.mp3",
+			"sha256": "a37fdbadf85c9e47fdcbde82ccccb525f016ac9f20ac4218bbc262c295a26219",
+			"title": "Fast Collision",
+			"author": "qubodup",
+			"page": "https://freesound.org/people/qubodup/sounds/332056/",
+			"license": "CC0 1.0",
+			"license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+			"gain": 1
+		},
+		"riser": {
+			"file": "mixkit-790.wav",
+			"url": "https://assets.mixkit.co/active_storage/sfx/790/790.wav",
+			"sha256": "66e155c95ef65f6fa34d3d4b238a505d5f4872c4599333178b1b6015af93e384",
+			"title": "Cinematic trailer riser",
+			"author": "Mixkit",
+			"page": "https://mixkit.co/free-sound-effects/cinematic/",
+			"license": "Mixkit Sound Effects Free License",
+			"license_url": "https://mixkit.co/license/#sfxFree",
+			"gain": 2
+		},
+		"impact": {
+			"file": "mixkit-1143.mp3",
+			"url": "https://assets.mixkit.co/active_storage/sfx/1143/1143.mp3",
+			"sha256": "ac9ff0628580ef9bb969c9e8282e299016fc563352ae2d86bd82070f3fee8926",
+			"title": "Cinematic whoosh deep impact",
+			"author": "Mixkit",
+			"page": "https://mixkit.co/free-sound-effects/impact/",
+			"license": "Mixkit Sound Effects Free License",
+			"license_url": "https://mixkit.co/license/#sfxFree",
+			"gain": 6,
+			"duck": 4
+		},
+		"boom": {
+			"file": "mixkit-563.wav",
+			"url": "https://assets.mixkit.co/active_storage/sfx/563/563.wav",
+			"sha256": "a1e85c7ebe28188a4f1d4f909b9fd7aa09cb3a5a1563e39f072eff41c1550676",
+			"title": "Drum deep impact",
+			"author": "Mixkit",
+			"page": "https://mixkit.co/free-sound-effects/cinematic/",
+			"license": "Mixkit Sound Effects Free License",
+			"license_url": "https://mixkit.co/license/#sfxFree",
+			"gain": 7,
+			"duck": 4
+		},
+		"coin": {
+			"file": "mixkit-1999.wav",
+			"url": "https://assets.mixkit.co/active_storage/sfx/1999/1999.wav",
+			"sha256": "ef9e8681a327b0d1d693038c417f5530915fedb25cee8c291d3910128ae28c19",
+			"title": "Gold coin prize",
+			"author": "Mixkit",
+			"page": "https://mixkit.co/free-sound-effects/coin/",
+			"license": "Mixkit Sound Effects Free License",
+			"license_url": "https://mixkit.co/license/#sfxFree",
+			"gain": -2
+		},
+		"data": {
+			"file": "mixkit-2520.wav",
+			"url": "https://assets.mixkit.co/active_storage/sfx/2520/2520.wav",
+			"sha256": "565a2664cbc96c5ca3c0e4161e97a21700b5a59eb62ced8f85f1de0fab2ed6a7",
+			"title": "High tech bleep confirmation",
+			"author": "Mixkit",
+			"page": "https://mixkit.co/free-sound-effects/bleep/",
+			"license": "Mixkit Sound Effects Free License",
+			"license_url": "https://mixkit.co/license/#sfxFree",
+			"gain": -1
+		},
+		"glitch": {
+			"file": "mixkit-2951.wav",
+			"url": "https://assets.mixkit.co/active_storage/sfx/2951/2951.wav",
+			"sha256": "17f28a9bca1cb520d80d49c5bc32a1bffa4801fce658905570d3e74e6af17c83",
+			"title": "Digital glitch break",
+			"author": "Mixkit",
+			"page": "https://mixkit.co/free-sound-effects/glitch/",
+			"license": "Mixkit Sound Effects Free License",
+			"license_url": "https://mixkit.co/license/#sfxFree",
+			"gain": -1
+		}
+	}
+}

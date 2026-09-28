@@ -17,7 +17,6 @@ extends SceneTree
 ## travels per second (full lock to full lock is 2; a driver sawing at the wheel scores high).
 
 const RLCar := preload("res://tools/rl/rl_car.gd")
-const TrainEnv := preload("res://tools/rl/train_env.gd")
 
 const OFF_MARGIN := 1.0
 const STALL_S := 3.0
@@ -75,7 +74,7 @@ func _run() -> void:
 			var parts: PackedStringArray = spec.split(":")
 			var t: Track = map.routes[parts[0]]["track"]
 			if parts.size() > 1 and parts[1] == "rev":
-				t = TrainEnv.reversed_track(t)
+				t = DriveSense.reversed_road(t)
 			for k in k_cars:
 				var car := RLCar.spawn(root, str(game.get_car(opts["car"])["scene"]), false)
 				var pilot := NeuralPilot.new()

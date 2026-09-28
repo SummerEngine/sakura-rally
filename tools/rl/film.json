@@ -1,0 +1,50 @@
+{
+  "voices": {
+    "anime": {"about": "ElevenLabs Yuki: calm anime narrator, young woman", "id": "JTlYtJrcTzPC71hMLOxo",
+      "model": "eleven_multilingual_v2",
+      "settings": {"stability": 0.45, "similarity_boost": 0.8, "style": 0.35, "use_speaker_boost": true, "speed": 1.15}}
+  },
+  "sfx": {
+    "level": -4,
+    "show": {"numbers:all": "data", "net:trained": "glitch", "rule:plus": "coin", "rule:minus": "crash2",
+      "cycle": "tick", "cycle:named": "ding", "curve:on": "pop", "end": "pop"}
+  },
+  "shots": {
+    "hook": {"title": "AI learns to drive", "chip": "practice", "sfx": {"title": "impact", "on_end": "crash"}},
+    "tease": {"chip": "practice", "sfx": {"cut": "timeskip"}},
+    "sees": {"sfx": {"cut": "whoosh"}},
+    "corner_0": {"min": 3.4, "chip": "practice", "count": "past", "sfx": {"cut": "whoosh", "on_end": "crash", "count": "fail"}},
+    "corner_1": {"chip": "practice", "count": "past", "sfx": {"count": "ding"}},
+    "finish": {"chip": "practice", "count": "finish", "sfx": {"count": "bell"}},
+    "momiji": {"chip": "A new road: Momiji Valley", "count": "finish", "sfx": {"cut": "whoosh", "count": "boom"}}
+  },
+  "lines": [
+    {"shot": "hook", "say": "Sixty-four AI drivers, on their very first try.", "show": [{"punch": 1.08, "at": "Sixty-four", "shift": -0.05}]},
+    {"shot": "tease", "say": "Eighty minutes later, they drive like this.", "show": [{"punch": 1.05, "at": "Eighty"}]},
+    {"shot": "tease", "say": "Nobody showed them how. Here's how they learned."},
+    {"shot": "sees", "say": "They never see the screen.", "show": [{"noscreen": "on", "at": "never"}]},
+    {"shot": "sees", "say": "Ten times a second, each one gets forty-six numbers:", "show": [{"numbers": "all", "at": "Ten"}]},
+    {"shot": "sees", "say": "nine rays to the edge of the road, fourteen points on the road ahead, and its own speed and slide.", "seed": 5,
+      "show": [{"numbers": "rays", "at": "nine"}, {"numbers": "points", "at": "fourteen"}, {"numbers": "body", "at": "speed"}]},
+    {"shot": "brain", "say": "One tiny neural network turns them into steering, gas and brakes.", "seed": 3, "show": [{"net": "trained", "at": "One"}]},
+    {"shot": "brain", "say": "At first, it's just guessing.", "show": [{"net": "untrained", "at": "At"}]},
+    {"shot": "score", "say": "All it gets is a score:"},
+    {"shot": "score", "say": "plus one for every twenty meters, minus three for a crash.", "seed": 2,
+      "show": [{"rule": "plus", "at": "plus"}, {"rule": "minus", "at": "minus"}]},
+    {"shot": "loop", "say": "Each move that scored more becomes a bit more likely.", "show": [{"odds": "on", "at": "Each"}]},
+    {"shot": "loop", "say": "Try, score, adjust, repeat. That's reinforcement learning.",
+      "show": [{"cycle": 0, "at": "Try,"}, {"cycle": 1, "at": "score,"}, {"cycle": 2, "at": "adjust,"}, {"cycle": 3, "at": "repeat."},
+        {"cycle": "named", "at": "reinforcement"}]},
+    {"shot": "scale", "say": "All sixty-four practice at once, on one laptop.", "show": [{"curve": "on", "at": "sixty-four"}]},
+    {"shot": "scale", "say": "Eighty minutes is almost a week of driving.", "show": [{"curve": "week", "at": "week"}]},
+    {"shot": "corner_0", "say": "Three minutes in, almost all of them fly off here.", "show": [{"count": "on", "at": "fly"}, {"punch": 1.06, "at": "fly"}]},
+    {"shot": "corner_1", "say": "Thirty minutes in, most make it round.", "show": [{"count": "on", "at": "most"}]},
+    {"shot": "finish", "say": "Eighty minutes: forty-five of sixty-four finish the stage.", "show": [{"count": "on", "at": "forty-five"}]},
+    {"shot": "momiji", "say": "Now the real test: a road the AI has never seen.", "seed": 2, "pause": 1.0,
+      "show": [{"music": "out", "at": "seen", "shift": 0.35}]},
+    {"shot": "momiji", "say": "Sixty-one of sixty-four make it to the finish.",
+      "show": [{"count": "on", "at": "Sixty-one"}, {"music": "in", "at": "Sixty-one"}, {"sfx": "riser", "at": "Sixty-one", "peak": true},
+        {"punch": 1.1, "at": "Sixty-one"}]},
+    {"shot": "momiji", "say": "It's in my game now. Press I, and it drives for you.", "show": [{"end": "on", "at": "It's"}]}
+  ]
+}

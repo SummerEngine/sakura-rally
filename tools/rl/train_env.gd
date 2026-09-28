@@ -29,6 +29,9 @@ extends SceneTree
 ## it ends off the road (centre OFF_MARGIN beyond the verge), in a crash (IMPACT_CRASH in one
 ## decision), rolled over, STALL_S without new progress, WRONG_WAY_M behind its best, at the end
 ## of an open route, or after episode_s (a cut, not an end).
+##
+## tools/rl_pixels/pixel_env.gd extends this script (pixel observations): it overrides _build,
+## _hello, _drive and _send, and _restart, _score and _fill_info in its eval mode.
 
 const RLCar := preload("res://tools/rl/rl_car.gd")
 
@@ -77,6 +80,11 @@ var rewards := PackedFloat32Array()
 var flags := PackedByteArray()
 var info := PackedFloat32Array()
 var episode_s: float = 90.0
+## Floats of info per car (tools/rl_pixels/pixel_env.gd's eval mode sends more).
+var info_size: int = INFO_SIZE
+## Every branch gate open (the liaison needs them); pixel_env.gd keeps them closed as a timed
+## stage does.
+var open_gates: bool = true
 
 
 func _initialize() -> void:
@@ -91,22 +99,45 @@ func _run() -> void:
 	game = root.get_node("Game")
 	rng.seed = int(opts["seed"])
 	episode_s = float(opts["episode_s"])
+	var built: bool = await _build()
+	if not built:
+		return
+	await physics_frame
+
+	if peer.connect_to_host("127.0.0.1", int(opts["port"])) != OK or not _await_connection():
+		printerr("train_env: cannot connect to 127.0.0.1:%s" % opts["port"])
+		_quit(3)
+		return
+	peer.set_no_delay(true)
+	var hello := JSON.stringify(_hello()).to_utf8_buffer()
+	var head := PackedByteArray()
+	head.resize(4)
+	head.encode_u32(0, hello.size())
+	peer.put_data(head + hello)
+	print("READY id=%s cars=%d routes=%s" % [opts["id"], cars.size(), opts["routes"]])
+	await _serve()
+	_quit(0)
+
+
+## The world, the routes and the cars; false (quitting) when a route is unknown.
+func _build() -> bool:
 	map = MapWorld.new()
 	map.name = "Map"
 	map.map_id = opts["routes"].split(",")[0].split(":")[0]
 	root.add_child(map)
 	await map.build()
-	for gate: RoadGate in map.gates.values():
-		gate.set_open(true, false)
+	if open_gates:
+		for gate: RoadGate in map.gates.values():
+			gate.set_open(true, false)
 	for spec: String in str(opts["routes"]).split(","):
 		var parts: PackedStringArray = spec.split(":")
 		if not map.routes.has(parts[0]):
 			printerr("train_env: no route '%s' (have %s)" % [parts[0], map.routes.keys()])
 			_quit(2)
-			return
+			return false
 		var reverse := parts.size() > 1 and parts[1] == "rev"
 		var t: Track = map.routes[parts[0]]["track"]
-		routes.append({"id": spec, "reverse": reverse, "track": reversed_track(t) if reverse else t})
+		routes.append({"id": spec, "reverse": reverse, "track": DriveSense.reversed_road(t) if reverse else t})
 
 	var n := int(opts["cars"])
 	var car_ids: PackedStringArray = str(opts["car"]).split(",")
@@ -127,34 +158,30 @@ func _run() -> void:
 	steer_moved.resize(n)
 	flags.resize(n)
 	obs.resize(n * DriveSense.OBS_SIZE)
-	info.resize(n * INFO_SIZE)
-	await physics_frame
+	info.resize(n * info_size)
+	return true
 
-	if peer.connect_to_host("127.0.0.1", int(opts["port"])) != OK or not _await_connection():
-		printerr("train_env: cannot connect to 127.0.0.1:%s" % opts["port"])
-		_quit(3)
-		return
-	peer.set_no_delay(true)
+
+func _hello() -> Dictionary:
 	var route_info := []
 	for r in routes:
 		route_info.append({"id": r["id"], "length": (r["track"] as Track).length, "closed": (r["track"] as Track).closed})
-	var hello := JSON.stringify({
-		"id": int(opts["id"]), "cars": n, "obs_size": DriveSense.OBS_SIZE, "info_size": INFO_SIZE,
+	return {
+		"id": int(opts["id"]), "cars": cars.size(), "obs_size": DriveSense.OBS_SIZE, "info_size": info_size,
 		"action_dims": DriveHands.ACTION_DIMS, "sense_version": DriveSense.VERSION,
 		"decision_ticks": DriveHands.DECISION_TICKS, "routes": route_info, "reasons": REASONS,
-	}).to_utf8_buffer()
-	var head := PackedByteArray()
-	head.resize(4)
-	head.encode_u32(0, hello.size())
-	peer.put_data(head + hello)
-	print("READY id=%s cars=%d routes=%s" % [opts["id"], n, opts["routes"]])
+	}
 
+
+## Serves the trainer's commands until it quits or goes.
+func _serve() -> void:
+	var n := cars.size()
 	var groups := DriveHands.ACTION_DIMS.size()
-	var dt := 1.0 / Engine.physics_ticks_per_second
+	var step := DriveHands.DECISION_TICKS / float(Engine.physics_ticks_per_second)
 	while true:
 		var cmd := _read(1)
 		if cmd.is_empty() or cmd[0] == 0:
-			break
+			return
 		if cmd[0] == 2:
 			for k in n:
 				_restart(k)
@@ -165,47 +192,26 @@ func _run() -> void:
 			continue
 		var acts := _read(n * groups)
 		if acts.is_empty():
-			break
+			return
 		for k in n:
 			var a := k * groups
 			var before := hands[k].steer_target
 			hands[k].set_action(acts[a], acts[a + 1], acts[a + 2])
 			steer_moved[k] = absf(hands[k].steer_target - before)
 			impact[k] = 0.0
-		for t in DriveHands.DECISION_TICKS:
-			for k in n:
-				hands[k].apply(cars[k], dt)
-			await physics_frame
+		await _drive()
 		for k in n:
-			_score(k, dt * DriveHands.DECISION_TICKS)
+			_score(k, step)
 		_send()
-	_quit(0)
 
 
-## The route driven the other way: samples in reverse order (index j is sample count - j on a
-## loop, so distances still start at 0), forward and bank negated, distances mirrored.
-static func reversed_track(t: Track) -> Track:
-	var cols := Track.COLS
-	var src := t.data
-	var out := PackedFloat32Array()
-	out.resize(src.size())
-	for j in t.count:
-		var i := (t.count - j) % t.count if t.closed else t.count - 1 - j
-		for c in cols:
-			out[j * cols + c] = src[i * cols + c]
-		var o := j * cols
-		out[o + 3] = -out[o + 3]
-		out[o + 4] = -out[o + 4]
-		out[o + 9] = -out[o + 9]
-		out[o + 8] = fposmod(t.length - src[i * cols + 8], t.length) if t.closed \
-				else t.first_s + t.last_s - src[i * cols + 8]
-	var start := fposmod(t.length - t.start_s, t.length) if t.closed else t.first_s + t.last_s - t.start_s
-	var surfaces: Array[String] = []
-	for s in t.surface_names:
-		surfaces.append(str(s))
-	var r := Track.new()
-	r.setup(out, {"length": t.length, "start_s": start, "verge": t.verge, "surfaces": surfaces}, t.closed)
-	return r
+## One decision's physics ticks, the hands working the controls before every tick.
+func _drive() -> void:
+	var dt := 1.0 / Engine.physics_ticks_per_second
+	for t in DriveHands.DECISION_TICKS:
+		for k in cars.size():
+			hands[k].apply(cars[k], dt)
+		await physics_frame
 
 
 ## New episode for car k on a random route at a random point of it, standing still.
@@ -262,7 +268,7 @@ func _score(k: int, step: float) -> void:
 		r -= FAIL_COST
 	rewards[k] = r
 	flags[k] = 0 if reason == 0 else (2 if reason == 7 else 1)
-	info[k * INFO_SIZE + 5] = lat / edge
+	info[k * info_size + 5] = lat / edge
 	_fill_info(k, reason)
 	if reason == 7:
 		# a time cut: the car drives on, the next episode starts where it is
@@ -299,7 +305,7 @@ static func end_reason(car: Car, t: Track, s: float, lat: float, edge: float, hi
 
 
 func _fill_info(k: int, reason: int) -> void:
-	var o := k * INFO_SIZE
+	var o := k * info_size
 	info[o] = route_of[k]
 	info[o + 1] = ep_m[k]
 	info[o + 2] = cars[k].speed_kmh

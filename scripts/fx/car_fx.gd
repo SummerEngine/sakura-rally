@@ -54,6 +54,8 @@ func setup(new_car: Car, lights: Dictionary, new_sun_dir: Vector3) -> void:
 		_chips.append(_make_chips())
 	_build_skids()
 	_build_flash()
+	DriveEyes.keep_out(self) # dust, chips and skids stay out of a pixel driver's view
+	DriveEyes.keep_out(_flash)
 	car.landed.connect(_on_landed)
 	car.backfire.connect(_on_backfire)
 
