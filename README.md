@@ -120,8 +120,8 @@ on the tarmac hairpin) → results → Next map → Momiji → pause → back to
 
 ## Replays
 
-Every drive you control (a stage, the road between stages, free roam) is recorded to disk as
-inputs and car state, not video: `user://replays/`, on macOS with Godot
+Every drive you control (a stage, a race, the road between stages, free roam) is recorded to disk
+as inputs and car state, not video: `user://replays/`, on macOS with Godot
 `~/Library/Application Support/Godot/app_userdata/Sakura Rally/replays/`.
 `tools/replay/review.gd` lists and summarises them (where the time went, where the car left the
 road, resets, hesitations) and renders what the driver saw at any moment, offscreen. Details are
@@ -132,14 +132,14 @@ in [docs/REPLAYS.md](docs/REPLAYS.md).
 | Part | Source | What it is |
 |---|---|---|
 | Cars | `tools/blender/build_car.py`, `build_car_hayate.py` → `assets/models/car/` | Low-poly rally car and coupe built by scripts. Tyre and rim are one object per wheel, spinning and steering; calipers steer without spinning |
-| Physics | `scripts/vehicle/`, [docs/PHYSICS.md](docs/PHYSICS.md) | Custom raycast car on a `RigidBody3D` (Jolt, 120 Hz): suspension, a combined-slip tyre model per surface, 6-speed gearbox, turbo, AWD with limited-slip couplings or RWD, and assists tuned for fun: stability that lets deliberate drifts through, strong brakes, sharp turn-in. Crashes are arcade: walls take a share of speed that depends on the impact angle and ease the nose along them, poles deflect the car, and a short guard caps yaw, roll and climb after any hit. Scripted spawns place the car at rest on its springs, so nothing drops |
+| Physics | `scripts/vehicle/`, [docs/PHYSICS.md](docs/PHYSICS.md) | Custom raycast car on a `RigidBody3D` (Jolt, 120 Hz): suspension, a combined-slip tyre model per surface, 6-speed gearbox, turbo, AWD with limited-slip couplings or RWD, and assists tuned for fun: stability that lets deliberate drifts through, strong brakes, sharp turn-in. Crashes are arcade: walls take a share of speed that depends on the impact angle and ease the nose along them, poles deflect the car, and a short guard caps yaw, roll and climb after any hit. In a race cars hit each other, and a contact may not turn, tip or lift a car faster than its own tyres and springs could. Scripted spawns place the car at rest on its springs, so nothing drops |
 | Cameras | `scripts/camera/` | Chase (downhill it rises and pitches with the slope so the road shows past the car), far chase, hood and bumper; the cinematic camera for the title flyover, the garage orbit, the car switch, the gate opening and the finale |
 | Look | `shaders/`, `scripts/fx/` | Toon ramps with violet shade bands, depth-based ink lines, anime colour grade, painted sky, season blending across the world (grade, light, sky particles, litter), low-poly dust |
 | World | `tools/mapgen/` → `assets/maps/world/`, [docs/WORLD.md](docs/WORLD.md) | Python compiler for the one world: terrain with one mountain rim, two stage loops and the branch road joined at junctions, routes, gates, a season grid, corner signs and guardrails computed from each road, and instances from a 104-prop kit (`tools/blender/`) with a road corridor kept clear of rigid props. At runtime `scripts/world/map_world.gd` loads it once; `soft_course.gd` and `crowd.gd` test the soft dressing and the spectators against each car outside the solver, with pooled debris and fabric checkpoint gates |
 | Audio | `tools/audio/`, [docs/AUDIO.md](docs/AUDIO.md) | Synthesised engine loops (8 on load, 8 off load), turbo whistle and blow-off, dog-box gearbox whine, tyre sounds per surface, UI and stingers. Music is ElevenLabs Music via fal; ambience is fal sound-effect beds with synthesised birds and crickets, mixed by season |
-| UI | `scripts/ui/`, [docs/UI.md](docs/UI.md) | Title hub over a flyover whose car drifts the corners, Time Attack cards with top-down maps, garage with the car strip, road-sign HUD between stages, arrival card, settings, ink transitions, countdown, HUD, results, rally classification and pause, all built in code |
+| UI | `scripts/ui/`, [docs/UI.md](docs/UI.md) | Title hub over a flyover whose car drifts the corners, Time Attack cards with top-down maps, garage with the car strip, road-sign HUD between stages, arrival card, settings, ink transitions, countdown, HUD (in a race with the lap and your place), results (in a race with the classification), rally classification and pause, all built in code |
 | Replays | `scripts/autoload/replays.gd`, `tools/replay/`, [docs/REPLAYS.md](docs/REPLAYS.md) | Input and state recording of every drive, with a review tool |
-| AI driver | `scripts/ai/`, `tools/rl/`, [docs/RL.md](docs/RL.md) | A small network trained with PPO on headless copies of the physics, seeing only the road ahead from the car (edge rays, centreline points, speed), so it is not tied to one track. I lets it drive (such a run sets no record), G races the training generations as ghosts, V follows one |
+| AI driver | `scripts/ai/`, `tools/rl/`, [docs/RL.md](docs/RL.md) | A small network trained with PPO on headless copies of the physics, seeing only the road ahead from the car (edge rays, centreline points, speed), so it is not tied to one track. I lets it drive (such a run sets no record), G races the training generations as ghosts, V follows one. In a race the same network drives the rivals (`RaceBot`): it keeps to a lane of the wide loop, passes, makes room, and holds each rival to its lap time through a calibrated pace limit |
 
 Shared conventions and the runtime APIs: [docs/CONTRACTS.md](docs/CONTRACTS.md). Rebuild commands:
 
@@ -152,14 +152,17 @@ timeout 180 $G --headless --disable-crash-handler --path . --import   # after ch
 
 ## Verification
 
-Latest results, 2026-09-26, M1 Max, `S=/Applications/Summer.app/Contents/MacOS/Summer`:
+Latest results, 2026-09-27, M1 Max, `S=/Applications/Summer.app/Contents/MacOS/Summer`:
 
 ```sh
 timeout 2400 $S --headless --disable-crash-handler --fixed-fps 120 --path . -s res://tools/physics/run_tests.gd
 timeout 400 $S --headless --disable-crash-handler --path . -s res://tools/game/flows.gd -- map=hanami
 timeout 900 $S --headless --disable-crash-handler --path . -s res://tools/game/flows.gd -- flow=campaign speed=3
+timeout 900 $S --headless --disable-crash-handler --path . -s res://tools/game/flows.gd -- flow=race map=hanami speed=3
 timeout 400 $S --headless --disable-crash-handler --path . -s res://tools/game/softcourse_probe.gd -- map=liaison
 timeout 1800 $S --headless --disable-crash-handler --fixed-fps 60 --path . -s res://tools/physics/flyoff_probe.gd -- map=momiji
+timeout 1800 $S --headless --disable-crash-handler --fixed-fps 120 --path . -s res://tools/physics/contact_probe.gd -- map=hanami
+timeout 1800 $S --headless --disable-crash-handler --fixed-fps 120 --audio-driver Dummy --path . -s res://tools/rl/race_probe.gd -- route=hanami runs=3
 timeout 900 $S --headless --disable-crash-handler --fixed-fps 120 --path . -s res://tools/rl/eval.gd -- policy=assets/ai/driver.json routes=hanami,hanami:rev,momiji,momiji:rev,liaison cars=3
 ```
 
@@ -174,19 +177,30 @@ timeout 900 $S --headless --disable-crash-handler --fixed-fps 120 --path . -s re
   the countdown, launch, camera cycling, all three quality presets, a Time Trial start on each
   stage): 31 checks, 0 failures.
 - The campaign in one continuous drive, the autopilot at the wheel from SS1 along the road to
-  SS2, then the classification, the end card and a save resumed at each leg: 66 checks,
+  SS2, then the classification, the end card and a save resumed at each leg: 69 checks,
   0 failures. Nothing loads and nothing covers the screen between SS1 and SS2.
+- A race on each stage (the grid, the countdown hold, HUD and its position card, pause, a
+  RaceBot at gold pace driving your car from the back, results, the finishers parked in order,
+  Retry, the title): 29 checks each, 0 failures. The gold-pace car finishes 3rd of 7 on both;
+  every rival's second lap is within 0.05–2.1 s of its target.
+- Car contacts on both loops (swipes, rear-ends, punts, T-bones, a squeeze, resting and tangled
+  pairs and a packed grid, with both cars and mixed pairs): 124/124 checks each, no flip and no
+  car thrown into the air ([docs/PHYSICS.md](docs/PHYSICS.md)).
+- Race AI, three 2-lap races per loop (the six rivals and a bot at gold × 1.05): 42/42 finished,
+  no flip, 1 rescue in 6 races, 19 overtakes a race; flying laps are 0.2 s off their calibrated
+  time at the median, 39 of 42 within 2 s ([docs/RL.md](docs/RL.md)).
 - Missed corners: at each of the 31 signed corners Sakura stops steering at turn-in or halfway
-  to the apex, at up to 1.2 times its approach speed, and coasts on. In 186 runs it never fell
-  off: a rail kept it on the road 93 times, it stayed on the road by itself 6 times, and it came
-  to rest on the ground beside the road 87 times.
+  to the apex, at up to 1.2 times its approach speed, and coasts on. In 186 runs on the widened
+  loops it never fell off: a rail kept it on the road 96 times, it stayed on the road by itself
+  6 times, and it came to rest on the ground beside the road 84 times. Hayate never fell off
+  either (186 runs).
 - Soft course probes on all three roads, with both cars: 0 failures.
-- Crashing through the roadside does not cost frames: offscreen at 1600×900 on Hanami, the
-  frames in the second after each of 86 smashes take 8.3 ms at the median (the display's
-  120 Hz) and 15 ms at worst, the first smash of each kind adds no hitch, and no shader
-  compiles during the drive.
-- Median FPS offscreen at 1600×900, low / medium / high, with the whole world loaded: Hanami
-  120 / 120 / 120 (the display's cap), Momiji 120 / 120 / 98.
+- Crashing through the roadside does not cost frames (2026-09-26, before the loops were
+  widened): offscreen at 1600×900 on Hanami, the frames in the second after each of 86 smashes
+  take 8.3 ms at the median (the display's 120 Hz) and 15 ms at worst, the first smash of each
+  kind adds no hitch, and no shader compiles during the drive.
+- Median FPS offscreen at 1600×900, low / medium / high, with the whole world loaded
+  (2026-09-26): Hanami 120 / 120 / 120 (the display's cap), Momiji 120 / 120 / 98.
 - AI driver (2026-09-27, three starts per route): Sakura finishes Hanami in 96.0 s and Momiji,
   a road it never trained on, in 82.8 s (gold is 2:04.5 and 1:49.5), with no reset on either;
   over both cars and all five routes it averages 0.4 resets per run, and on the liaison it misses
