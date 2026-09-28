@@ -1,6 +1,6 @@
 extends SceneTree
-## "How the AI learned to drive": the footage of the narrated vertical video (1080x1920, about
-## 90 s), rendered offline by Movie Maker from the AI's recorded practice (tools/rl/swarm.gd).
+## "How the AI learned to drive": the footage of the narrated vertical video (1080x1920, about a
+## minute), rendered offline by Movie Maker from the AI's recorded practice (tools/rl/swarm.gd).
 ## Run tools/rl/render_film.sh, not this script directly (cue times count Movie Maker frames at
 ## 60 fps). Nothing here drives: every car is a ReplayGhost posed from its replay file, so a whole
 ## generation is on the road at once, and since the replays know what comes next every camera and
@@ -8,8 +8,9 @@ extends SceneTree
 ## ended the way a training episode ends (off the road, crashed, stalled, the wrong way).
 ## The shots follow the narration (tools/rl/film.json), each as long as the longest voice keeps
 ## it on screen (`lengths`, from tools/rl/narrate.py):
-##   hook      the untrained network's cars leave Hanami's start line, seen low from the
-##             roadside ahead, and scatter off the road into the cherry trees;
+##   hook      the untrained network's cars scattering off Hanami's start line, from 3 s after the
+##             start (busy from the first frame), seen low from the roadside ahead as they come
+##             at the camera and off the road into the cherry trees;
 ##   tease     the cars after 80 minutes of practice: a column over the first straight, from a
 ##             drone following the pack;
 ##   sees      the shipped driver's fastest run chased at its shoulder, with what its network
@@ -27,8 +28,9 @@ extends SceneTree
 ## each shot's start (video seconds), frames, playback start (`from`) and speed; after it how
 ## far the ground moved on screen per frame (pan_max, px of the frame), how big the nearest
 ## driving car was (hero_px), every run as [when it ended, finished, when it passed the shot's
-## `mark` or -1] and, for a chase, the car's controls [steer, throttle, brake, handbrake] and
-## rays (fractions of their 60 m) every frame.
+## `mark` or -1], the runs that ended in frame during the shot as [frame, finished, the car's size
+## in px] (`ends`: cut_film.py puts a sound on them) and, for a chase, the car's controls [steer,
+## throttle, brake, handbrake] and rays (fractions of their 60 m) every frame.
 ##
 ## Check the flow and the camera numbers without pixels (headless):
 ##   timeout -k 10 600 $S --headless --disable-crash-handler --audio-driver Dummy --fixed-fps 60 \
@@ -263,9 +265,9 @@ class SenseView extends MeshInstance3D:
 ##   within `band` m of the front, looking down `pitch`°, `side` of `dist` to the right, at
 ##   least `clear` m over the ground.
 func _plan() -> Array[Dictionary]:
-	# The start: low by the road 55-62 m past the line, clear of the 10 m carriageway, looking
-	# back at the cars coming off the line (and, a lap later, over it).
-	var start := {"kind": "roadside", "zone": [-10.0, 60.0], "pos": [62.0, -7.0, 3.6], "pos1": [55.0, -7.5, 2.8],
+	# The start: low by the road 36-42 m past the line, clear of the 10 m carriageway, looking
+	# back at the cars coming off the line and scattering towards it.
+	var start := {"kind": "roadside", "zone": [-10.0, 60.0], "pos": [42.0, -7.0, 3.2], "pos1": [36.0, -7.5, 2.6],
 			"aim": [8.0, 0.0, 0.8], "follow": 0.3, "fov": 56.0}
 	# The corner from high behind the approach, looking down into it: the cars come up the frame
 	# and either turn with the road or fly straight on into the trees off its outside.
@@ -274,7 +276,9 @@ func _plan() -> Array[Dictionary]:
 	var behind := {"kind": "drone", "yaw_at": 60.0, "yaw": 0.0, "dist": 42.0, "pitch": 38.0, "lead": 0.2, "side": 0.0,
 			"band": 120.0, "clear": 8.0, "fov": 58.0}
 	var shots: Array[Dictionary] = [
-		{"tag": "hook", "route": ROUTE, "gen": "demo_0", "secs": 5.0, "speed": 1.0, "from": 1.3, "cam": start},
+		# from 3 s after the start, when the cars are already spreading over the road (the hook's
+		# first frame must be busy)
+		{"tag": "hook", "route": ROUTE, "gen": "demo_0", "secs": 3.0, "speed": 1.0, "from": 3.0, "cam": start},
 		# the same cars after 80 minutes: the column over the first straight, from the drone that
 		# follows the pack (a camera by the road sees them pass in a second)
 		{"tag": "tease", "route": ROUTE, "gen": "gen1_6000000", "secs": 4.0, "speed": 1.0, "from": 2.0,
@@ -291,7 +295,8 @@ func _plan() -> Array[Dictionary]:
 		{"tag": "scale", "route": ROUTE, "gen": "gen1_1000000", "secs": 6.0, "speed": 1.0, "after": "loop",
 			"cam": {"kind": "drone", "yaw_at": 300.0, "yaw": 0.0, "dist": 95.0, "pitch": 60.0, "lead": 0.1, "side": 0.0,
 				"band": 250.0, "clear": 20.0, "fov": 60.0}},
-		{"tag": "corner_0", "route": ROUTE, "gen": "demo_300032", "secs": 4.5, "speed": 1.0, "at": 525.0, "lead": 0.6,
+		# the pack reaching the corner a second in, flying off it over the next two
+		{"tag": "corner_0", "route": ROUTE, "gen": "demo_300032", "secs": 3.5, "speed": 1.0, "at": 545.0, "lead": 0.4,
 			"mark": 620.0, "cam": corner},
 		{"tag": "corner_1", "route": ROUTE, "gen": "gen1_2000000", "secs": 4.5, "speed": 1.0, "at": 555.0, "lead": 0.3,
 			"mark": 620.0, "cam": corner},
@@ -466,8 +471,10 @@ func _shot(shot: Dictionary, sw: Swarm, stills: int) -> void:
 	var scores: Array[Label3D] = []
 	for k in sw.runs.size():
 		scores.append(_score_tag() if every > 0 and k % every == 0 and ghosts[k] != null else null)
-	var greyed := PackedByteArray()
-	greyed.resize(sw.runs.size())
+	var ended := PackedByteArray()
+	ended.resize(sw.runs.size())
+	# runs that end inside the shot with the car in frame: [frame, finished, the car's size in px]
+	var events := []
 	_cue(tag, {"generation": sw.name, "route": str(shot["route"]), "steps": int(sw.info.get("steps", 0)),
 			"cars": sw.runs.size(), "finished": sw.finishers(), "frames": n_edit, "speed": speed,
 			"from": snappedf(t0, 0.01), "practice": str((practice.get(sw.name, {}) as Dictionary).get("label", ""))})
@@ -493,16 +500,18 @@ func _shot(shot: Dictionary, sw: Swarm, stills: int) -> void:
 			if ghosts[k] == null:
 				continue
 			ghosts[k].pose(sw.runs[k].car_at(t), dt)
-			if t >= sw.ends[k] and sw.finished[k] == 0 and greyed[k] == 0:
-				greyed[k] = 1
-				if car < 0:
+			var q := inv * ghosts[k].car.global_position
+			var sp := CameraPath.px(q, focal)
+			var on := q.z < -1.0 and absf(sp.x) < COLS * 0.5 and absf(sp.y) < ROWS * 0.5
+			if t >= sw.ends[k] and ended[k] == 0:
+				ended[k] = 1
+				if sw.finished[k] == 0 and car < 0:
 					ghosts[k].car.set_livery(ENDED, ENDED.darkened(0.35))
-			if t < sw.ends[k] or sw.finished[k] == 1:
-				var q := inv * ghosts[k].car.global_position
-				var sp := CameraPath.px(q, focal)
-				if q.z < -1.0 and absf(sp.x) < COLS * 0.5 and absf(sp.y) < ROWS * 0.5:
-					seen += 1
-					big = maxf(big, 4.2 * focal / -q.z)
+				if on and f < n_edit and sw.ends[k] >= times[0]:
+					events.append([f, int(sw.finished[k]), snappedf(4.2 * focal / -q.z, 1.0)])
+			if on and (t < sw.ends[k] or sw.finished[k] == 1):
+				seen += 1
+				big = maxf(big, 4.2 * focal / -q.z)
 		hero.append(big)
 		in_frame.append(seen)
 		if every > 0:
@@ -548,7 +557,7 @@ func _shot(shot: Dictionary, sw: Swarm, stills: int) -> void:
 		runs.append([snappedf(sw.ends[k], 0.01), int(sw.finished[k]), snappedf(mt, 0.01) if mt < INF else -1.0])
 	var end := {"pan_max": snappedf(path.pan_max, 0.1), "pan_p95": snappedf(path.pan_p95, 0.1),
 			"hero_px_p50": snappedf(hs[hs.size() / 2], 1.0), "hero_px_max": snappedf(hs[hs.size() - 1], 1.0),
-			"in_frame_p50": fs[fs.size() / 2], "in_frame_max": fs[fs.size() - 1], "runs": runs}
+			"in_frame_p50": fs[fs.size() / 2], "in_frame_max": fs[fs.size() - 1], "runs": runs, "ends": events}
 	if car >= 0:
 		end["obs"] = obs
 	_cue(tag + "_end", end)

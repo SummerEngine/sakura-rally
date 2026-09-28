@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# "How the AI learned to drive", the narrated vertical video (1080x1920, 60 fps, ~1.5 min):
+# "How the AI learned to drive", the narrated vertical video (1080x1920, 60 fps, about a minute):
 #   1. records the AI's practice as replays (tools/rl/swarm.gd, headless: each generation's 64
 #      cars from the start line; ~5 min);
 #   2. voices the narration (tools/rl/film.json) with ElevenLabs and times every word
 #      (tools/rl/narrate.py; needs ELEVENLABS_API_KEY; only changed lines are voiced again);
 #   3. renders the footage offline with Movie Maker while tools/rl/film.gd plays the replays back,
-#      each shot as long as the longest voice needs it (~6 min, offscreen);
+#      each shot as long as the longest voice needs it (~4.5 min, offscreen);
 #   4. cuts one video per voice (tools/rl/cut_film.py: captions, the numbers the network gets,
-#      the network, the score, the learning loop and curve drawn over the footage; ~4 min each).
+#      the network, the score, the learning loop and curve drawn over the footage, and the sound
+#      effects of tools/rl/sfx.json, downloaded once into ~/.cache/sakura-rally/sfx; ~4 min each;
+#      the learning curve needs tools/rl/runs/gen1/progress.csv).
 #   tools/rl/render_film.sh [out_dir]              # default /tmp/sakura_film
 #   tools/rl/render_film.sh --no-record [out_dir]  # voice, render and cut from the recordings there
 #   tools/rl/render_film.sh --cut-only [out_dir]   # voice and cut again over the existing footage

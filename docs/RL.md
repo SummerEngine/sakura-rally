@@ -202,15 +202,26 @@ not resources and need `include_filter="*.bin"` in the preset, or an exported ga
 ## The video
 
 `tools/rl/render_film.sh` makes "How the AI learned to drive", a narrated vertical video for
-Shorts (1080x1920, 60 fps, about 1.5 min), once per voice in `tools/rl/film.json`
+Shorts (1080x1920, 60 fps, about a minute), once per voice in `tools/rl/film.json`
 (`EXPORT=~/Projects/sakura-rally/export ELEVENLABS_API_KEY=... tools/rl/render_film.sh` writes
 `rl_explainer_<voice>.mp4` and a contact sheet of each there). The voice is Yuki (anime
-narrator); never ElevenLabs' Brian, the stock AI voice (his cut was dropped). The story: its very
-first try and the same AI 80 minutes later; what it gets (46 numbers ten times a second: the rays, the road
+narrator) at ElevenLabs speed 1.15; never ElevenLabs' Brian, the stock AI voice (his cut was
+dropped). The story: a hook (64 cars on their very first try, the same AI 80 minutes later,
+"here's how they learned"); what it gets (46 numbers ten times a second: the rays, the road
 points, the car) and the network that turns them into a move; the score (+1 every 20 m, -3 for a
-crash or leaving the road) and how the odds of the moves that scored more grow; 64 cars at once
-and the learning curve; the corner at 3 and at 31 minutes; 45 of 64 finishing after 80 minutes;
-61 of 64 on Momiji, a road it never practised on; and the keys to try it in the game.
+crash) and how the odds of the moves that scored more grow; 64 cars at once and the learning
+curve; the corner at 3 and at 31 minutes; 45 of 64 finishing after 80 minutes; 61 of 64 on
+Momiji, a road it never practised on; and the key to try it in the game.
+
+Its pace and sound follow 12 popular Shorts measured for it on 2026-09-28 (AI Warehouse, Yosh's
+"AI vs Trackmania", Adam Rants, Neuro-sama, and three gamedev Shorts, 1-23M views; the old
+cut ran 97 s at 182 words a minute with pauses, a new picture every 11 s, the music 19 dB under
+the voice and no sound effects): words from the first frame at about 200 a minute, a quarter
+second between lines, a busy first frame with the premise in the first two seconds, a new
+picture or card every 2-4 s, big captions of up to four words, the music about 11 dB under the
+voice, sound effects tied to what happens on screen (5-30 a minute in those Shorts; no meme
+sounds; interface sounds 8-10 dB under the voice, the big hits near its level), and the music
+dropped out for a second before the reveal.
 
 1. `tools/rl/swarm.gd` records the practice, headless: per generation 64 cars leave Hanami's start
    line together and drive as in training (options sampled from the policy, a run ending by the
@@ -221,6 +232,11 @@ and the learning curve; the corner at 3 and at 31 minutes; 45 of 64 finishing af
    id, model and settings are in the file; neighbouring lines go along so the reading flows),
    trims them, times every word with faster-whisper (matched back to the script's words) and lays
    the edit out; it voices a line again only when its text, its neighbours or the voice change.
+   Listen to new takes: whisper here is primed with the script, so it times a misread word without
+   complaint. Transcribed without the script, Yuki said "Mac" as "mark" in 9 of 12 takes, "Moves"
+   as "Most" and "a road it" as "a rodent", so those lines were reworded ("laptop", "Each move",
+   "a road the AI"), and three lines have their own `seed` (another take) for "rays", "turns" and
+   "crash".
 3. `tools/rl/film.gd` plays the replays back under Movie Maker, offscreen and muted, under the
    render lock, every shot as long as the longest voice keeps it on screen. Every camera is worked
    out from the replays before its shot plays; for the chased car it also logs the 46 numbers its
@@ -232,9 +248,17 @@ and the learning curve; the corner at 3 and at 31 minutes; 45 of 64 finishing af
    finished (from the recording); the 46 numbers; the network running on them (the shipped
    driver's weights, then the untrained generation's for "guessing"); the score, the odds, the
    learning loop and the learning curve (`runs/gen1/progress.csv`); the end card. The narration
-   sits over the drive theme, which ducks under the voice; -14 LUFS. `--preview` saves stills of
-   the look without encoding.
+   sits over the drive theme and the sound effects; -14 LUFS. The sound effects
+   (`tools/rl/sfx.json`) were all found in free libraries, none made by us: Mixkit (Sound Effects
+   Free License) and Freesound (CC0). Mixkit's licence allows them in a video but not handing the
+   files on, so the repo keeps each sound's source, licence, URL and sha256, and cut_film.py
+   downloads it into `~/.cache/sakura-rally/sfx` once. `film.json` says where they go: on the cut
+   into a shot, when a title, chip or counter pops in, on `show` beats, on the cars whose run ends
+   in frame (film.gd logs them: the crashes at the corner), and on explicit `sfx` beats (a riser
+   peaking on its word); `punch` beats zoom the footage in for a moment and `music` beats drop the
+   music out and bring it back. `--preview` saves stills of the look without encoding, `--sound`
+   only the mix.
 
 Adding a voice is a new entry in `film.json` (an ElevenLabs voice id) and a `--no-record` run; a
 new line, shot or beat is an edit there (beats name the word they start on). Recording takes about
-5 min, the render about 6, each cut about 4.
+5 min, the render about 5, each cut about 3.

@@ -13,7 +13,10 @@ flows from line to line), trimmed of the silence around it and saved as
 recognised words are matched back to the script's, so captions show the script's spelling
 ("forty-six", not "46"); a script word it missed takes its time from its neighbours. A line
 keeps its audio while its text, its neighbours and the voice's settings stay the same (the key
-is in NN.json), so editing one line re-voices that line only.
+is in NN.json), so editing one line re-voices it and its two neighbours. The request's seed is
+the voice's "seed" (default 1), or a line's own "seed", which asks for another take of that line
+alone (for a word the voice got wrong); ElevenLabs repeats a seed's take only on a best-effort
+basis (2 of 4 re-requests came back the same), so listen again after voicing from scratch.
 
 The layout (the same for every voice, from each voice's own line lengths): the first line
 starts after LEAD_S; lines of one shot follow each other after GAP_S (plus a line's "pause");
@@ -40,21 +43,25 @@ import soundfile as sf
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tools/rl/film.json"
 SR = 24000
-LEAD_S = 0.15
-GAP_S = 0.22
-SHOT_GAP_S = 0.45
-CUT_LEAD_S = 0.2
-END_S = 3.0
-# silence: below this (dBFS, 10 ms windows) at either end is trimmed, TRIM_KEEP_S kept
+# The pace of the Shorts measured for the remake (docs/RL.md): words from the first frame, about a
+# quarter second between lines, under half a second at a cut, a second after the last word.
+LEAD_S = 0.05
+GAP_S = 0.2
+SHOT_GAP_S = 0.4
+CUT_LEAD_S = 0.15
+END_S = 1.0
+# silence: below this (dBFS, 10 ms windows) at either end is trimmed, TRIM_KEEP_S kept; a stray
+# sound at either end (under BLIP_S, over BLIP_GAP_S of silence away from the words) goes too
 SILENCE_DB = -45.0
 TRIM_KEEP_S = 0.03
+BLIP_S, BLIP_GAP_S = 0.06, 0.2
 
 
-def tts(voice: dict, text: str, prev: str, nxt: str) -> np.ndarray:
+def tts(voice: dict, text: str, prev: str, nxt: str, seed: int) -> np.ndarray:
 	key = os.environ.get("ELEVENLABS_API_KEY")
 	if not key:
 		sys.exit("narrate: set ELEVENLABS_API_KEY")
-	body = {"text": text, "model_id": voice["model"], "voice_settings": voice["settings"], "seed": voice.get("seed", 1)}
+	body = {"text": text, "model_id": voice["model"], "voice_settings": voice["settings"], "seed": seed}
 	if voice["model"] != "eleven_v3":  # v3 takes no request stitching
 		body["previous_text"] = prev
 		body["next_text"] = nxt
@@ -76,8 +83,13 @@ def trim(a: np.ndarray) -> np.ndarray:
 	loud = np.flatnonzero(db > SILENCE_DB)
 	if loud.size == 0:
 		return a
+	runs = np.split(loud, np.flatnonzero(np.diff(loud) > BLIP_GAP_S * 100) + 1)
+	while len(runs) > 1 and len(runs[-1]) < BLIP_S * 100:
+		runs.pop()
+	while len(runs) > 1 and len(runs[0]) < BLIP_S * 100:
+		runs.pop(0)
 	keep = int(TRIM_KEEP_S * SR)
-	return a[max(loud[0] * win - keep, 0): min((loud[-1] + 1) * win + keep, len(a))]
+	return a[max(runs[0][0] * win - keep, 0): min((runs[-1][-1] + 1) * win + keep, len(a))]
 
 
 def norm(w: str) -> str:
@@ -127,12 +139,14 @@ def voice_lines(script: dict, name: str, out: Path, model) -> list[dict]:
 	for i, line in enumerate(lines):
 		prev = lines[i - 1]["say"] if i > 0 else ""
 		nxt = lines[i + 1]["say"] if i + 1 < len(lines) else ""
-		key = hashlib.sha1(json.dumps([voice, line["say"], prev, nxt], sort_keys=True).encode()).hexdigest()
+		# a line's own seed goes into its key only when it has one, so the other lines keep theirs
+		own = [line["seed"]] if "seed" in line else []
+		key = hashlib.sha1(json.dumps([voice, line["say"], prev, nxt] + own, sort_keys=True).encode()).hexdigest()
 		wav, meta = folder / f"{i:02d}.wav", folder / f"{i:02d}.json"
 		if meta.exists() and wav.exists() and json.loads(meta.read_text()).get("key") == key:
 			done.append(json.loads(meta.read_text()))
 			continue
-		audio = trim(tts(voice, line["say"], prev, nxt))
+		audio = trim(tts(voice, line["say"], prev, nxt, int(line.get("seed", voice.get("seed", 1)))))
 		sf.write(wav, audio, SR)
 		info = {"key": key, "file": wav.name, "length": round(len(audio) / SR, 3),
 			"words": time_words(model, wav, line["say"])}

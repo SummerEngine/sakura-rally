@@ -7,29 +7,36 @@ film.gd's footage and narrate.py's voices (render_film.sh runs it).
 
     uv run --python 3.12 tools/rl/cut_film.py <out_dir> [voice ...]            # rl_explainer_<voice>.mp4
     uv run --python 3.12 tools/rl/cut_film.py <out_dir> [voice ...] --preview  # stills of the look only
+    uv run --python 3.12 tools/rl/cut_film.py <out_dir> [voice ...] --sound    # the sound only (cut/mix.wav)
     uv run --python 3.12 tools/rl/cut_film.py practice <swarm_dir>             # <swarm_dir>/practice.json
 
 Reads <out_dir>/tall/raw.avi (remuxed once to raw.mkv) and cues.json (film.gd),
 <out_dir>/voice/<voice>/edit.json and its lines (narrate.py) and tools/rl/film.json (the
-script: each shot's chip and counter, each line's `show` beats, timed to the word they name).
-Per voice (all in film.json unless named), to $EXPORT (default <out_dir>): the shots end to end at
-that voice's lengths, the narration on its times over the drive theme (ducked under the voice),
-normalised to -14 LUFS through a -1 dBFS limiter, and drawn over the footage per frame (PIL,
-piped to ffmpeg as RGBA): every word captioned as it is spoken; a shot's practice chip and how
-many of its cars got round or finished; the 46 numbers the network gets, from the chased car ten
-times a second; the network itself on those numbers (the shipped driver's weights, the untrained
-generation's for "guessing"); the score rules; the odds and the learning loop; the learning curve
-(runs/gen1/progress.csv); the end card. Then a contact sheet, and how far the footage moves from
-frame to frame inside each shot. --preview writes only stills of the look (a frame of each shot
-and of each beat with everything drawn over it) to <out_dir>/review_<voice>/.
+script: each shot's chip and counter, each line's `show` beats, timed to the word they name, and
+where the sound effects go). Per voice (all in film.json unless named), to $EXPORT (default
+<out_dir>): the shots end to end at that voice's lengths, the narration on its times over the
+drive theme (ducked under the voice) with the sound effects (tools/rl/sfx.json: sounds found
+online, fetched once into $SFX_CACHE; on the cuts, on what pops in, on the beats, on the cars whose
+run ends in frame), normalised to -14 LUFS through a -1.5 dBFS limiter, and drawn over the
+footage per frame (PIL, piped to ffmpeg as RGBA; the footage zooms in for a moment on `punch`
+beats): every word captioned as it is spoken; a shot's practice chip and how many of its cars
+got round or finished; the 46 numbers the network gets, from the chased car ten times a
+second; the network itself on those numbers (the shipped driver's
+weights, the untrained generation's for "guessing"); the score rules; the odds and the learning
+loop; the learning curve (runs/gen1/progress.csv); the end card. Then a contact sheet, and how
+far the footage moves from frame to frame inside each shot. --preview writes only stills of the
+look (a frame of each shot and of each beat with everything drawn over it) to
+<out_dir>/review_<voice>/; --sound only the mix, with the list of sound effects.
 `practice` writes each recorded generation's training time (plot_training.train_seconds, parent
 runs included) with the caption film.gd shows for it.
 """
+import hashlib
 import json
 import os
 import re
 import subprocess
 import sys
+import urllib.request
 from functools import lru_cache
 from pathlib import Path
 
@@ -51,8 +58,18 @@ UNTRAINED = ROOT / "assets/ai/generations/01_0.json"
 W, H, FPS, SR = 1080, 1920, 60, 48000
 TAIL_FRAMES = 15  # film.gd renders every shot 0.25 s past its length
 MUSIC_BEAT0 = 0.054
-VOICE_LUFS, MUSIC_LUFS, DUCK_DB, TARGET_LUFS = -16.0, -25.0, -9.0, -14.0
+# The drive theme sits about 11 dB under the voice while it speaks and 10 dB in the gaps (as in
+# the narrated Shorts measured for the remake, docs/RL.md), out where the script drops it.
+VOICE_LUFS, MUSIC_LUFS, DUCK_DB, TARGET_LUFS = -16.0, -26.0, -1.5, -14.0
+MUSIC_OUT_DB, MUSIC_FADE_S, HIT_DUCK_S = -30.0, 1.2, 0.3
+# The sound effects (tools/rl/sfx.json), found online. Not in the repo (their licences allow them in
+# a video, not handing the files on): each is downloaded from its source once into SFX_CACHE.
+SFX = ROOT / "tools/rl/sfx.json"
+SFX_CACHE = Path(os.environ.get("SFX_CACHE", "~/.cache/sakura-rally/sfx")).expanduser()
+SFX_FLOOR_DB, SFX_UNDER_VOICE_DB = -50.0, -3.0
+EVENTS, EVENT_GAP_S, EVENT_PX = 2, 0.35, 300.0
 JOLT_PX = 40.0
+PUNCH_S = 0.4  # a zoom punch eases back over this
 DECISION_FRAMES = 6  # the network decides ten times a second: every 6th frame
 CREAM, INK, PINK, MINT = (246, 241, 232), (42, 36, 51), (232, 81, 124), (63, 180, 137)
 ORANGE, YELLOW, BLUE = (240, 146, 48), (255, 224, 102), (86, 140, 214)
@@ -182,10 +199,11 @@ def pill(parts: list[tuple], fill=CREAM, pad_x: int = 34, pad_y: int = 18) -> Im
 
 
 class Captions:
-	"""The narration as captions: each line in chunks of at most two balanced rows, shown from the
+	"""The narration as captions: each line in chunks of at most MAX_WORDS in at most two balanced
+	rows (1-4 big words at a time, as in the Shorts measured for the remake), shown from the
 	chunk's first word, the word being spoken in yellow."""
-	SIZE, STROKE, LEAD = 76, 11, 1.2
-	MAX_WORDS = 7
+	SIZE, STROKE, LEAD = 88, 12, 1.18
+	MAX_WORDS = 4
 
 	def __init__(self, lines: list[dict]):
 		self.probe = Pen(1, 1)
@@ -340,7 +358,8 @@ class Net:
 # ---------------------------------------------------------------- the edit
 
 def beats(script: dict, edit: dict) -> dict[str, list[tuple[float, object]]]:
-	"""Each `show` beat of the script at the time its word is spoken: {key: [(t, value)]}."""
+	"""Each `show` beat of the script at the time its word is spoken (plus its `shift`, seconds):
+	{key: [(t, value)]}. A `sfx` beat keeps its whole item ({sfx: sound, peak, gain}) as its value."""
 	out: dict[str, list] = {}
 	for line, laid in zip(script["lines"], edit["lines"]):
 		for item in line.get("show", []):
@@ -348,8 +367,12 @@ def beats(script: dict, edit: dict) -> dict[str, list[tuple[float, object]]]:
 			hit = next((w for w in laid["words"] if norm(w["w"]) == at), None)
 			if hit is None:
 				sys.exit(f"cut_film: no word {item['at']!r} in {line['say']!r}")
-			key = next(k for k in item if k != "at")
-			out.setdefault(key, []).append((hit["t0"], item[key]))
+			t = hit["t0"] + float(item.get("shift", 0.0))
+			if "sfx" in item:
+				out.setdefault("sfx", []).append((t, item))
+				continue
+			key = next(k for k in item if k not in ("at", "shift"))
+			out.setdefault(key, []).append((t, item[key]))
 	for v in out.values():
 		v.sort(key=lambda b: b[0])
 	return out
@@ -377,6 +400,7 @@ class Film:
 					"src": round(self.cue[tag]["t"] * FPS), "spec": script["shots"].get(tag, {}),
 					"cue": self.cue[tag], "end": self.cue.get(tag + "_end", {})})
 		self.captions = Captions(edit["lines"])
+		self.sfx = script.get("sfx", {})
 		self.cache: dict = {}
 		self._faded: dict = {}
 		self._nets()
@@ -423,6 +447,66 @@ class Film:
 				return s
 		return self.shots[-1]
 
+	def count_at(self, s: dict) -> float:
+		"""When shot `s`'s counter pops in: its `count` beat, else 0.7 s into the shot."""
+		return next((bt for bt, _ in self.beats.get("count", []) if s["t0"] <= bt < s["t1"]), s["t0"] + 0.7)
+
+	def punch_filter(self) -> str:
+		"""The footage's zoom punches as an ffmpeg filter to chain on (",perspective=..."; "" for
+		none): at each `punch` beat the picture jumps to that zoom and eases back over PUNCH_S (the
+		drawing over it stays put)."""
+		hits = self.beats.get("punch", [])
+		if not hits:
+			return ""
+		t = f"(in/{FPS})"
+		z = "1" + "".join(f"+{float(v) - 1.0:.3f}*if(between({t},{bt:.3f},{bt + PUNCH_S:.3f}),"
+				f"pow(1-({t}-{bt:.3f})/{PUNCH_S},2),0)" for bt, v in hits)
+		m = f"(1-1/({z}))/2"
+		return (f",perspective=x0='W*{m}':y0='H*{m}':x1='W-W*{m}':y1='H*{m}':x2='W*{m}':y2='H-H*{m}':"
+				f"x3='W-W*{m}':y3='H-H*{m}':interpolation=linear:eval=frame")
+
+	# -- the sounds
+
+	def sfx_cues(self) -> list[tuple[float, str, float, bool]]:
+		"""The sound effects over the edit as (time, sound, dB, peak: the sound's loudest moment on
+		`time`, else its start), from film.json's "sfx" and each shot's own "sfx" (which wins; null
+		for none): `cut` on the cut into the shot (a list takes turns), `title` / `chip` / `count`
+		as they pop in, `on_end` / `on_finish` on the runs that end in frame during the shot
+		(film.gd's `ends`: the nearest first, at least EVENT_GAP_S apart, at most EVENTS a shot,
+		quieter the smaller the car); "sfx"'s `show` on each `show` beat (by key:value, else key)
+		and every `sfx` beat."""
+		conf, out = self.sfx, []
+		cuts = conf.get("cut") or []
+		cuts = [cuts] if isinstance(cuts, str) else cuts
+		for k, s in enumerate(self.shots):
+			spec, own = s["spec"], s["spec"].get("sfx", {})
+			turn = cuts[(k - 1) % len(cuts)] if cuts else None
+			if k > 0 and (name := own.get("cut", turn)):
+				out.append((s["t0"], name, 0.0, True))
+			for part, at in (("title", s["t0"]), ("chip", s["t0"] + 0.1), ("count", self.count_at(s))):
+				if part in spec and (name := own.get(part, conf.get(part))):
+					out.append((at, name, 0.0, False))
+			for what, done in (("on_end", 0), ("on_finish", 1)):
+				if name := own.get(what, conf.get(what)):
+					out += self._event_cues(s, name, done)
+		show = conf.get("show", {})
+		for key, items in self.beats.items():
+			for bt, v in items:
+				if key == "sfx":
+					out.append((bt, v["sfx"], float(v.get("gain", 0.0)), bool(v.get("peak"))))
+				elif name := show.get(f"{key}:{v}", show.get(key)):
+					out.append((bt, name, 0.0, False))
+		return sorted(out)
+
+	def _event_cues(self, s: dict, name: str, done: int) -> list[tuple]:
+		evs = [(f, px) for f, d, px in s["end"].get("ends", []) if d == done and f < s["f1"] - s["f0"]]
+		picked: list[tuple] = []
+		for f, px in sorted(evs, key=lambda e: -e[1]):
+			if len(picked) < EVENTS and all(abs(f - g) >= EVENT_GAP_S * FPS for g, _ in picked):
+				picked.append((f, px))
+		return [(s["t0"] + f / FPS, name, float(np.clip(10 * np.log10(px / EVENT_PX), -9.0, 0.0)), False)
+				for f, px in sorted(picked)]
+
 	# -- what is drawn at time t
 
 	def items(self, t: float, i: int) -> list[tuple]:
@@ -438,9 +522,10 @@ class Film:
 			out.append((("end",), img, (W - img.width) // 2, 470 + round((1 - a) * 30), a))
 		else:
 			y = TOP
-			if "title" in spec:
+			if "title" in spec:  # the first shot's title is up from the first frame
 				img = self._title(spec["title"])
-				out.append(self._pop(("title", s["tag"]), img, (W - img.width) // 2, y, t - s["t0"]))
+				age = t - s["t0"] + (0.25 if s["t0"] == 0.0 else 0.0)
+				out.append(self._pop(("title", s["tag"]), img, (W - img.width) // 2, y, age))
 				y += img.height + 10
 			if "chip" in spec:
 				text = s["cue"].get("practice", "") if spec["chip"] == "practice" else spec["chip"]
@@ -449,7 +534,7 @@ class Film:
 				y += img.height + 12
 			if "count" in spec:
 				img = self._count(s, spec["count"])
-				out.append(self._pop(("count", s["tag"]), img, (W - img.width) // 2, y, t - s["t0"] - 0.7))
+				out.append(self._pop(("count", s["tag"]), img, (W - img.width) // 2, y, t - self.count_at(s)))
 			out += self._panels(s, t, i)
 		cap = self.captions.at(t)
 		if cap is not None:
@@ -470,9 +555,11 @@ class Film:
 			if b:
 				r = min(fi // DECISION_FRAMES, len(self.sense) - 1)
 				out.append(self._pop(("num", r, b[1]), self._numbers_panel(r, b[1]), LEFT, TOP, t - self.first("numbers")))
-			else:  # before the numbers: what the screen is not
-				img = self._cached(("noscreen",), lambda: pill([("It never sees the screen", BOLD, 50, INK)]))
-				out.append(self._pop(("noscreen",), img, (W - img.width) // 2, TOP, t - s["t0"] - 1.2))
+			else:  # before the numbers: what the screen is not, from its word
+				nb = self.beat("noscreen", t, s["t0"])
+				if nb:
+					img = self._cached(("noscreen",), lambda: pill([("It never sees the screen", BOLD, 50, INK)]))
+					out.append(self._pop(("noscreen",), img, (W - img.width) // 2, TOP, t - nb[0]))
 		elif tag == "brain" and self.net:
 			b = self.beat("net", t, s["t0"])
 			if b:
@@ -502,7 +589,7 @@ class Film:
 			if cb:
 				c0 = self.first("curve")
 				img = self._cached(("carsnote",), lambda: pill([("64", TITLE, 56, PINK),
-						(" cars at once, on one Mac", BOLD, 46, INK)]))
+						(" cars at once, on one laptop", BOLD, 46, INK)]))
 				out.append(self._pop(("carsnote",), img, (W - img.width) // 2, TOP, t - c0))
 				p = round(smooth01((t - c0 - 0.3) / 1.6) * 60) / 60
 				week = any(v == "week" and bt <= t for bt, v in self.beats["curve"])
@@ -532,15 +619,14 @@ class Film:
 		def make():
 			size, stroke = 96, 14
 			probe = Pen(1, 1)
-			words, rows, row = text.split(), [], ""
-			for w in words:
-				trial = f"{row} {w}".strip()
-				if row and probe.width(trial, TITLE, size) > 900:
-					rows.append(row)
-					row = w
-				else:
-					row = trial
-			rows.append(row)
+			words = text.split()
+
+			def width(ws: list[str]) -> float:
+				return probe.width(" ".join(ws), TITLE, size)
+			rows = [text]
+			if width(words) > 900:  # two rows as even as they go (no lone word under a long row)
+				k = min(range(1, len(words)), key=lambda k: max(width(words[:k]), width(words[k:])))
+				rows = [" ".join(words[:k]), " ".join(words[k:])]
 			lh = round(size * 1.22)
 			pen = Pen(W, lh * len(rows) + 2 * stroke + 10)
 			asc = font(TITLE, size).getmetrics()[0]
@@ -825,9 +911,94 @@ def resample(a: np.ndarray, sr: int) -> np.ndarray:
 	return resample_poly(a, SR // g, sr // g, axis=0).astype(np.float32)
 
 
-def mix(edit: dict, voice_dir: Path, work: Path) -> Path:
+def fetch(spec: dict) -> Path:
+	"""A sound's file in SFX_CACHE, downloaded once from its `url`, checked against its `sha256`."""
+	path = SFX_CACHE / spec["file"]
+	if path.exists() and hashlib.sha256(path.read_bytes()).hexdigest() == spec["sha256"]:
+		return path
+	req = urllib.request.Request(spec["url"], headers={"User-Agent": "Mozilla/5.0", "Referer": spec["page"]})
+	with urllib.request.urlopen(req, timeout=60) as r:
+		data = r.read()
+	if hashlib.sha256(data).hexdigest() != spec["sha256"]:
+		sys.exit(f"cut_film: {spec['url']} is no longer the sound sfx.json names (sha256 differs)")
+	SFX_CACHE.mkdir(parents=True, exist_ok=True)
+	path.write_bytes(data)
+	return path
+
+
+def sound(spec: dict) -> dict:
+	"""A sound of sfx.json decoded to SR mono, its silence at both ends (SFX_FLOOR_DB) trimmed:
+	{audio, peak: seconds to its loudest 10 ms, loud: dB of its loudest 50 ms, gain: its trim}."""
+	p = subprocess.run(["ffmpeg", "-v", "error", "-i", str(fetch(spec)), "-ac", "1", "-ar", str(SR), "-f", "f32le", "-"],
+			capture_output=True)
+	if p.returncode != 0 or not p.stdout:
+		sys.exit(f"cut_film: cannot decode {spec['file']}: {p.stderr[-300:]!r}")
+	a = np.frombuffer(p.stdout, np.float32)
+	win = SR // 200
+	n = len(a) // win
+	db = 20 * np.log10(np.sqrt((a[:n * win].reshape(n, win) ** 2).mean(axis=1)) + 1e-9)
+	on = np.flatnonzero(db > SFX_FLOOR_DB)
+	a = a[max(on[0] - 1, 0) * win:(on[-1] + 2) * win].copy()
+
+	def rms(ms: int) -> np.ndarray:
+		k = min(SR * ms // 1000, len(a))
+		return np.sqrt(np.convolve(a * a, np.ones(k, np.float32) / k, mode="valid") + 1e-12)
+	return {"audio": a, "peak": (float(np.argmax(rms(10))) + SR * 0.005) / SR, "loud": float(20 * np.log10(rms(50).max())),
+			"gain": float(spec.get("gain", 0.0)), "duck": float(spec.get("duck", 0.0))}
+
+
+def sfx_track(film: Film, total: int, speaking: np.ndarray, ref_db: float) -> tuple[np.ndarray, np.ndarray]:
+	"""film.sfx_cues() as one mono track, and how far (dB) the music ducks under them: each
+	sound's loudest 50 ms at `ref_db` (the voice's median) plus film.json's sfx `level`, the
+	sound's own `gain` (sfx.json) and the cue's, SFX_UNDER_VOICE_DB lower where the voice speaks;
+	the music dips by the sound's `duck` dB for its first HIT_DUCK_S."""
+	specs = json.loads(SFX.read_text())["sounds"]
+	level = float(film.sfx.get("level", -8.0))
+	bank: dict[str, dict] = {}
+	out = np.zeros(total, np.float32)
+	duck = np.zeros(total, np.float32)
+	for t, name, gain, peak in film.sfx_cues():
+		if name not in specs:
+			sys.exit(f"cut_film: film.json asks for the sound {name!r}, sfx.json has none")
+		if name not in bank:
+			bank[name] = sound(specs[name])
+		snd = bank[name]
+		i0 = round((t - (snd["peak"] if peak else 0.0)) * SR)
+		db = ref_db + level + snd["gain"] + gain - snd["loud"]
+		if speaking[min(max(round(t * SR), 0), total - 1)] > 0:
+			db += SFX_UNDER_VOICE_DB
+		a = snd["audio"] * np.float32(10 ** (db / 20.0))
+		lo, hi = max(i0, 0), min(i0 + len(a), total)
+		if hi > lo:
+			out[lo:hi] += a[lo - i0:hi - i0]
+		if snd["duck"] > 0:
+			h0 = min(max(round(t * SR), 0), total)
+			duck[h0:h0 + int(HIT_DUCK_S * SR)] = np.minimum(duck[h0:h0 + int(HIT_DUCK_S * SR)], -snd["duck"])
+	k = int(0.03 * SR)
+	return out, np.convolve(duck, np.ones(k, np.float32) / k, mode="same")
+
+
+def music_out(film: Film, total: int) -> np.ndarray:
+	"""The music's level (dB) from the `music` beats: MUSIC_OUT_DB from each `out` (faded over
+	0.25 s) until the next `in` (back at once)."""
+	db = np.zeros(total, np.float32)
+	marks = film.beats.get("music", [])
+	for k, (t, v) in enumerate(marks):
+		if v != "out":
+			continue
+		i0 = round(t * SR)
+		i1 = next((round(bt * SR) for bt, w in marks[k + 1:] if w == "in"), total)
+		f = min(int(0.25 * SR), i1 - i0)
+		db[i0:i0 + f] = np.linspace(0.0, MUSIC_OUT_DB, f)
+		db[i0 + f:i1] = MUSIC_OUT_DB
+	return db
+
+
+def mix(film: Film, edit: dict, voice_dir: Path, work: Path) -> Path:
 	"""The narration on its times at VOICE_LUFS over the drive theme at MUSIC_LUFS, the music
-	DUCK_DB lower while the voice speaks, faded out over the last 2.5 s; all at TARGET_LUFS."""
+	DUCK_DB lower while the voice speaks, out where the script drops it (music_out), dipping under
+	the big hits and faded out over the last MUSIC_FADE_S, and the sound effects (sfx_track,
+	against the median of the voice's 50 ms windows while it speaks); all at TARGET_LUFS."""
 	total = round(edit["length"] * SR)
 	voice = np.zeros(total, np.float32)
 	speaking = np.zeros(total, np.float32)
@@ -840,6 +1011,10 @@ def mix(edit: dict, voice_dir: Path, work: Path) -> Path:
 		speaking[max(i0 - int(0.12 * SR), 0):min(i0 + n + int(0.3 * SR), total)] = 1.0
 	tmp = work / "level.wav"
 	voice = at_lufs(voice, VOICE_LUFS, tmp)
+	win = SR // 20
+	m = total // win
+	w_db = 20 * np.log10(np.sqrt((voice[:m * win].reshape(m, win) ** 2).mean(axis=1)) + 1e-9)
+	ref_db = float(np.median(w_db[(speaking[:m * win:win] > 0) & (w_db > -60.0)]))
 	y, msr = sf.read(MUSIC, dtype="float32", always_2d=True)
 	y = resample(y, msr)[int(MUSIC_BEAT0 * SR):]
 	while len(y) < total:
@@ -847,10 +1022,11 @@ def mix(edit: dict, voice_dir: Path, work: Path) -> Path:
 	music = at_lufs(y[:total].copy(), MUSIC_LUFS, tmp)
 	k = int(0.15 * SR)
 	env = np.convolve(speaking, np.ones(k, np.float32) / k, mode="same")
-	music *= (10 ** (DUCK_DB * env / 20.0)).astype(np.float32)[:, None]
-	tail = int(2.5 * SR)
+	fx, duck = sfx_track(film, total, speaking, ref_db)
+	music *= (10 ** ((DUCK_DB * env + music_out(film, total) + duck) / 20.0)).astype(np.float32)[:, None]
+	tail = int(MUSIC_FADE_S * SR)
 	music[-tail:] *= (np.linspace(1.0, 0.0, tail) ** 2)[:, None].astype(np.float32)
-	out = at_lufs(music + voice[:, None], TARGET_LUFS, tmp)
+	out = at_lufs(music + (voice + fx)[:, None], TARGET_LUFS, tmp)
 	tmp.unlink()
 	path = work / "mix.wav"
 	sf.write(path, out, SR, subtype="FLOAT")
@@ -871,7 +1047,7 @@ def remux(src: Path) -> Path:
 
 
 def cut(film: Film, footage: Path, voice_dir: Path, mp4: Path, work: Path) -> None:
-	mixwav = mix(json.loads((voice_dir / "edit.json").read_text()), voice_dir, work)
+	mixwav = mix(film, json.loads((voice_dir / "edit.json").read_text()), voice_dir, work)
 	cmd = ["ffmpeg", "-v", "error", "-y"]
 	graph, labels = [], []
 	for k, s in enumerate(film.shots):
@@ -884,11 +1060,13 @@ def cut(film: Film, footage: Path, voice_dir: Path, mp4: Path, work: Path) -> No
 	n_in = len(film.shots)
 	cmd += ["-f", "rawvideo", "-pix_fmt", "rgba", "-s", f"{W}x{H}", "-framerate", str(FPS), "-i", "pipe:0",
 			"-i", str(mixwav)]
-	graph.append("".join(labels) + f"concat=n={len(labels)}:v=1:a=0[cat]")
+	graph.append("".join(labels) + f"concat=n={len(labels)}:v=1:a=0{film.punch_filter()}[cat]")
 	graph.append(f"[cat][{n_in}:v]overlay=0:0:format=gbrp:eof_action=repeat,"
 			"scale=out_range=limited:out_color_matrix=bt709,format=yuv420p,"
 			"setparams=range=tv:colorspace=bt709:color_primaries=bt709:color_trc=bt709[v]")
-	graph.append(f"[{n_in + 1}:a]alimiter=limit=0.891:attack=4:release=60:level=false,aresample={SR}[a]")
+	# Limited 4x oversampled at -1.5 dBFS: the AAC's true peak stays under -1 dBTP (at -1 dBFS without
+	# oversampling the sound effects' peaks came out at -0.7).
+	graph.append(f"[{n_in + 1}:a]aresample={SR * 4},alimiter=limit=0.841:attack=4:release=60:level=false,aresample={SR}[a]")
 	cmd += ["-filter_complex", ";".join(graph), "-map", "[v]", "-map", "[a]", "-frames:v", str(film.frames),
 			"-c:v", "libx264", "-preset", "medium", "-crf", "18", "-profile:v", "high", "-maxrate", "30M",
 			"-bufsize", "60M", "-r", str(FPS), "-c:a", "aac", "-b:a", "256k", "-movflags", "+faststart", str(mp4)]
@@ -906,6 +1084,9 @@ def cut(film: Film, footage: Path, voice_dir: Path, mp4: Path, work: Path) -> No
 	print(f"{mp4}: {film.frames / FPS:.1f} s, {len(film.shots)} shots, {mp4.stat().st_size / 1e6:.1f} MB")
 	for s in film.shots:
 		print(f"  {s['t0']:6.2f}s  {s['t1'] - s['t0']:5.2f}s  {s['tag']}")
+	cues = film.sfx_cues()
+	print(f"  {len(cues)} sound effects, {len(cues) / film.length * 60:.0f} a minute: "
+			+ ", ".join(f"{t:.2f} {name}" for t, name, _, _ in cues))
 
 
 def picks(film: Film) -> list[int]:
@@ -1003,7 +1184,7 @@ def main() -> None:
 	export = Path(os.environ.get("EXPORT", out)).expanduser()
 	export.mkdir(parents=True, exist_ok=True)
 	script = json.loads(SCRIPT.read_text())
-	footage = remux(out / "tall")
+	footage = None if "--sound" in sys.argv else remux(out / "tall")
 	cues = json.loads((out / "tall" / "cues.json").read_text())
 	for name in args[1:] or list(script["voices"]):
 		voice_dir = out / "voice" / name
@@ -1013,6 +1194,12 @@ def main() -> None:
 			continue
 		work = out / "cut"
 		work.mkdir(exist_ok=True)
+		if "--sound" in sys.argv:
+			path = mix(film, json.loads((voice_dir / "edit.json").read_text()), voice_dir, work)
+			cues_fx = film.sfx_cues()
+			print(f"{path}: {film.length:.1f} s, {len(cues_fx)} sound effects: "
+					+ ", ".join(f"{t:.2f} {n}" for t, n, _, _ in cues_fx))
+			continue
 		mp4 = export / f"rl_explainer_{name}.mp4"
 		cut(film, footage, voice_dir, mp4, work)
 		review_sheet(mp4, film, export / f"rl_explainer_{name}_sheet.jpg", out / f"review_{name}")
