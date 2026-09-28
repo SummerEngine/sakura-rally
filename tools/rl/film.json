@@ -1,0 +1,48 @@
+{
+  "voices": {
+    "calm": {"about": "ElevenLabs Brian: deep, calm American man", "id": "nPczCjzI2devNBz1zQrb",
+      "model": "eleven_multilingual_v2",
+      "settings": {"stability": 0.55, "similarity_boost": 0.8, "style": 0.15, "use_speaker_boost": true, "speed": 0.97}},
+    "anime": {"about": "ElevenLabs Yuki: calm anime narrator, young woman", "id": "JTlYtJrcTzPC71hMLOxo",
+      "model": "eleven_multilingual_v2",
+      "settings": {"stability": 0.45, "similarity_boost": 0.8, "style": 0.35, "use_speaker_boost": true, "speed": 1.0}}
+  },
+  "shots": {
+    "hook": {"min": 4.5, "title": "I taught an AI to drive", "chip": "practice"},
+    "tease": {"min": 4.0, "chip": "practice"},
+    "sees": {},
+    "brain": {},
+    "score": {},
+    "loop": {},
+    "scale": {},
+    "corner_0": {"min": 4.0, "chip": "practice", "count": "past"},
+    "corner_1": {"min": 4.0, "chip": "practice", "count": "past"},
+    "finish": {"min": 4.5, "chip": "practice", "count": "finish"},
+    "momiji": {"chip": "A new road: Momiji Valley", "count": "finish"}
+  },
+  "lines": [
+    {"shot": "hook", "say": "I made a rally game, and taught an AI to drive in it."},
+    {"shot": "hook", "say": "This is its very first try.", "pause": 0.5},
+    {"shot": "tease", "say": "And this is the same AI, eighty minutes later."},
+    {"shot": "sees", "say": "So how does it work? First, it never sees the screen."},
+    {"shot": "sees", "say": "Ten times a second, it gets forty-six numbers.", "show": [{"numbers": "all", "at": "Ten"}]},
+    {"shot": "sees", "say": "Nine rays measure how far away the edge of the road is.", "show": [{"numbers": "rays", "at": "Nine"}]},
+    {"shot": "sees", "say": "Fourteen points show where the road goes next.", "show": [{"numbers": "points", "at": "Fourteen"}]},
+    {"shot": "sees", "say": "The rest is its speed, how much it slides, and what it's pressing.", "show": [{"numbers": "body", "at": "rest"}]},
+    {"shot": "brain", "say": "A small neural network turns those numbers into a move: steer, throttle, brake, or handbrake.", "show": [{"net": "trained", "at": "A"}]},
+    {"shot": "brain", "say": "At first, it's just guessing.", "show": [{"net": "untrained", "at": "At"}]},
+    {"shot": "score", "say": "Nobody tells it how to drive. It only gets a score."},
+    {"shot": "score", "say": "Plus one for every twenty meters of road.", "show": [{"rule": "plus", "at": "Plus"}]},
+    {"shot": "score", "say": "Minus three when it crashes or leaves the road.", "show": [{"rule": "minus", "at": "Minus"}]},
+    {"shot": "loop", "say": "After every round, the moves that scored more become a bit more likely, and the ones that scored less, less likely.", "show": [{"odds": "on", "at": "After"}]},
+    {"shot": "loop", "say": "Try, score, adjust, repeat. That's reinforcement learning.", "pause": 0.3, "show": [{"cycle": 0, "at": "Try,"}, {"cycle": 1, "at": "score,"}, {"cycle": 2, "at": "adjust,"}, {"cycle": 3, "at": "repeat."}, {"cycle": "named", "at": "reinforcement"}]},
+    {"shot": "scale", "say": "Sixty-four cars practice at once, on one Mac.", "show": [{"curve": "on", "at": "Sixty-four"}]},
+    {"shot": "scale", "say": "Eighty minutes of this is almost a week of driving.", "show": [{"curve": "week", "at": "week"}]},
+    {"shot": "corner_0", "say": "After three minutes, most of them reach this corner, and fly off."},
+    {"shot": "corner_1", "say": "After half an hour, most of them make it round."},
+    {"shot": "finish", "say": "After eighty minutes, forty-five of sixty-four finish the whole stage.", "pause": 0.3},
+    {"shot": "momiji", "say": "Then the real test: a road it has never seen."},
+    {"shot": "momiji", "say": "It never practised here, and still, sixty-one of sixty-four make it to the finish."},
+    {"shot": "momiji", "say": "It's in my game now. Press I, and it drives for you. Or race its old generations as ghosts.", "show": [{"end": "on", "at": "It's"}]}
+  ]
+}

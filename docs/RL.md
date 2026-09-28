@@ -195,30 +195,39 @@ not resources and need `include_filter="*.bin"` in the preset, or an exported ga
 
 ## The video
 
-`tools/rl/render_film.sh` films how it learned as a social post of about 26 s, twice: 1920x1080
-for X and 1080x1920 for Shorts (`EXPORT=~/Projects/sakura-rally/export tools/rl/render_film.sh
---no-record` writes `rl_post_16x9.mp4`, `rl_post_9x16.mp4` and a contact sheet of each there).
-First `tools/rl/swarm.gd` records the practice, headless: per generation 64 cars leave Hanami's
-start line together and drive as in training (options sampled from the policy, a run ending by
-the training rules: off the road, a crash, stalled, the wrong way), every run a replay file in
-the player's format (`scripts/game/replay_writer.gd`, so `tools/replay/review.gd` reads it).
-Then `tools/rl/film.gd` plays the replays back under Movie Maker, offscreen and muted, once per
-aspect with its own lenses (the motion is the same), under the render lock: the untrained
-network's 64 cars launching from the grid seen low from the roadside ahead and scattering into
-the cherry trees; one right-hander 540-590 m in, from the same camera on its inside, for
-3 minutes of practice (the pack flies off the outside), 31 minutes (4 of 64 finish the stage) and
-80 minutes (57 finish; a train through the corner); a chase at the shoulder of the shipped
-driver's fastest run with the rays and road points its network sees drawn over the road; its
-whole pack on Momiji, a road it never practised on, from a drone at 2.5x speed through the S-bend
-and the hairpin under the maples. A car turns grey where its run ended. Every camera is worked
-out from the replays before its shot plays; `film.gd` prints each shot's camera motion, nearest
-car size and cars in frame, and runs headless for a flow check (see its header). A render whose
-window macOS reports covered still records every frame: film.gd draws the frames the engine
-skips, in the same iteration. `tools/rl/cut_film.py` lays the shots on the drive theme's beat
-with a card per shot (training time from the run's `progress.csv`, how many of 64 finish), ends
-on the Sakura Rally card, measures the motion inside every shot by phase correlation on the
-footage and saves the frames it tiled into the contact sheet (`tools/rl/plot_training.py` plots a
-run's learning curve to a PNG). `--no-record` renders from the last recordings, `--cut-only`
-recuts. The two renders take about 3 min each, the cut about 3 min. The post of 2026-09-27 was
-recorded and rendered on the 7 m stage loops, before race mode widened them to 10 m; a fresh
-recording drives the wider loops, and the finish counts on the cards come from it.
+`tools/rl/render_film.sh` makes "How the AI learned to drive", a narrated vertical video for
+Shorts (1080x1920, 60 fps, about 1.5 min), once per voice in `tools/rl/film.json`
+(`EXPORT=~/Projects/sakura-rally/export ELEVENLABS_API_KEY=... tools/rl/render_film.sh` writes
+`rl_explainer_<voice>.mp4` and a contact sheet of each there). The story: its very first try and
+the same AI 80 minutes later; what it gets (46 numbers ten times a second: the rays, the road
+points, the car) and the network that turns them into a move; the score (+1 every 20 m, -3 for a
+crash or leaving the road) and how the odds of the moves that scored more grow; 64 cars at once
+and the learning curve; the corner at 3 and at 31 minutes; 45 of 64 finishing after 80 minutes;
+61 of 64 on Momiji, a road it never practised on; and the keys to try it in the game.
+
+1. `tools/rl/swarm.gd` records the practice, headless: per generation 64 cars leave Hanami's start
+   line together and drive as in training (options sampled from the policy, a run ending by the
+   training rules: off the road, a crash, stalled, the wrong way; a finisher drives on 4 s so it
+   crosses the line at speed), every run a replay file in the player's format
+   (`scripts/game/replay_writer.gd`, so `tools/replay/review.gd` reads it).
+2. `tools/rl/narrate.py` voices `film.json`'s lines with ElevenLabs text-to-speech (each voice's
+   id, model and settings are in the file; neighbouring lines go along so the reading flows),
+   trims them, times every word with faster-whisper (matched back to the script's words) and lays
+   the edit out; it voices a line again only when its text, its neighbours or the voice change.
+3. `tools/rl/film.gd` plays the replays back under Movie Maker, offscreen and muted, under the
+   render lock, every shot as long as the longest voice keeps it on screen. Every camera is worked
+   out from the replays before its shot plays; for the chased car it also logs the 46 numbers its
+   network got every frame (`DriveSense.observe` on the replayed car). It prints each shot's
+   camera motion, nearest car size and cars in frame, and runs headless for a flow check (see its
+   header); a render whose window macOS reports covered still records every frame.
+4. `tools/rl/cut_film.py` lays the shots out on the voice's times and draws over the footage frame
+   by frame: captions word by word; each shot's practice time and how many of 64 got round or
+   finished (from the recording); the 46 numbers; the network running on them (the shipped
+   driver's weights, then the untrained generation's for "guessing"); the score, the odds, the
+   learning loop and the learning curve (`runs/gen1/progress.csv`); the end card. The narration
+   sits over the drive theme, which ducks under the voice; -14 LUFS. `--preview` saves stills of
+   the look without encoding.
+
+Adding a voice is a new entry in `film.json` (an ElevenLabs voice id) and a `--no-record` run; a
+new line, shot or beat is an edit there (beats name the word they start on). Recording takes about
+5 min, the render about 6, each cut about 4.
