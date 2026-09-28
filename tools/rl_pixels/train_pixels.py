@@ -29,6 +29,12 @@ ppo      PPO fine-tuning of an imitate checkpoint. The actor keeps the pixels; t
 film     One lap of Hanami and one of Momiji by a checkpoint, recorded as replays, filmed from a
          chase camera (tools/rl_pixels/film_render.gd) with the frame the network saw at each
          moment in a corner: tools/rl/runs/<run>/film/<run>_<steps>_<route>.mp4.
+eval     The periodic eval for one checkpoint, once per --delays value: physics ticks a choice
+         waits before the hands take it, as the game's GPU answer comes back frames later.
+export   A checkpoint's actor for the game (scripts/ai/pixel_policy.gd runs it on the GPU):
+         assets/ai/pixel_driver.json, every layer's shape, weights and biases (base64 float32 in
+         torch's order), and a test frame with the logits torch gives it, which the game checks
+         its network against.
 
 Every --eval-every decisions the student drives Hanami and Momiji (never trained on), each both
 ways, from the start line by tools/rl/eval.gd's rules with NeuralPilot's stuck fallback, 2 cars
@@ -671,6 +677,76 @@ def compose(frames_dir: Path, eyes: np.ndarray, out: Path, fps: float, title: st
         raise RuntimeError(f"ffmpeg failed on {out}")
 
 
+def evaluate(args, run_dir: Path) -> None:
+    """The periodic eval for one checkpoint, once per --delays value (physics ticks a choice waits
+    before the hands take it): rows <run>_<steps>_d<delay> in <run>/eval.csv."""
+    dev = torch.device(args.device)
+    actor = Actor().to(dev)
+    ck = torch.load(PROJECT / args.ckpt, map_location=dev)
+    actor.load_state_dict(ck["actor"])
+    for d in (int(x) for x in args.delays.split(",")):
+        ev = Evaluator(run_dir, args.seed, extra={"delay": d})
+        try:
+            ev.run(student_act(actor, dev), f"{Path(args.ckpt).parent.parent.name}_{ck['steps']}_d{d}",
+                   int(ck["steps"]), args.eval_s)
+        finally:
+            ev.close()
+
+
+def export(args, run_dir: Path) -> None:
+    """--ckpt's actor as the game's pixel driver file (scripts/ai/pixel_policy.gd)."""
+    import base64
+    ck = torch.load(PROJECT / args.ckpt, map_location="cpu")
+    actor = Actor()
+    actor.load_state_dict(ck["actor"])
+    actor.eval()
+    h, w = 72, 128
+    # the layout pixel_policy.gd runs: unpadded convolutions with ReLU, flatten, dense + ReLU,
+    # the floats joining the head's first layer after the CNN's 512
+    kinds = [type(m) for m in (*actor.cnn, *actor.fc, *actor.head)]
+    assert kinds == [nn.Conv2d, nn.ReLU] * 3 + [nn.Flatten, nn.Linear, nn.ReLU, nn.Linear, nn.ReLU, nn.Linear], kinds
+
+    def blob(t: torch.Tensor) -> str:
+        return base64.b64encode(t.detach().float().contiguous().numpy().astype("<f4").tobytes()).decode()
+
+    layers = []
+    c, ih, iw = 3, h, w
+    for m in actor.cnn:
+        if isinstance(m, nn.Conv2d):
+            assert m.padding == (0, 0) and m.dilation == (1, 1) and m.groups == 1
+            k, s = m.kernel_size[0], m.stride[0]
+            oh, ow = (ih - k) // s + 1, (iw - k) // s + 1
+            layers.append({"type": "conv", "in": c, "in_h": ih, "in_w": iw, "out": m.out_channels,
+                           "out_h": oh, "out_w": ow, "k": k, "stride": s, "w": blob(m.weight), "b": blob(m.bias)})
+            c, ih, iw = m.out_channels, oh, ow
+    for m, relu in ((actor.fc[0], True), (actor.head[0], True), (actor.head[2], False)):
+        layer = {"type": "dense", "in": m.in_features, "out": m.out_features, "relu": relu,
+                 "w": blob(m.weight), "b": blob(m.bias)}
+        if m is actor.head[0]:
+            layer["vec_at"] = actor.fc[0].out_features
+        layers.append(layer)
+
+    rng = np.random.default_rng(args.seed)
+    yy, xx = np.mgrid[0:h, 0:w]
+    img = np.stack([xx * 255 // (w - 1), yy * 255 // (h - 1), (xx + yy) * 255 // (w + h - 2)], -1)
+    img = np.clip(img + rng.integers(-40, 41, img.shape), 0, 255).astype(np.uint8)
+    vec = vec_of(rng.normal(0.0, 0.5, (1, MOTION_HANDS)).astype(np.float32), np.array([REST]))
+    with torch.no_grad():
+        logits = actor(frames(img[None], torch.device("cpu")), torch.from_numpy(vec))[0].numpy()
+    run = Path(args.ckpt).parent.parent.name
+    data = {
+        "format": "sakura_pixel_driver",
+        "meta": {"run": run, "steps": int(ck["steps"]), "ckpt": args.ckpt, "trained": ck.get("args", {})},
+        "image": [h, w, 3], "vec": VEC, "action_dims": list(DIMS), "layers": layers,
+        "test": {"image": base64.b64encode(img.tobytes()).decode(), "vec": [float(x) for x in vec[0]],
+                 "logits": [float(x) for x in logits]},
+    }
+    out = PROJECT / args.out
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(data, separators=(",", ":")))
+    print(f"EXPORT {args.out} {run}_{ck['steps']} {out.stat().st_size / 1e6:.1f} MB", flush=True)
+
+
 def film(args, run_dir: Path) -> None:
     """One lap of Hanami and of Momiji by a checkpoint, filmed from a chase camera, with what the
     network saw at each moment: <dest>/<run>_<steps>_<route>.mp4."""
@@ -768,6 +844,12 @@ def main() -> None:
     fm.add_argument("--fps", type=int, default=30)
     fm.add_argument("--size", default="1280x720")
     fm.add_argument("--label", default="", help="a second title line (what the checkpoint is)")
+    ev = sub.add_parser("eval", parents=[common], help="the eval for one checkpoint, at several action delays")
+    ev.add_argument("--ckpt", required=True, help="a ckpt/actor_<steps>.pt (project-relative)")
+    ev.add_argument("--delays", default="0", help="physics ticks a choice waits, comma list")
+    ex = sub.add_parser("export", parents=[common], help="a checkpoint's actor as the game's pixel driver")
+    ex.add_argument("--ckpt", required=True, help="a ckpt/actor_<steps>.pt (project-relative)")
+    ex.add_argument("--out", default="assets/ai/pixel_driver.json", help="project-relative")
     args = p.parse_args()
     for k in ("steps", "beta_steps", "log_every", "save_every", "eval_every", "bc_steps"):
         if hasattr(args, k):
@@ -782,6 +864,10 @@ def main() -> None:
         imitate(args, run_dir)
     elif args.phase == "ppo":
         ppo(args, run_dir)
+    elif args.phase == "eval":
+        evaluate(args, run_dir)
+    elif args.phase == "export":
+        export(args, run_dir)
     else:
         film(args, run_dir)
 

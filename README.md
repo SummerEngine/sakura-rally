@@ -41,6 +41,7 @@ The window opens at 16:9, sized to 80 % of the screen. Fullscreen is in Settings
 | Horn | H | L3 |
 | Hide the UI for screenshots | F1 | |
 | AI drives your car / AI ghost cars / watch a ghost ([docs/RL.md](docs/RL.md)) | I / G / V | |
+| AI drives your car from the picture alone ([docs/PIXELS.md](docs/PIXELS.md)) | O | |
 
 During the countdown the car is held on the line. Hold the throttle: launch control keeps the
 engine at 4600 rpm, and at GO the clutch drops into first.
@@ -140,6 +141,7 @@ in [docs/REPLAYS.md](docs/REPLAYS.md).
 | UI | `scripts/ui/`, [docs/UI.md](docs/UI.md) | Title hub over a flyover whose car drifts the corners, Time Attack cards with top-down maps, garage with the car strip, road-sign HUD between stages, arrival card, settings, ink transitions, countdown, HUD (in a race with the lap and your place), results (in a race with the classification), rally classification and pause, all built in code |
 | Replays | `scripts/autoload/replays.gd`, `tools/replay/`, [docs/REPLAYS.md](docs/REPLAYS.md) | Input and state recording of every drive, with a review tool |
 | AI driver | `scripts/ai/`, `tools/rl/`, [docs/RL.md](docs/RL.md) | A small network trained with PPO on headless copies of the physics, seeing only the road ahead from the car (edge rays, centreline points, speed), so it is not tied to one track. I lets it drive (such a run sets no record), G races the training generations as ghosts, V follows one. In a race the same network drives the rivals (`RaceBot`): it keeps to a lane of the wide loop, passes, makes room, and holds each rival to its lap time through a calibrated pace limit |
+| Pixel driver | `scripts/ai/pixel_*.gd`, `shaders/ai/`, `tools/rl_pixels/`, [docs/PIXELS.md](docs/PIXELS.md) | A CNN that drives from a 128×72 picture of a camera over the hood and 21 floats of its own motion, no road geometry, learned by imitating the AI driver and then PPO on rendered copies of the game. O hands it the car (a run sets no record); it runs on the GPU in compute shaders, reading the camera's frame where it is drawn, and its view shows in the corner |
 
 Shared conventions and the runtime APIs: [docs/CONTRACTS.md](docs/CONTRACTS.md). Rebuild commands:
 

@@ -15,6 +15,7 @@ classification, so the driver sits them out; liaisons and free roam are fine.
 | I | Auto-drive: the AI takes your car (stage, liaison, free roam; in a race as a RaceBot among the rivals, at the free driver's own speed); I again gives it back |
 | G | Ghosts: every training generation in `assets/ai/generations/` joins as a labelled ghost car on a staggered grid behind you, held on the line with you through the countdown |
 | V | Watch: the chase camera goes to the next ghost, then back to your car |
+| O | The pixel driver ([PIXELS.md](PIXELS.md)): a network that sees only a 128x72 picture from over the hood takes your car under I's rules, its view in the corner; O again gives it back, I or O while the other drives swaps them; in a race I's RaceBot drives instead |
 
 `scripts/ai/auto_drive.gd` (one line in `Main._ready`) does this. Ghosts are on no collision
 layer, so they pass through your car and a race's rivals; they hit the rigid world (trees,
@@ -25,7 +26,7 @@ key would, a ghost on its own road (a RaceBot rescues itself, see Racing). A car
 for 1 s gets full throttle (the network still steers) until 15 km/h:
 the likeliest action at a standstill after a reset can be to wait. The AI drives the automatic
 gearbox whatever the Gearbox setting (`Car.always_automatic`), and in free roam it keeps to the
-road the car is on. Command line: `-- auto-drive`, `ghosts`, `policy=<file>`.
+road the car is on. Command line: `-- auto-drive`, `pixel-drive`, `ghosts`, `policy=<file>`.
 
 ## What the network sees (`scripts/ai/drive_sense.gd`, 46 numbers)
 

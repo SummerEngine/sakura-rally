@@ -26,6 +26,9 @@ extends "res://tools/rl/train_env.gd"
 ##                 <route>_<car>.<ext> (":rev" as "_rev"), written when the next eval starts or at
 ##                 quit, with an eased chase camera in every frame, so tools/replay/review.gd's
 ##                 render films it (train_pixels.py film).
+##   delay         physics ticks (0-11) a new choice waits before the hands take it; the car drives
+##                 on with the last one meanwhile, as in the game, where the GPU's answer comes back
+##                 frames after the picture (train_pixels.py eval --delays).
 ## The branch gates stay closed, as in a timed stage (Main._set_gates), unless the worker drives the
 ## liaison: both gates stand on that road (s 75 and 1740 m), open in the game's liaison mode.
 ##
@@ -63,13 +66,25 @@ var writers: Array = []
 var headers: Array[Dictionary] = []
 var chase: Array[Vector3] = []
 var rec_tick: int = 0
+## Option `delay` (the header). Per car: the targets in force and the new ones waiting; physics
+## ticks since the decision.
+var delay_ticks: int = 0
+var in_force: Array[PackedFloat32Array] = []
+var waiting: Array[PackedFloat32Array] = []
+var tick_in_decision: int = 0
 
 
-## Moves every car's controls towards its hands before the car's own physics, every tick.
+## Moves every car's controls towards its hands before the car's own physics, every tick; with a
+## delay the hands take the decision's new targets `delay_ticks` into it.
 class Hands extends Node:
 	var env
 
 	func _physics_process(dt: float) -> void:
+		if env.delay_ticks > 0:
+			if env.tick_in_decision == env.delay_ticks:
+				for k in env.cars.size():
+					env._set_targets(k, env.waiting[k])
+			env.tick_in_decision += 1
 		for k in env.cars.size():
 			env.hands[k].apply(env.cars[k], dt)
 
@@ -84,7 +99,7 @@ class Recorder extends Node:
 
 func _initialize() -> void:
 	opts.merge({"look": "lean", "seasons": "random", "season_every": "600", "mode": "train",
-			"eval_cars": "2"}, false)
+			"eval_cars": "2", "delay": "0"}, false)
 	super()
 
 
@@ -92,6 +107,7 @@ func _build() -> bool:
 	eval_mode = opts["mode"] == "eval"
 	eval_cars = int(opts["eval_cars"])
 	season_every = maxi(int(opts["season_every"]), 1)
+	delay_ticks = clampi(int(opts["delay"]), 0, DriveHands.DECISION_TICKS - 1)
 	open_gates = "liaison" in str(opts["routes"])
 	root.disable_3d = true
 	RenderingServer.render_loop_enabled = false
@@ -133,8 +149,11 @@ func _build() -> bool:
 	h.process_physics_priority = -100
 	root.add_child(h)
 	runs.resize(n)
+	in_force.resize(n)
+	waiting.resize(n)
 	for k in n:
 		runs[k] = _fresh_run(0.0)
+		in_force[k] = _targets(k)
 	if eval_mode and str(opts.get("replays", "")) != "":
 		DirAccess.make_dir_recursive_absolute(str(opts["replays"]))
 		writers.resize(n)
@@ -156,10 +175,30 @@ func _hello() -> Dictionary:
 	return hello
 
 
-## One decision: --fixed-fps 10 runs its 12 physics ticks in the next main-loop iteration.
+## One decision: --fixed-fps 10 runs its 12 physics ticks in the next main-loop iteration. With a
+## delay the hands hold the targets in force until the Hands node switches them.
 func _drive() -> void:
+	if delay_ticks > 0:
+		for k in cars.size():
+			waiting[k] = _targets(k)
+			_set_targets(k, in_force[k])
+		tick_in_decision = 0
 	await process_frame
 	clock += DriveHands.DECISION_TICKS / float(Engine.physics_ticks_per_second)
+
+
+func _targets(k: int) -> PackedFloat32Array:
+	var h := hands[k]
+	return PackedFloat32Array([h.steer_target, h.throttle_target, h.brake_target, 1.0 if h.handbrake else 0.0])
+
+
+func _set_targets(k: int, t: PackedFloat32Array) -> void:
+	var h := hands[k]
+	h.steer_target = t[0]
+	h.throttle_target = t[1]
+	h.brake_target = t[2]
+	h.handbrake = t[3] > 0.5
+	in_force[k] = t
 
 
 func _send() -> void:
@@ -208,6 +247,7 @@ func _fresh_run(start_s: float) -> Dictionary:
 func _restart(k: int) -> void:
 	if not eval_mode:
 		super(k)
+		in_force[k] = _targets(k)
 		return
 	if k == 0:
 		_close_replays()
@@ -218,6 +258,7 @@ func _restart(k: int) -> void:
 	car.freeze = false
 	car.place_at_rest(t.transform_at_abs(t.start_s, (k % eval_cars - (eval_cars - 1) * 0.5) * EVAL_LAT))
 	hands[k].release(car)
+	in_force[k] = _targets(k)
 	route_of[k] = ri
 	var sense := senses[k]
 	sense.track = t

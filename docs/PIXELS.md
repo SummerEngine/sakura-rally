@@ -372,7 +372,7 @@ Full notes with every link are in [PIXELS_PRIOR_ART.md](PIXELS_PRIOR_ART.md).
 - The 3x sample multiplier and the DAgger budget (planning assumptions; M4 measures them).
 - The in-game cost with ghosts (inferred from `vp_cpu_ms`, not measured in the game).
 - The depth render.
-- The compute-shader inference cost.
+- The compute-shader inference cost (measured since: 1.8 ms waited for, §8).
 - The absolute numbers were taken on a loaded machine (other agents' jobs; load 11-18 in the
   render steps, ~150 in the CNN step). The CPU CNN figures in particular are pessimistic.
 
@@ -396,7 +396,8 @@ Full notes with every link are in [PIXELS_PRIOR_ART.md](PIXELS_PRIOR_ART.md).
   mode drives laps from the start line by eval.gd's rules and can record them as replays.
 - `tools/rl_pixels/pixel_env.py`: the workers as one batch; `tools/rl/sakura_env.py`'s
   `start_workers` launches both kinds.
-- `tools/rl_pixels/train_pixels.py`: `imitate` (DAgger), `ppo`, `film`.
+- `tools/rl_pixels/train_pixels.py`: `imitate` (DAgger), `ppo`, `film`, `eval` (one checkpoint at
+  several action delays), `export` (the game's file, §8).
 - `tools/rl_pixels/train.sh`: holds the render lock, keeps the Mac awake, resumes a run that
   crashed from its latest checkpoint.
 - `tools/rl_pixels/film_render.gd`: films a recorded lap from its stored chase camera, one
@@ -495,5 +496,62 @@ uv run --python 3.12 tools/rl_pixels/train_pixels.py film --run px1 --ckpt tools
 puts the network's frame of each moment in the corner:
 `tools/rl/runs/<run>/film/<run>_<steps>_<route>.mp4`.
 
-**Not built.** The pixel driver does not run in the game: its CNN is torch-only (M6, the compute
-shader, is still to do).
+**Delay.** The game gets the network's answer a few frames after the picture, so the PPO 3M
+checkpoint was run through the same eval with the choice held back (`train_pixels.py eval
+--delays 0,6,8`: the car drives on with the last choice for 0, 6 or 8 physics ticks, i.e. 0, 50
+and 67 ms). Medians: Hanami 93.9 / 96.5 / 96.3 s, Hanami reversed 92.4 / 93.0 / 92.8 s, Momiji
+98.3 / 98.7 / 100.8 s, Momiji reversed 99.0 / 97.4 / 97.8 s; resets per car 0-3.5, the same order
+at every delay. Up to 67 ms costs 0-2.5 s a lap and no finishes.
+
+## 8. In the game (M6, 2026-09-28)
+
+**O** hands the player's car to the pixel driver, under the I key's rules: a Time Attack run it
+drove sets no record, campaign stages are left alone, O again hands the car back, I or O while
+the other drives swaps the drivers. In a race (where it would meet cars it never saw) I's RaceBot
+drives instead. Its view, 3x, is in the bottom-left corner and hides with the UI (F1).
+Command line: `-- pixel-drive`.
+
+**Pieces.**
+- `train_pixels.py export --ckpt <actor.pt>`: `assets/ai/pixel_driver.json` (11.7 MB): every
+  layer's shape, weights and biases as base64 float32 in torch's order, and a test frame with the
+  logits torch gives it.
+- `scripts/ai/pixel_policy.gd` (PixelPolicy): the network in three compute shaders
+  (`shaders/ai/pixel_input.glsl`, `pixel_conv.glsl`, `pixel_dense.glsl`, imported as
+  RDShaderFiles), one compute list per layer on the main RenderingDevice. The input pass samples
+  the eyes' viewport texture directly (`RenderingServer.texture_get_rd_texture`); nothing but the
+  12 logits comes back (`buffer_get_data_async`). On load it runs the test frame and compares.
+- `scripts/ai/pixel_pilot.gd` (PixelPilot extends NeuralPilot): at a decision tick it takes the
+  DriveSense floats and poses the eyes; after the frame that drew them
+  (`RenderingServer.frame_post_draw`) it records the network's pass; the first physics tick with
+  the logits sets the hands (argmax, NeuralPilot's stuck fallback). One picture in flight at a
+  time. NeuralPilot's `decide()` is now `_look()` + `_answer()`, so the geometry drivers and
+  RaceBot run as before.
+- Visual layer 20 (`DriveEyes.GAME_ONLY_LAYER`, docs/CONTRACTS.md): cars (CarVisuals), CarFX, the
+  ghosts' labels, PostFX's ink quad and SkyRig's petals sit on it, and the eyes' camera culls it.
+  Training saw no cars, no ink and no petals; in the game the only cars in view are ghosts, which
+  it drives through. Headless check with the 6 ghosts: all 10 visuals of each of the 7 cars and all
+  7 of CarFX on layer 20 alone; of the map's 3708 visuals only SkyRig's 3 petal volumes.
+- AutoDrive: the O key, the file loaded on first use (and released when AutoDrive leaves the
+  tree: a RefCounted cannot free its RIDs from its own predelete), the corner view.
+
+**Measured** (dev build, Metal, M1 Max, 1280x720 offscreen, 60 fps, the game's high preset):
+
+| | |
+|---|---|
+| GPU logits against torch on the test frame | max abs diff 1.7e-6 |
+| Network input read on the GPU against `get_image()` of the same frame | max abs diff 0 (the texture is RGBA8 UNORM; no sRGB decode, no flip) |
+| Loading the file (JSON, buffers, pipelines, check) | 172 ms, on the first O press |
+| One forward pass, waited for (`logits_now`, 20 in a row) | 1.8 ms |
+| Recording a pass (`request`) | 6 µs |
+| Answer delay, from the decision tick | 5 physics ticks (42 ms) every time; with Movie Maker (which waits for the GPU every frame) 1 |
+| Decisions | 10.00/s, as in training |
+| Hanami, time trial from the grid | 94.08 s (Movie Maker) and 94.62 s, no reset (the pixel eval's median 93.9 s) |
+| Momiji (never trained on), time trial | 98.11 s, 1 reset (eval median 98.3 s) |
+| Keys | O takes the car and shows the view; I swaps to the geometry driver at 105 km/h without a stop, O swaps back, O hands the car to the player (view gone) |
+| Export | `--export-pack` with the default filter packs the three shaders (`.import` + SPIR-V) and `pixel_driver.json`; from the pack alone the shaders load (3676 / 4820 / 3276 bytes of SPIR-V) and the file reads |
+
+Footage of both laps with the corner view (Movie Maker, 60 fps): `~/Projects/sakura-rally/export/pixel_driver_ingame.mp4`.
+
+**Not measured.** The frame-time cost in the game (Metal reports no GPU time; one extra 128x72
+viewport every 6 frames at 60 fps, and a 1.8 ms pass when waited for, less when it overlaps the
+frame). The Mobile renderer. A pixel driver for ghosts or rivals (one viewport and pass each).

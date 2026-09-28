@@ -2,12 +2,12 @@ class_name DriveEyes
 extends RefCounted
 ## What the pixel driver sees (docs/PIXELS.md): one small RGB frame from a camera on the car's
 ## hood, rendered only when asked. The same camera in training (tools/rl_pixels/pixel_env.gd) and
-## wherever the game gives a pixel driver its eyes, as DriveSense and DriveHands are shared.
+## in the game (PixelPilot), as DriveSense and DriveHands are shared.
 ##
 ## The viewport never updates by itself: look() poses the camera and marks the viewport for one
 ## update, and the next RenderingServer.force_draw() (or frame drawn) renders it. The viewport
-## shares its parent's World3D; a car's own body is not in the picture only because the caller
-## keeps it out (training cars have no visuals).
+## shares its parent's World3D. It never draws GAME_ONLY_LAYER: no car is in the picture (training
+## cars have no visuals), nor the game's screen effects.
 
 const SIZE := Vector2i(128, 72)
 ## The camera in the car's frame (m): 3 m up (a bus driver's eye; from the 1.34 m hood the road's
@@ -19,6 +19,11 @@ const FOV := 60.0
 ## How far the camera's up leans from the car's up to the world's: body roll tilts the picture
 ## less than the car.
 const LEVEL := 0.6
+## Visual layer 20, drawn by the game's cameras and never by DriveEyes: every car's body and
+## effects (CarVisuals, CarFX, the ghosts' labels), the ink lines' screen quad (PostFX) and the
+## petals falling around the player's camera (SkyRig). The network trained in a world without them,
+## and the cars it could see in the game are ghosts, which it drives through.
+const GAME_ONLY_LAYER := 1 << 19
 
 var viewport: SubViewport
 var camera: Camera3D
@@ -34,8 +39,22 @@ func _init(size: Vector2i = SIZE) -> void:
 	camera.near = 0.1
 	camera.far = 1500.0
 	camera.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	camera.cull_mask = 0xFFFFF & ~GAME_ONLY_LAYER
 	viewport.add_child(camera)
 	camera.current = true
+
+
+## Puts every VisualInstance3D of `node`'s subtree (`node` included) on GAME_ONLY_LAYER alone.
+static func keep_out(node: Node) -> void:
+	if node is VisualInstance3D:
+		(node as VisualInstance3D).layers = GAME_ONLY_LAYER
+	for n in node.find_children("*", "VisualInstance3D", true, false):
+		(n as VisualInstance3D).layers = GAME_ONLY_LAYER
+
+
+## The frame as a RenderingDevice texture (PixelPolicy reads it on the GPU).
+func texture_rd() -> RID:
+	return RenderingServer.texture_get_rd_texture(viewport.get_texture().get_rid())
 
 
 ## Poses the camera on a car at `car_xf` (its global transform) and marks the viewport for one

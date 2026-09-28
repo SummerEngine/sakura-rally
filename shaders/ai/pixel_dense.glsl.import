@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://cgnmixdsshnja"
+path="res://.godot/imported/pixel_dense.glsl-21486d6161c6fda5e24c46e3b394e11c.res"
+
+[deps]
+
+source_file="res://shaders/ai/pixel_dense.glsl"
+dest_files=["res://.godot/imported/pixel_dense.glsl-21486d6161c6fda5e24c46e3b394e11c.res"]
+
+[params]
+

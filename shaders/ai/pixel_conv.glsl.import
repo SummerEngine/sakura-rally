@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://df2kn2jxshx4p"
+path="res://.godot/imported/pixel_conv.glsl-23d29c4401ed82f6955dbc68dff0a138.res"
+
+[deps]
+
+source_file="res://shaders/ai/pixel_conv.glsl"
+dest_files=["res://.godot/imported/pixel_conv.glsl-23d29c4401ed82f6955dbc68dff0a138.res"]
+
+[params]
+
