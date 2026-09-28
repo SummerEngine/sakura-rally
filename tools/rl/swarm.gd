@@ -48,7 +48,6 @@ var opts := {"policies": "", "route": "hanami", "cars": "64", "car": "sakura,hay
 		"dest": "/tmp/sakura_swarm", "limit": "150"}
 var game: Node
 var map: MapWorld
-var state_names: Array[String] = []
 var time: float = 0.0
 
 
@@ -87,11 +86,6 @@ func _initialize() -> void:
 
 func _run() -> void:
 	game = root.get_node("Game")
-	var states: Dictionary = game.State
-	for key in states:
-		while state_names.size() <= int(states[key]):
-			state_names.append("")
-		state_names[int(states[key])] = str(key)
 	var route := str(opts["route"])
 	map = MapWorld.new()
 	map.name = "Map"
@@ -151,7 +145,9 @@ func _record(policy: DrivePolicy, policy_name: String, t: Track, route: String) 
 	time = 0.0
 	var state: int = game.State.FREE_ROAM
 	for r in runs:
-		r.header = _header(r, policy, policy_name, route, t)
+		r.header = tool_header(game, map, r.car, r.car_id, route, t, {"policy": policy_name,
+				"run": str(policy.meta.get("run", "")), "steps": int(policy.meta.get("steps", 0)),
+				"car_index": r.index, "seed": int(opts["seed"])})
 		r.sense.observe(r.car, r.obs)
 		r.last_s = r.sense.road_s(r.car.global_position)
 		r.writer.frame(0.0, r.car, state, 0, 0, 0.0, true)
@@ -267,12 +263,20 @@ func _on_impact(strength: float, point: Vector3, r: Run) -> void:
 		r.writer.event(time, {"type": "impact", "strength": strength, "point": point, "kmh": r.car.speed_kmh})
 
 
-## The replay header, with the keys the Replays autoload writes (ReplayData, ReplayGhost and the
-## review tools read them) plus "ai": the policy and the car's place in the swarm.
-func _header(r: Run, policy: DrivePolicy, policy_name: String, route: String, t: Track) -> Dictionary:
+## The replay header of a tool's AI car, with the keys the Replays autoload writes (ReplayData,
+## ReplayGhost and the review tools read them) plus `ai` (the policy and the car's place in its
+## batch). tools/rl_pixels/pixel_env.gd records its eval laps with it too.
+static func tool_header(game: Node, map: MapWorld, car: Car, car_id: String, route: String, t: Track,
+		ai: Dictionary) -> Dictionary:
+	var state_names: Array[String] = []
+	var states: Dictionary = game.State
+	for key in states:
+		while state_names.size() <= int(states[key]):
+			state_names.append("")
+		state_names[int(states[key])] = str(key)
 	var gates := {}
 	for id: String in map.gates:
-		gates[id] = true
+		gates[id] = (map.gates[id] as RoadGate).is_open
 	return {
 		"game": ProjectSettings.get_setting("application/config/name", ""),
 		"engine": Engine.get_version_info().get("string", ""),
@@ -283,9 +287,9 @@ func _header(r: Run, policy: DrivePolicy, policy_name: String, route: String, t:
 		"mode": "ai_practice",
 		"state": "FREE_ROAM",
 		"campaign": {"active": false, "leg": 0},
-		"car": r.car_id,
-		"car_scene": r.car.scene_file_path,
-		"livery": {"index": 0, "primary": r.car.livery_primary, "secondary": r.car.livery_secondary},
+		"car": car_id,
+		"car_scene": car.scene_file_path,
+		"livery": {"index": 0, "primary": car.livery_primary, "secondary": car.livery_secondary},
 		"settings": {},
 		"tool_run": true,
 		"os": OS.get_name(),
@@ -296,10 +300,9 @@ func _header(r: Run, policy: DrivePolicy, policy_name: String, route: String, t:
 		"buttons": F.BUTTONS,
 		"surfaces": [],
 		"track": {"length": t.length, "closed": t.closed, "checkpoints": []},
-		"spawn": {"pos": r.car.global_position, "yaw": r.car.global_rotation.y},
+		"spawn": {"pos": car.global_position, "yaw": car.global_rotation.y},
 		"gates": gates,
-		"ai": {"policy": policy_name, "run": str(policy.meta.get("run", "")), "steps": int(policy.meta.get("steps", 0)),
-				"car_index": r.index, "seed": int(opts["seed"])},
+		"ai": ai,
 	}
 
 

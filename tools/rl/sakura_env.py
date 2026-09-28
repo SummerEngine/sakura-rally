@@ -71,6 +71,49 @@ class Worker:
         self.log.close()
 
 
+def start_workers(procs: int, make_cmd, log_dir: Path, timeout: float) -> list[Worker]:
+    """Launches `procs` workers, `make_cmd(port, i)` being worker i's command line, and returns
+    them connected, each with its hello read (Worker.hello)."""
+    log_dir.mkdir(parents=True, exist_ok=True)
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind(("127.0.0.1", 0))
+    server.listen(procs)
+    port = server.getsockname()[1]
+    workers = [Worker(i, make_cmd(port, i), log_dir / f"worker{i}.log") for i in range(procs)]
+    try:
+        # Poll once a second: a worker whose script fails to compile never exits, so its log
+        # is the only sign.
+        server.settimeout(1.0)
+        deadline = time.time() + timeout
+        connected = 0
+        while connected < procs:
+            try:
+                sock, _ = server.accept()
+            except socket.timeout:
+                for w in workers:
+                    if w.proc.poll() is not None or "SCRIPT ERROR" in w.tail(200):
+                        raise RuntimeError(f"worker {w.index} failed to start")
+                if time.time() > deadline:
+                    raise TimeoutError(f"{procs - connected} workers not connected after {timeout:.0f}s")
+                continue
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            sock.settimeout(timeout)
+            (size,) = struct.unpack("<I", _recv_exact(sock, 4))
+            hello = json.loads(_recv_exact(sock, size))
+            w = workers[hello["id"]]
+            w.sock, w.hello = sock, hello
+            connected += 1
+    except Exception as e:
+        tails = "\n".join(f"--- worker {w.index}\n{w.tail()}" for w in workers)
+        for w in workers:
+            w.close()
+        raise RuntimeError(f"workers did not connect ({e}):\n{tails}") from e
+    finally:
+        server.close()
+    return workers
+
+
 class SakuraVecEnv(VecEnv):
     """`procs` workers x `cars` cars. Observations are DriveSense vectors, actions DriveHands
     option indices (MultiDiscrete). A car whose episode ended is already at its next start;
@@ -82,49 +125,15 @@ class SakuraVecEnv(VecEnv):
         self.cars = cars
         self.timeout = timeout
         log_dir = Path(log_dir or PROJECT / "tools/rl/runs/_logs")
-        log_dir.mkdir(parents=True, exist_ok=True)
-        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server.bind(("127.0.0.1", 0))
-        server.listen(procs)
-        port = server.getsockname()[1]
-        self.workers: list[Worker] = []
-        for i in range(procs):
-            cmd = ["nice", "-n", str(nice), SUMMER, "--headless", "--disable-crash-handler",
-                   "--fixed-fps", "120", "--audio-driver", "Dummy", "--path", str(PROJECT),
-                   "-s", "res://tools/rl/train_env.gd", "--", f"port={port}", f"id={i}",
-                   f"cars={cars}", f"routes={routes}", f"car={car}", f"seed={seed * 1000 + i}",
-                   f"episode_s={episode_s}"]
-            self.workers.append(Worker(i, cmd, log_dir / f"worker{i}.log"))
-        try:
-            # Poll once a second: a worker whose script fails to compile never exits, so its log
-            # is the only sign.
-            server.settimeout(1.0)
-            deadline = time.time() + timeout
-            connected = 0
-            while connected < procs:
-                try:
-                    sock, _ = server.accept()
-                except socket.timeout:
-                    for w in self.workers:
-                        if w.proc.poll() is not None or "SCRIPT ERROR" in w.tail(200):
-                            raise RuntimeError(f"worker {w.index} failed to start")
-                    if time.time() > deadline:
-                        raise TimeoutError(f"{procs - connected} workers not connected after {timeout:.0f}s")
-                    continue
-                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-                sock.settimeout(timeout)
-                (size,) = struct.unpack("<I", _recv_exact(sock, 4))
-                hello = json.loads(_recv_exact(sock, size))
-                w = self.workers[hello["id"]]
-                w.sock, w.hello = sock, hello
-                connected += 1
-        except Exception as e:
-            tails = "\n".join(f"--- worker {w.index}\n{w.tail()}" for w in self.workers)
-            self.close()
-            raise RuntimeError(f"workers did not connect ({e}):\n{tails}") from e
-        finally:
-            server.close()
+
+        def cmd(port: int, i: int) -> list[str]:
+            return ["nice", "-n", str(nice), SUMMER, "--headless", "--disable-crash-handler",
+                    "--fixed-fps", "120", "--audio-driver", "Dummy", "--path", str(PROJECT),
+                    "-s", "res://tools/rl/train_env.gd", "--", f"port={port}", f"id={i}",
+                    f"cars={cars}", f"routes={routes}", f"car={car}", f"seed={seed * 1000 + i}",
+                    f"episode_s={episode_s}"]
+
+        self.workers = start_workers(procs, cmd, log_dir, timeout)
         h = self.workers[0].hello
         self.hello = h
         self.obs_size = h["obs_size"]
