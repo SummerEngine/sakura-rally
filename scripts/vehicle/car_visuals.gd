@@ -67,6 +67,7 @@ func _ready() -> void:
 		using_placeholder = true
 	model.name = "Model"
 	add_child(model)
+	DriveEyes.keep_out(self) # an AI driving from pixels never sees a car (it trained among none)
 	_bind_nodes()
 	if _car != null:
 		apply_livery(_car.livery_primary, _car.livery_secondary)
