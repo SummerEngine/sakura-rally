@@ -63,6 +63,9 @@ var launch_hold: bool = false:
 		if value != launch_hold:
 			launch_hold = value
 			drivetrain.set_launch_hold(value)
+## Shifts by itself whatever the player's Gearbox setting. NeuralPilot sets it on the car it
+## drives: its policies have no gear action and learned on the automatic box.
+var always_automatic: bool = false
 
 # ---------------------------------------------------------------- livery (read by the toon converter)
 var livery_primary: Color = Color("f6f1e8")
@@ -455,7 +458,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 			shift_down()
 
 	_update_suspension(state, xf, dt)
-	var automatic: bool = str(_setting("transmission", "auto")) != "manual"
+	var automatic: bool = always_automatic or str(_setting("transmission", "auto")) != "manual"
 	var reversing := drivetrain.gear == -1
 	var thr_in := clampf(input_brake if reversing else input_throttle, 0.0, 1.0)
 	var brk_in := clampf(input_throttle if reversing else input_brake, 0.0, 1.0)

@@ -93,6 +93,7 @@ func _ready() -> void:
 	menu_stage = MenuStage.new()
 	menu_stage.name = "MenuStage"
 	add_child(menu_stage)
+	add_child(AutoDrive.new()) # the trained AI driver: I auto-drive, G ghosts, V watch (docs/RL.md)
 	Game.menu_view_changed.connect(_on_menu_view_changed)
 	Game.settings_changed.connect(_on_settings_changed)
 	get_window().size_changed.connect(func() -> void:

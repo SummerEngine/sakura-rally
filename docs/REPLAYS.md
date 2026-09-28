@@ -8,10 +8,11 @@ and renders what the player saw at any moment, offscreen.
 | Piece | File |
 |---|---|
 | recorder (autoload `Replays`) | `scripts/autoload/replays.gd` |
+| one car's recording (frames, events, blocks), for the recorder and for tools | `scripts/game/replay_writer.gd` |
 | file format (offsets, blocks, events) | `scripts/game/replay_format.gd` |
 | reader (frames, events, interpolated car and camera) | `scripts/game/replay_data.gd` |
 | playback car (real model, livery, wheels) | `scripts/game/replay_ghost.gd` |
-| playback scene (map, screen passes, camera) | `scripts/game/replay_view.gd` |
+| playback scene (map, screen passes, camera; `build_world` alone for cars posed by a tool) | `scripts/game/replay_view.gd` |
 | review tool: list, summary, render, compare | `tools/replay/review.gd` |
 | the analysis behind summary and `render --events` | `tools/replay/analysis.gd` |
 | round-trip check (record, read, summarise, render against live frames) | `tools/replay/record_lap.gd` |
@@ -80,7 +81,9 @@ Tool runs (`-s` scripts) never record unless a tool asks, and never into the pla
 - `Replays.record_to(dir)` from a tool, then `Replays.flush()` to close the recording in
   progress and wait until every file is on disk (`Replays.last_path` names the last one);
 - or the user argument `replays=<dir>` on any run, e.g. forcing the game-flow tests to record:
-  `$S --headless --path . -s res://tools/game/flows.gd -- flow=campaign replays=/tmp/flow_replays`.
+  `$S --headless --path . -s res://tools/game/flows.gd -- flow=campaign replays=/tmp/flow_replays`;
+- or a tool writes files of its own cars with a `ReplayWriter` per car, as the recorder does
+  (`tools/rl/swarm.gd`: the AI's practice runs, `tools/rl/film.gd` plays them back).
 
 `record_to` refuses the player's folder.
 
