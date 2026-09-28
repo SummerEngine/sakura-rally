@@ -81,10 +81,9 @@ draws from the network's odds instead. `watch.gd` plays the real game hands off 
 finish) with auto-drive and ghosts on, cutting the camera between them every `cycle` seconds, and
 prints the stage time, rescues and whether the result counted.
 
-Pictures only from `--summer-offscreen` in place of `--headless`, never a window: `stills=<dir>`
-saves a PNG before every cut and on the results card, `--write-movie <file>.avi` records the
-run. Rendered runs take focus from a fullscreen app for now (docs/CONTRACTS.md), so shoot all
-shots in one run.
+Pictures only from `--summer-offscreen` in place of `--headless`, on the agents' dev build
+(docs/CONTRACTS.md), never a window: `stills=<dir>` saves a PNG before every cut and on the
+results card, `--write-movie <file>.avi` records the run. Shoot all shots in one run.
 
 ## Results
 
@@ -196,11 +195,15 @@ not resources and need `include_filter="*.bin"` in the preset, or an exported ga
 
 ## The video
 
-`tools/rl/render_film.sh` films how it learned, in the real game, offscreen and muted, and cuts
-`/tmp/sakura_film/sakura_ai_learns.mp4` (about 12 min in all under `nice`; `--cut-only` recuts):
-every generation driven from the same standstill into the same Hanami corners, the learning
-curve (`tools/rl/plot_training.py`, which also plots any run to a PNG), the shipped driver with
-its rays and road points drawn over the road, one race of every generation as ghosts (the grid
-from above through the countdown, then the newest from behind), and Momiji.
-`tools/rl/film.gd` shoots it and logs what each car did (where it left the road, how fast), and
-`cut_film.py` captions each clip from that log only.
+`tools/rl/render_film.sh` films how it learned and cuts `/tmp/sakura_film/sakura_ai_learns.mp4`
+(about 1.5 min). First `tools/rl/swarm.gd` records the practice, headless: per generation 64 cars
+leave Hanami's start line together and drive as in training (options sampled from the policy,
+a run ending by the training rules: off the road, a crash, stalled, the wrong way), every run a
+replay file in the player's format (`scripts/game/replay_writer.gd`, so `tools/replay/review.gd`
+reads it). Then `tools/rl/film.gd` plays the replays back under Movie Maker, offscreen and muted:
+every generation from the untrained network to gen1 6M, sped up, each car turning grey where its
+run ended and a card counting the cars still driving; the shipped driver with its rays and road
+points drawn over the road; its cars on Momiji. `tools/rl/cut_film.py` cuts it on the drive
+theme's beat and labels each generation with its training time from the run's `progress.csv`
+(`tools/rl/plot_training.py` plots a run's learning curve to a PNG). `--no-record` renders from
+the last recordings, `--cut-only` recuts.

@@ -7,10 +7,10 @@ extends SceneTree
 ##   timeout -k 10 900 nice -n 10 $S --headless --disable-crash-handler --audio-driver Dummy --fixed-fps 60 \
 ##       --path . -s res://tools/rl/watch.gd -- route=hanami cycle=8
 ##
-## Pictures need `--summer-offscreen` instead of `--headless`: stills=<dir> saves a PNG after the
-## I key, of the grid from the last ghost's camera during the countdown, just before every camera
-## cut and on the results card; `--write-movie <file>.avi` records footage. Rendered
-## runs currently take focus from fullscreen apps (docs/CONTRACTS.md): shoot everything in one run.
+## Pictures need `--summer-offscreen` instead of `--headless`, on the agents' dev build
+## (docs/CONTRACTS.md): stills=<dir> saves a PNG after the I key, of the grid from the last
+## ghost's camera during the countdown, just before every camera cut and on the results card;
+## `--write-movie <file>.avi` records footage. Shoot everything in one run.
 ##
 ## Options: route, mode (time_trial | free_roam), ghosts (1: the generations race along), cycle
 ## (seconds per camera target, 0: stay on the player's car), seconds (limit after the start),
