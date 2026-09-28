@@ -431,9 +431,32 @@ reversed 95.6 s, Momiji 81.7 s, Momiji reversed 83.2 s. eval.gd gave it 96.0 / 9
 
 **Throughput.**
 - 1 worker, 16 cars, shade look: 166 car-decisions/s (the benchmark's 157).
-- Training, 6 workers (3 lean, 3 shade) with the MPS trainer: 430-480 car-decisions/s. The GPU is
-  the limit (92-94% busy; each worker ~40% of a core). That is below the plan's 700-1,000 for
-  4-6 processes.
+- Imitation, 6 workers (3 lean, 3 shade) with the MPS trainer learning while they drive: 430-480
+  car-decisions/s. PPO: ~325 (its updates do not overlap the driving). The GPU is the limit
+  (`ioreg` Device Utilization 92-94%; each worker ~40% of a core). That is below the plan's
+  700-1,000 for 4-6 processes.
+
+**Results: imitation (run `px1`).** Median time of 2 cars and resets per car, by the pixel eval.
+Decisions 0-750k on Hanami only; from 750k (resumed) half the workers drove the liaison.
+
+| Checkpoint | Hanami | Hanami rev | Momiji (held out) | Momiji rev (held out) |
+|---|---|---|---|---|
+| teacher (gen2 7M, geometry) | 96.9 s, 1.0 | 97.4 s, 1.5 | 81.9 s, 0 | 84.4 s, 0.5 |
+| 250k | 98.0 s, 2.0 | 97.9 s, 3.0 | 96.0 s, 3.5 | 99.1 s, 5.5 |
+| 500k | 96.8 s, 1.0 | 99.3 s, 3.0 | 101.4 s, 4.5 | 99.6 s, 4.5 |
+| 1M | 96.6 s, 1.0 | 95.9 s, 1.5 | 98.7 s, 2.5 | 101.2 s, 6.0 |
+| 1.5M | 96.3 s, 1.0 | 96.1 s, 1.5 | 97.9 s, 3.0 | 96.5 s, 4.5 |
+| **2M** | **95.9 s, 0.5** | **95.8 s, 1.0** | **93.0 s, 1.0** | **101.2 s, 4.5** |
+| 2.5M | 96.5 s, 1.0 | 96.1 s, 1.5 | 99.2 s, 2.0 | 102.5 s, 6.0 |
+| 3M | 96.4 s, 1.0 | 99.5 s, 2.5 | 98.0 s, 3.0 | 98.6 s, 3.5 |
+
+- On the trained stage the pixel driver matches its teacher from 250k decisions on (~20 min of
+  driving): 128x72 is enough to drive Hanami at the teacher's pace with no road geometry.
+- On Momiji, never trained on and never seen with its own orange trees, it finishes every run but
+  is 10-20 s slower than the teacher (98-104 km/h against 113-116) and leaves the road 1-6 times
+  a run. The teacher sees the road as geometry, which looks the same everywhere.
+- The imitation loss sits at ~1.35-1.39 (the teacher's own entropy is part of it) from 1M on:
+  more imitation does not help.
 
 **Run.**
 ```
