@@ -639,9 +639,9 @@ def ppo(args, run_dir: Path) -> None:
 FONT = "/System/Library/Fonts/Supplemental/Arial Bold.ttf"
 
 
-def compose(frames_dir: Path, eyes: np.ndarray, out: Path, fps: float, title: str) -> None:
+def compose(frames_dir: Path, eyes: np.ndarray, out: Path, fps: float, title: str, subtitle: str = "") -> None:
     """The rendered frames with the network's view of the same moment in a corner (4x, nearest
-    neighbour: its pixels as it gets them) and a title, as an H.264 mp4."""
+    neighbour: its pixels as it gets them), a title and a subtitle line, as an H.264 mp4."""
     import subprocess
     from PIL import Image, ImageDraw, ImageFont
     files = sorted(frames_dir.glob("frame_*.png"))
@@ -660,7 +660,7 @@ def compose(frames_dir: Path, eyes: np.ndarray, out: Path, fps: float, title: st
         x, y = m, h - ih - m
         d.rectangle((x - 3, y - 3, x + iw + 2, y + ih + 2), fill=(255, 255, 255))
         im.paste(Image.fromarray(eyes[k]).resize((iw, ih), Image.NEAREST), (x, y))
-        for text, font, (tx, ty) in ((title, big, (m, m)),
+        for text, font, (tx, ty) in ((title, big, (m, m)), (subtitle, small, (m, m + big.size + 8)),
                                      (f"what the network sees: {eyes.shape[2]}x{eyes.shape[1]}", small,
                                       (x, y - small.size - 10))):
             d.text((tx + 2, ty + 2), text, font=font, fill=(0, 0, 0))
@@ -711,7 +711,7 @@ def film(args, run_dir: Path) -> None:
         title = (f"{route.capitalize()}{' (never trained on)' if route.startswith('momiji') else ''}: {took}, "
                  f"{resets} reset{'' if resets == 1 else 's'}")
         out = dest / f"{name}_{route}.mp4"
-        compose(shots, frames[:, k], out, args.fps, title)
+        compose(shots, frames[:, k], out, args.fps, title, args.label)
         print(f"FILM {out}", flush=True)
 
 
@@ -767,6 +767,7 @@ def main() -> None:
     fm.add_argument("--dest", help="folder (default tools/rl/runs/<run>/film)")
     fm.add_argument("--fps", type=int, default=30)
     fm.add_argument("--size", default="1280x720")
+    fm.add_argument("--label", default="", help="a second title line (what the checkpoint is)")
     args = p.parse_args()
     for k in ("steps", "beta_steps", "log_every", "save_every", "eval_every", "bc_steps"):
         if hasattr(args, k):
