@@ -458,6 +458,31 @@ Decisions 0-750k on Hanami only; from 750k (resumed) half the workers drove the 
 - The imitation loss sits at ~1.35-1.39 (the teacher's own entropy is part of it) from 1M on:
   more imitation does not help.
 
+**Results: PPO (run `px1ppo`, from the imitation's 3M).** 00:57-06:30, 6.3M decisions at ~324/s,
+stopped by hand. Same eval; the last column is the steering-target travel per second on Momiji
+(eval.gd's `steer`; the teacher's is 0.4-0.5).
+
+| PPO decisions | Hanami | Hanami rev | Momiji (held out) | Momiji rev (held out) | steer/s Momiji |
+|---|---|---|---|---|---|
+| 0.5M | 96.8 s, 0.5 | 94.7 s, 0.5 | 102.3 s, 3.5 | 112.6 s, 13.0 | 0.73 |
+| 1.0M | 94.6 s, 0 | 93.1 s, 0 | 101.8 s, 2.0 | 104.8 s, 7.5 | 0.90 |
+| 2.0M | 96.6 s, 1.5 | 91.1 s, 0 | 102.2 s, 2.5 | 104.8 s, 6.5 | 1.08 |
+| **3.0M** | **94.8 s, 0.5** | **91.5 s, 0** | **101.4 s, 2.0** | **92.1 s, 2.0** | **0.89** |
+| 4.0M | 95.4 s, 0.5 | 90.3 s, 0 | 100.4 s, 1.5 | 98.2 s, 3.5 | 1.20 |
+| 5.0M | 95.8 s, 0.5 | 92.2 s, 0.5 | 100.7 s, 2.0 | 100.6 s, 5.5 | 1.13 |
+| 6.0M | 95.8 s, 1.0 | 90.2 s, 0 | 117.8 s, 7.5 | 113.7 s, 11.0 | 1.02 |
+
+- **On the trained stage RL takes the pixel driver past its teacher**: Hanami reversed in 90-92 s
+  against the teacher's 97.4 s, with no resets; Hanami forward 94-96 s against 96.9 s.
+- **Held-out Momiji does not improve**: 98-106 s with 2-7 resets from 1M on, and at 6M it gets
+  worse (114-118 s). The steering saws twice as much as the teacher's on the road it never saw.
+  RL on two stages sharpens those two stages. To generalise, the driver needs more kinds of road
+  in training (it has seen 2 of the world's 3), or keeping the teacher's imitation term stronger.
+- Best by the sum of the four medians plus 3 s per reset: PPO 3M
+  (`tools/rl/runs/px1ppo/ckpt/actor_3010560.pt`). Its filmed laps, one car each: Hanami 94.2 s
+  with no reset, Momiji 97.0 s with 1 reset. Copies in `~/Projects/sakura-rally/export/`
+  (`pixel_driver_hanami.mp4`, `pixel_driver_momiji.mp4`).
+
 **Run.**
 ```
 R="hanami,hanami:rev;liaison,liaison:rev"   # ';' deals route groups to the workers in turn
