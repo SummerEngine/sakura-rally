@@ -90,7 +90,9 @@ Engine:
   M1 Max). Engine loops run within one loop of the rpm bracket, in both sets whatever the load,
   so a throttle change or an rpm sweep brings in a loop that is already playing, and stop two
   loops out; turbo, whine, tyres, wind and horn start once their gain passes −54 dB and stop
-  below −60 dB. A driving car runs about 12 of its 27 loops.
+  below −60 dB. A driving car runs about 12 of its 27 loops, and the six rivals' audio costs
+  about 1 ms of a race frame (0.7 and 1.6 ms in two interleaved on/off pairs, measured while
+  other jobs loaded the machine).
 - A loop starts from a random phase at silence and takes its gain 50 ms later. The audio server
   mixes a new playback at full volume from its first sample, a click at a random phase, and
   ramps only later volume changes; 50 ms covers the frame and physics tick until the player
