@@ -61,8 +61,9 @@ const RACE_GRID_GAP := 5.0
 const RACE_GRID_LAT := 2.2
 ## Race finishers come to rest PARC_GAP metres apart behind the winner on the finish stop.
 const PARC_GAP := 8.0
-## A rival's name tag shows within NAME_TAG_RANGE metres of the camera.
-const NAME_TAG_RANGE := 70.0
+## A rival's name tag shows within NAME_TAG_RANGE metres of the camera: the cars around you, not
+## a pack further up the road, whose tags would pile up into one smear.
+const NAME_TAG_RANGE := 40.0
 
 var ui: CanvasLayer
 var post: PostFX
@@ -674,7 +675,7 @@ func _name_tag(text: String) -> Label3D:
 	label.outline_size = 8
 	label.position = Vector3(0.0, 2.0, 0.0)
 	label.visibility_range_end = NAME_TAG_RANGE
-	label.visibility_range_end_margin = 20.0
+	label.visibility_range_end_margin = 10.0
 	label.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 	return label
 

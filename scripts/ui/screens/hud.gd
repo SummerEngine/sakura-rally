@@ -195,7 +195,11 @@ func _build_tach() -> void:
 ## Race: position card in the top-right corner (right-aligned in _process).
 func _build_position() -> void:
 	_holder(_tr, _tr_inner, Control.PRESET_TOP_RIGHT)
-	_tr.position = Vector2(-EDGE.x, EDGE.y)
+	# Offsets from the right anchor (`position` counts from the parent's left edge).
+	_tr.offset_left = -EDGE.x
+	_tr.offset_right = -EDGE.x
+	_tr.offset_top = EDGE.y
+	_tr.offset_bottom = EDGE.y
 	_pos_card = PaperCard.new()
 	_pos_card.padding = Vector4(26, 12, 28, 16)
 	_pos_card.radius = 20.0

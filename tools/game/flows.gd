@@ -293,6 +293,10 @@ func _run_race() -> void:
 	for g in rivals.size():
 		moved += int(rivals[g].global_position.distance_to(grid_pos[g + 1]) > 30.0)
 	_check(moved == rivals.size(), "race: the rivals drove off at GO (%d of %d beyond 30 m)" % [moved, rivals.size()])
+	var card: Rect2 = hud._pos_card.get_global_rect()
+	var screen := Rect2(Vector2.ZERO, hud.get_viewport_rect().size)
+	_check(hud._pos_card.is_visible_in_tree() and screen.encloses(card) and card.end.x > screen.size.x * 0.75 and card.position.y < screen.size.y * 0.25,
+			"race HUD: the position card sits in the top-right corner (%s on %s)" % [card, screen.size])
 	await shot("race_start")
 
 	# A RaceBot at gold pace drives the player's car to the flag.
@@ -314,18 +318,26 @@ func _run_race() -> void:
 	var bumps: Array[float] = []
 	var grab_bump := func(strength: float, _p: Vector3, _o: Car) -> void: bumps.append(strength)
 	car.bumped.connect(grab_bump)
+	# 10 s at normal speed with the whole field ahead: the time a frame spends in scripts
+	# (_process) and in a physics tick (scripts and the solver), and, rendered, the frame time.
+	var frames: Array[float] = []
+	var proc: Array[float] = []
+	var phys: Array[float] = []
+	var t0 := Time.get_ticks_usec()
+	var last := t0
+	while Time.get_ticks_usec() - t0 < 10000000:
+		await process_frame
+		var now := Time.get_ticks_usec()
+		frames.append((now - last) / 1000.0)
+		last = now
+		proc.append(Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0)
+		phys.append(Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0)
+	for a: Array[float] in [frames, proc, phys]:
+		a.sort()
+	_log("race, 10 s behind the pack: process %.2f ms (95th %.2f), physics tick %.2f ms (95th %.2f) at the median"
+			% [proc[int(proc.size() * 0.5)], proc[int(proc.size() * 0.95)], phys[int(phys.size() * 0.5)], phys[int(phys.size() * 0.95)]])
 	if DisplayServer.get_name() != "headless":
-		# Rendered: frame times for 10 s at normal speed, the whole field in view ahead.
-		var frames: Array[float] = []
-		var t0 := Time.get_ticks_usec()
-		var last := t0
-		while Time.get_ticks_usec() - t0 < 10000000:
-			await process_frame
-			var now := Time.get_ticks_usec()
-			frames.append((now - last) / 1000.0)
-			last = now
-		frames.sort()
-		_log("race: frame time over 10 s behind the pack at %s: median %.1f ms, 95th percentile %.1f ms, worst %.1f ms (%d frames)"
+		_log("race: frame time at %s: median %.1f ms, 95th percentile %.1f ms, worst %.1f ms (%d frames)"
 				% [str(root.size), frames[int(frames.size() * 0.5)], frames[int(frames.size() * 0.95)], frames.back(), frames.size()])
 	Engine.time_scale = float(opts["speed"])
 	var best_pos := all.size()
