@@ -306,7 +306,7 @@ def imitate(args, run_dir: Path) -> None:
         opt.load_state_dict(ck["opt"])
         steps = int(ck["steps"])
         print(f"[{args.run}] resumed {args.resume} at {steps}", flush=True)
-    env = PixelEnv(procs=args.procs, cars=args.cars, routes=args.routes, car=args.car, seed=args.seed + steps,
+    env = PixelEnv(procs=args.procs, cars=args.cars, routes=args.routes.split(";"), car=args.car, seed=args.seed + steps,
                    episode_s=args.episode_s, looks=tuple(args.looks.split(",")), log_dir=run_dir / "logs")
     evaluator = Evaluator(run_dir, args.seed)
     try:
@@ -492,7 +492,7 @@ def ppo(args, run_dir: Path) -> None:
         opt.load_state_dict(ck["opt"])
         steps = int(ck["steps"])
         print(f"[{args.run}] resumed {args.resume} at {steps}", flush=True)
-    env = PixelEnv(procs=args.procs, cars=args.cars, routes=args.routes, car=args.car, seed=args.seed + steps,
+    env = PixelEnv(procs=args.procs, cars=args.cars, routes=args.routes.split(";"), car=args.car, seed=args.seed + steps,
                    episode_s=args.episode_s, looks=tuple(args.looks.split(",")), log_dir=run_dir / "logs")
     norm = RewardNorm(teacher_path.parent / f"vecnormalize_{teacher_path.stem.split('_')[-1]}.pkl", env.n)
     if args.resume:
@@ -722,7 +722,9 @@ def main() -> None:
     common.add_argument("--run", required=True, help="run name: tools/rl/runs/<run>")
     common.add_argument("--procs", type=int, default=6, help="rendering Summer workers")
     common.add_argument("--cars", type=int, default=16, help="cars per worker")
-    common.add_argument("--routes", default="hanami,hanami:rev")
+    common.add_argument("--routes", default="hanami,hanami:rev",
+                        help="route ids (':rev' drives one backwards); ';' separates groups dealt to the workers in turn "
+                             "(a liaison worker opens the branch gates)")
     common.add_argument("--car", default="sakura,hayate")
     common.add_argument("--looks", default="lean,shade", help="worker looks, dealt in turn")
     common.add_argument("--seed", type=int, default=1)

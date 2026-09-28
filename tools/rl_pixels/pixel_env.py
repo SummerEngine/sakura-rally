@@ -4,8 +4,9 @@ Each worker is the agents' dev build of Summer rendering offscreen (--summer-off
 pixels; never the installed Summer, never a window), running pixel_env.gd with `cars` cars. Every
 step returns each car's hood-camera frame (uint8, H x W x 3), its DriveSense vector (the
 privileged observation: what the geometry teacher and the critic see), its reward, end flag and
-info, as tools/rl/train_env.gd describes. `looks`, `routes` and `seasons` given as lists go to
-the workers in turn (looks: lean, no sun shadows; shade, with them).
+info, as tools/rl/train_env.gd describes. `routes` and `seasons` given as lists go to the workers
+in turn; `looks` (lean: no sun shadows, shade: with them) change every len(routes) workers, so
+every route group gets every look.
 """
 
 from __future__ import annotations
@@ -39,7 +40,8 @@ class PixelEnv:
                     "--disable-crash-handler", "--fixed-fps", "10", "--path", str(PROJECT),
                     "-s", "res://tools/rl_pixels/pixel_env.gd", "--", f"port={port}", f"id={i}",
                     f"cars={cars}", f"routes={routes[i % len(routes)]}", f"car={car}",
-                    f"seed={seed * 1000 + i}", f"episode_s={episode_s}", f"look={looks[i % len(looks)]}",
+                    f"seed={seed * 1000 + i}", f"episode_s={episode_s}",
+                    f"look={looks[(i // len(routes)) % len(looks)]}",
                     f"seasons={seasons[i % len(seasons)]}", f"mode={mode}", f"eval_cars={eval_cars}"] + more
 
         self.workers = start_workers(procs, cmd, log_dir, timeout)

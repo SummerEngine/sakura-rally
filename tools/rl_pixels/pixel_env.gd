@@ -25,8 +25,9 @@ extends "res://tools/rl/train_env.gd"
 ##   replays       (eval mode) a folder: every car's lap becomes a replay file there,
 ##                 <route>_<car>.<ext> (":rev" as "_rev"), written when the next eval starts or at
 ##                 quit, with an eased chase camera in every frame, so tools/replay/review.gd's
-##                 render films it (tools/rl_pixels/film.sh).
-## The branch gates stay closed, as in a timed stage (Main._set_gates).
+##                 render films it (train_pixels.py film).
+## The branch gates stay closed, as in a timed stage (Main._set_gates), unless the worker drives the
+## liaison: both gates stand on that road (s 75 and 1740 m), open in the game's liaison mode.
 ##
 ## Protocol: train_env.gd's. The hello adds "image" [H, W, 3] and "atlas" [rows, cols]; every
 ## reply is followed by the atlas, rows * H x cols * W RGB8 pixels, car k at row k / cols, column
@@ -91,7 +92,7 @@ func _build() -> bool:
 	eval_mode = opts["mode"] == "eval"
 	eval_cars = int(opts["eval_cars"])
 	season_every = maxi(int(opts["season_every"]), 1)
-	open_gates = false
+	open_gates = "liaison" in str(opts["routes"])
 	root.disable_3d = true
 	RenderingServer.render_loop_enabled = false
 	if eval_mode:

@@ -1,7 +1,8 @@
-# Sakura Rally: training the AI driver from pixels, a measured plan
+# Sakura Rally: training the AI driver from pixels
 
-Branch `rl-pixels` (worktree `~/Projects/sakura-rally-wt/rl-pixels`, from `ep3-rl` 7e4f261), tools in
-`tools/rl_pixels/`. Nothing in the game or in `tools/rl/` was changed. No training was run.
+Branch `rl-pixels` (worktree `~/Projects/sakura-rally-wt/rl-pixels`, on `ep3-rl`), tools in
+`tools/rl_pixels/`. Sections 1-6 are the measured plan (written before any training, hood camera
+at 1.34 m). §7 is what was built and trained from it, 2026-09-27/28.
 Machine: M1 Max (8P+2E cores, 64 GB, macOS 27.2), dev build Summer 0.5.68 + PR #397, Metal Forward+.
 All renders ran offscreen under `/usr/bin/lockf -k /tmp/sakura-render.lock`.
 
@@ -374,3 +375,77 @@ Full notes with every link are in [PIXELS_PRIOR_ART.md](PIXELS_PRIOR_ART.md).
 - The compute-shader inference cost.
 - The absolute numbers were taken on a loaded machine (other agents' jobs; load 11-18 in the
   render steps, ~150 in the CNN step). The CPU CNN figures in particular are pessimistic.
+
+## 7. Built and trained (2026-09-27/28)
+
+**What differs from the plan.**
+- The camera sits **3 m up** (10° down, 60° vertical FOV, about 92° across), not on the hood at
+  1.34 m with a 90° vertical FOV: from the hood the road beyond ~40 m was a few flat pixels, and the
+  bends 50-150 m ahead are what the driver has to read.
+- Imitation first (DAgger, supervised), PPO after it. The critic is not learned from scratch: it
+  starts as the teacher's value network, with the teacher's reward scaling.
+- Branch gates: closed on the stage loops (as a timed stage has them), **open in liaison workers**.
+  Both gates stand on the liaison road (s 75 and 1740 m), and the game opens them in liaison mode.
+
+**Pieces.**
+- `scripts/ai/drive_eyes.gd` (DriveEyes): the camera, a SubViewport updated only when asked.
+- `tools/rl_pixels/pixel_env.gd`: extends `tools/rl/train_env.gd` (which gained the hooks `_build`,
+  `_hello`, `_serve`, `_drive`). Every reply renders all cars at once into one atlas (render loop
+  off, `force_draw`, one `get_image()`) and appends it to train_env's float block. A random season
+  look every 600 decisions (spring, autumn, summer or a blend); `look=lean|shade` per worker. Eval
+  mode drives laps from the start line by eval.gd's rules and can record them as replays.
+- `tools/rl_pixels/pixel_env.py`: the workers as one batch; `tools/rl/sakura_env.py`'s
+  `start_workers` launches both kinds.
+- `tools/rl_pixels/train_pixels.py`: `imitate` (DAgger), `ppo`, `film`.
+- `tools/rl_pixels/train.sh`: holds the render lock, keeps the Mac awake, resumes a run that
+  crashed from its latest checkpoint.
+- `tools/rl_pixels/film_render.gd`: films a recorded lap from its stored chase camera, one
+  `force_draw` per frame (a covered or sleeping screen cannot hand back a stale frame).
+
+**The student.** The Nature CNN on the 128x72 RGB frame, then 512 units, joined by 21 floats
+(forward and side speed, yaw rate, wheels on the ground and on loose ground, the four controls
+held, the last choice one-hot) into 256 units and 12 logits (DriveHands' 7+3+2). No track
+geometry reaches it. Checkpoints: `tools/rl/runs/<run>/ckpt/actor_<steps>.pt` (torch).
+
+**Imitation (`imitate`).** The teacher is gen2 7M (the shipped `assets/ai/driver.json`, SB3
+checkpoint `tools/rl/runs/gen2/ckpt/model_7000000.zip`). It labels every rendered frame from the
+same car's DriveSense vector. Its share of the driving falls from 1 to 0 over the first 300k
+decisions; after that the student drives (a quarter of the cars sample its odds, the rest take its
+likeliest choice) and the teacher labels the states the student gets itself into. Cross-entropy
+against the teacher's odds, from a replay of the latest 400k frames, 2 batches of 256 per decision
+of all cars, frames shifted up to 4 px and jittered in brightness, contrast, saturation and hue
+(±60°).
+
+**PPO (`ppo`).** From the imitation's last checkpoint. Rollouts of 128 decisions per car, 4 epochs
+of 1024 (stopping early past 1.5x target KL 0.02), actor lr 1e-4, critic lr 3e-4, γ 0.99, λ 0.95,
+clip 0.2, entropy 0.01. The critic sees DriveSense (asymmetric actor-critic). The teacher's odds
+stay in the loss as an augmented imitation term, weight 0.5 falling to 0.1 over 2M decisions. A
+time cut bootstraps from the critic (the car drives on).
+
+**Eval.** Every 250k (imitate) or 500k (PPO) decisions, 2 cars each on Hanami and Momiji, both
+ways, from the start line: Hanami in spring, Momiji in autumn, shadows on. Momiji is never
+trained on. Rules as `tools/rl/eval.gd` (resets off the road, stalled or rolled, argmax, NeuralPilot's
+stuck fallback), rows in `eval.csv`. The teacher through this pixel eval: Hanami 96.3 s, Hanami
+reversed 95.6 s, Momiji 81.7 s, Momiji reversed 83.2 s. eval.gd gave it 96.0 / 95.6 / 81.5 /
+84.6 s, so the two evals agree.
+
+**Throughput.**
+- 1 worker, 16 cars, shade look: 166 car-decisions/s (the benchmark's 157).
+- Training, 6 workers (3 lean, 3 shade) with the MPS trainer: 430-480 car-decisions/s. The GPU is
+  the limit (92-94% busy; each worker ~40% of a core). That is below the plan's 700-1,000 for
+  4-6 processes.
+
+**Run.**
+```
+R="hanami,hanami:rev;liaison,liaison:rev"   # ';' deals route groups to the workers in turn
+tools/rl_pixels/train.sh imitate --run px1 --procs 6 --steps 3e6 --beta-steps 3e5 --routes "$R" --eval-teacher
+tools/rl_pixels/train.sh ppo --run px1ppo --init tools/rl/runs/px1/ckpt/latest.pt --procs 6 --steps 30e6 \
+    --routes "$R" --bc 0.5 --bc-end 0.1 --bc-steps 2e6
+uv run --python 3.12 tools/rl_pixels/train_pixels.py film --run px1 --ckpt tools/rl/runs/px1/ckpt/latest.pt
+```
+`film` records one lap of Hanami and one of Momiji, renders them at 1280x720 from a chase camera and
+puts the network's frame of each moment in the corner:
+`tools/rl/runs/<run>/film/<run>_<steps>_<route>.mp4`.
+
+**Not built.** The pixel driver does not run in the game: its CNN is torch-only (M6, the compute
+shader, is still to do).
