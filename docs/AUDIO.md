@@ -80,10 +80,24 @@ Both sets share the loop rpm points, the gearbox whine loop and the mixing below
 8000 rpm redline plays the 7500 loops at pitch ≤ 1.12.
 
 Engine:
-- 8 `on` loops (1000–7500 rpm) and 8 `off` loops (idle, then 1750–7500) all run
-  continuously. For each set the two loops bracketing the smoothed rpm get equal-power gains
-  `cos(x·π/2)`, `sin(x·π/2)`; each loop's `pitch_scale = rpm / loop_rpm` (exact loop rpm from
-  the set's `engine_loops.json`, max ±22 % shift between neighbours).
+- 8 `on` loops (1000–7500 rpm) and 8 `off` loops (idle, then 1750–7500). For each set the two
+  loops bracketing the smoothed rpm get equal-power gains `cos(x·π/2)`, `sin(x·π/2)`; each
+  loop's `pitch_scale = rpm / loop_rpm` (exact loop rpm from the set's `engine_loops.json`, max
+  ±22 % shift between neighbours).
+- A car's loops run only while they can be heard. A playing `AudioStreamPlayer3D` costs a pan
+  and area query every physics tick and a mix even when silent: in a race the six rivals' audio
+  took 5.4 ms of a 17.5 ms frame while all 27 loops of every car played (offscreen, 1920×1080,
+  M1 Max). Engine loops run within one loop of the rpm bracket, in both sets whatever the load,
+  so a throttle change or an rpm sweep brings in a loop that is already playing, and stop two
+  loops out; turbo, whine, tyres, wind and horn start once their gain passes −54 dB and stop
+  below −60 dB. A driving car runs about 12 of its 27 loops.
+- A loop starts from a random phase at silence and takes its gain 50 ms later. The audio server
+  mixes a new playback at full volume from its first sample, a click at a random phase, and
+  ramps only later volume changes; 50 ms covers the frame and physics tick until the player
+  starts the playback plus a driver period until its first mix. A stop needs nothing: the server
+  fades a stopped playback out over one 512-sample mix buffer. `render_test.py` finds no more
+  click candidates in `audio_test.tscn -- --clean` than with every loop always playing (1–2 a
+  run against 2–4).
 - Load `L` (0..1) = applied throttle, smoothed (45 ms attack, 85 ms release), forced to 0
   while `is_shifting` and for a 110 ms (up) / 70 ms (down) dip after `gear_changed`. On/off
   sets blend equal-power: `on·sin(L·π/2)`, `off·cos(L·π/2)`.
